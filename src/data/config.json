@@ -1,0 +1,375 @@
+{
+  "branding": {
+    "logoUrl": "",
+    "appName": "TRS"
+  },
+  "hero": {
+    "title": "Singapore Badminton Tournament Registration",
+    "subtitle": "Register for upcoming tournaments, manage your entries, and stay updated on fixtures and results."
+  },
+  "nav": {
+    "menuItems": [
+      { "label": "Dashboard", "href": "/admin" },
+      { "label": "Events", "href": "/admin/events" },
+      { "label": "Registrations", "href": "/admin/registrations" },
+      { "label": "Fixtures", "href": "/admin/fixtures" }
+    ]
+  },
+  "footer": {
+    "socialLinks": [
+      { "platform": "Facebook", "url": "https://facebook.com/sbatournaments" },
+      { "platform": "Instagram", "url": "https://instagram.com/sbatournaments" },
+      { "platform": "X", "url": "https://x.com/sbatournaments" },
+      { "platform": "LinkedIn", "url": "https://linkedin.com/company/sbatournaments" }
+    ],
+    "contactEmail": "tournaments@sba.org.sg",
+    "copyrightText": "© 2026 Singapore Badminton Association. All rights reserved.",
+    "extraLinks": [
+      { "label": "Privacy Policy", "href": "/privacy" },
+      { "label": "Terms of Service", "href": "/terms" }
+    ]
+  },
+  "consentText": "I confirm that all information provided is accurate and complete. I agree to the tournament rules and regulations, and I consent to the collection and use of my personal data for the purpose of tournament registration, communication, and administration in accordance with the Personal Data Protection Act (PDPA).",
+  "payment": {
+    "currency": "SGD"
+  },
+  "events": [
+    {
+      "id": "evt-1",
+      "name": "Singapore Open Badminton Championship 2026",
+      "description": "The premier annual badminton championship bringing together top players from across Singapore. Compete in singles and doubles categories across multiple age groups.",
+      "venue": "Singapore Sports Hub",
+      "venueAddress": "1 Stadium Drive, Singapore 397629",
+      "bannerUrl": "",
+      "prospectusUrl": "/sample-prospectus.pdf",
+      "eventStartDate": "2026-04-10",
+      "eventEndDate": "2026-04-12",
+      "openDate": "2026-02-01",
+      "closeDate": "2026-03-20",
+      "maxParticipants": 256,
+      "sponsorInfo": "Proudly sponsored by SportsDirect and YonexSG",
+      "consentStatement": "",
+      "programs": [
+        {
+          "id": "prog-1",
+          "name": "Men's Singles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 45,
+          "gender": "Male",
+          "fee": 80,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 64,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        },
+        {
+          "id": "prog-2",
+          "name": "Women's Singles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 45,
+          "gender": "Female",
+          "fee": 80,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 64,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        },
+        {
+          "id": "prog-3",
+          "name": "Men's Doubles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 45,
+          "gender": "Male",
+          "fee": 120,
+          "minPlayers": 2,
+          "maxPlayers": 2,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        },
+        {
+          "id": "prog-4",
+          "name": "Mixed Doubles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 45,
+          "gender": "Mixed",
+          "fee": 120,
+          "minPlayers": 2,
+          "maxPlayers": 2,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": [
+              { "label": "Club Name", "type": "text", "required": false }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "evt-2",
+      "name": "National Junior Badminton Tournament 2026",
+      "description": "Nurturing the next generation of badminton talent. Open to junior players across multiple age categories with professional coaching oversight.",
+      "venue": "Jurong East Sports Centre",
+      "venueAddress": "21 Jurong East Street 31, Singapore 609517",
+      "bannerUrl": "",
+      "prospectusUrl": "/sample-prospectus.pdf",
+      "eventStartDate": "2026-04-20",
+      "eventEndDate": "2026-04-22",
+      "openDate": "2026-02-15",
+      "closeDate": "2026-03-25",
+      "maxParticipants": 128,
+      "sponsorInfo": "Supported by Ministry of Education Sports Division",
+      "consentStatement": "",
+      "programs": [
+        {
+          "id": "prog-5",
+          "name": "Boys U15 Singles",
+          "type": "Knockout",
+          "minAge": 13,
+          "maxAge": 15,
+          "gender": "Male",
+          "fee": 40,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": true,
+            "enableGuardianInfo": true,
+            "customFields": [
+              { "label": "School Name", "type": "text", "required": true }
+            ]
+          }
+        },
+        {
+          "id": "prog-6",
+          "name": "Girls U15 Singles",
+          "type": "Knockout",
+          "minAge": 13,
+          "maxAge": 15,
+          "gender": "Female",
+          "fee": 40,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": true,
+            "enableGuardianInfo": true,
+            "customFields": [
+              { "label": "School Name", "type": "text", "required": true }
+            ]
+          }
+        },
+        {
+          "id": "prog-7",
+          "name": "Boys U19 Singles",
+          "type": "Knockout",
+          "minAge": 16,
+          "maxAge": 19,
+          "gender": "Male",
+          "fee": 50,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "evt-3",
+      "name": "Inter-Club Badminton League 2026",
+      "description": "The premier inter-club competition featuring team-based group stage and knockout rounds. Rally your club members and compete for the league title.",
+      "venue": "Toa Payoh Sports Hall",
+      "venueAddress": "301 Lor 6 Toa Payoh, Singapore 319392",
+      "bannerUrl": "",
+      "prospectusUrl": "/sample-prospectus.pdf",
+      "eventStartDate": "2026-05-05",
+      "eventEndDate": "2026-05-08",
+      "openDate": "2026-03-15",
+      "closeDate": "2026-04-15",
+      "maxParticipants": 200,
+      "sponsorInfo": "",
+      "consentStatement": "",
+      "programs": [
+        {
+          "id": "prog-8",
+          "name": "Team Event",
+          "type": "Group Stage + Knockout",
+          "minAge": 18,
+          "maxAge": 55,
+          "gender": "Mixed",
+          "fee": 200,
+          "minPlayers": 3,
+          "maxPlayers": 5,
+          "maxParticipants": 16,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": [
+              { "label": "Club Name", "type": "text", "required": true },
+              { "label": "Team Captain", "type": "text", "required": true }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "evt-4",
+      "name": "Southeast Asian Badminton Invitational 2026",
+      "description": "An invitational tournament welcoming players from across Southeast Asia. SBA sanctioned event with international ranking points.",
+      "venue": "OCBC Arena",
+      "venueAddress": "5 Stadium Drive, Singapore 397631",
+      "bannerUrl": "",
+      "prospectusUrl": "/sample-prospectus.pdf",
+      "eventStartDate": "2026-06-01",
+      "eventEndDate": "2026-06-03",
+      "openDate": "2026-04-01",
+      "closeDate": "2026-05-01",
+      "maxParticipants": 128,
+      "sponsorInfo": "Title sponsor: OCBC Bank",
+      "consentStatement": "",
+      "programs": [
+        {
+          "id": "prog-9",
+          "name": "Men's Singles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 40,
+          "gender": "Male",
+          "fee": 100,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": true,
+            "enableGuardianInfo": false,
+            "customFields": [
+              { "label": "Country", "type": "text", "required": true }
+            ]
+          }
+        },
+        {
+          "id": "prog-10",
+          "name": "Women's Singles",
+          "type": "Knockout",
+          "minAge": 18,
+          "maxAge": 40,
+          "gender": "Female",
+          "fee": 100,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": true,
+            "enableDocumentUpload": true,
+            "enableGuardianInfo": false,
+            "customFields": [
+              { "label": "Country", "type": "text", "required": true }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "evt-5",
+      "name": "Community Badminton Fest 2026",
+      "description": "A fun, community-focused badminton festival for players of all skill levels. Come enjoy a day of friendly competition and sportsmanship.",
+      "venue": "Bishan Sports Hall",
+      "venueAddress": "5 Bishan Street 14, Singapore 579783",
+      "bannerUrl": "",
+      "prospectusUrl": "",
+      "eventStartDate": "2026-03-01",
+      "eventEndDate": "2026-03-02",
+      "openDate": "2026-01-01",
+      "closeDate": "2026-02-15",
+      "maxParticipants": 100,
+      "sponsorInfo": "",
+      "consentStatement": "",
+      "programs": [
+        {
+          "id": "prog-11",
+          "name": "Open Singles",
+          "type": "Knockout",
+          "minAge": 12,
+          "maxAge": 60,
+          "gender": "Mixed",
+          "fee": 20,
+          "minPlayers": 1,
+          "maxPlayers": 1,
+          "maxParticipants": 64,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        },
+        {
+          "id": "prog-12",
+          "name": "Fun Doubles",
+          "type": "Knockout",
+          "minAge": 12,
+          "maxAge": 60,
+          "gender": "Mixed",
+          "fee": 30,
+          "minPlayers": 2,
+          "maxPlayers": 2,
+          "maxParticipants": 32,
+          "status": "open",
+          "fields": {
+            "enableSbaId": false,
+            "enableDocumentUpload": false,
+            "enableGuardianInfo": false,
+            "customFields": []
+          }
+        }
+      ]
+    }
+  ],
+  "admin": {
+    "users": [
+      { "email": "admin@trs.com", "password": "admin123", "role": "superadmin", "name": "System Admin" },
+      { "email": "manager@trs.com", "password": "manager123", "role": "admin", "name": "Event Manager" }
+    ]
+  }
+}
