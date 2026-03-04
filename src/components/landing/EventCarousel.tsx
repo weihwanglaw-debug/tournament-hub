@@ -10,18 +10,18 @@ import StatusBadge from "@/components/events/StatusBadge";
 
 export default function EventCarousel() {
   const navigate = useNavigate();
-  const visibleEvents = config.events
+  const visibleEvents: TournamentEvent[] = (config.events as TournamentEvent[])
     .filter((e) => {
-      const status = getEventStatus(e as TournamentEvent);
+      const status = getEventStatus(e);
       return status === "open" || status === "upcoming";
     })
     .sort((a, b) => {
-      const sA = getEventStatus(a as TournamentEvent);
-      const sB = getEventStatus(b as TournamentEvent);
+      const sA = getEventStatus(a);
+      const sB = getEventStatus(b);
       if (sA === "open" && sB !== "open") return -1;
       if (sA !== "open" && sB === "open") return 1;
       return new Date(a.eventStartDate).getTime() - new Date(b.eventStartDate).getTime();
-    }) as TournamentEvent[];
+    });
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align: "start",

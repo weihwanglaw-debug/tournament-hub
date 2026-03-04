@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useLiveConfig } from "@/contexts/LiveConfigContext";
 import config from "@/data/config.json";
 import { LogOut, ChevronDown, Sun, Moon, Trophy } from "lucide-react";
 import LoginModal from "@/components/auth/LoginModal";
@@ -9,6 +10,7 @@ import LoginModal from "@/components/auth/LoginModal";
 export default function Header() {
   const { isAuthenticated, user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { cfg } = useLiveConfig();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -27,12 +29,12 @@ export default function Header() {
       >
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 font-heading font-bold text-xl">
-          {config.branding.logoUrl ? (
-            <img src={config.branding.logoUrl} alt={config.branding.appName} className="h-8" />
+          {cfg.logoUrl ? (
+            <img src={cfg.logoUrl} alt={cfg.appName} className="h-8" />
           ) : (
             <Trophy className="h-6 w-6" />
           )}
-          <span>{config.branding.appName}</span>
+          <span>{cfg.appName}</span>
         </Link>
 
         {/* Right side */}
@@ -50,7 +52,7 @@ export default function Header() {
               onClick={() => setLoginOpen(true)}
               className="btn-primary px-5 py-2 text-sm font-semibold"
             >
-              Login
+              Admin Login
             </button>
           ) : (
             <div className="relative">
@@ -66,6 +68,7 @@ export default function Header() {
                   className="absolute right-0 top-full mt-1 w-48 shadow-lg py-1 z-50"
                   style={{ background: "var(--color-page-bg)", color: "var(--color-body-text)" }}
                 >
+                  {/* Only show admin nav links to authenticated users */}
                   {config.nav.menuItems.map((item) => (
                     <Link
                       key={item.href}

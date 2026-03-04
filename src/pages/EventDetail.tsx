@@ -64,7 +64,7 @@ export default function EventDetail() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
 
-  const event = config.events.find((e) => e.id === id) as TournamentEvent | undefined;
+  const event = (config.events as TournamentEvent[]).find((e) => e.id === id);
 
   // Registration state
   const [step, setStep] = useState(1);
@@ -540,6 +540,14 @@ export default function EventDetail() {
 
               <AnimatePresence mode="wait">
 
+                {/* ── STEP 1: Program selection prompt (when no program selected and cart empty) ── */}
+                {step === 1 && !selectedProgram && (
+                  <motion.div key="step1"
+                    initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                    <p className="text-sm opacity-60">Select a program above to begin registration.</p>
+                  </motion.div>
+                )}
+
                 {/* ── STEP 2: Participant Form ── */}
                 {step === 2 && selectedProgram && (
                   <motion.div key="step2"
@@ -897,7 +905,14 @@ export default function EventDetail() {
                             onClick={() => navigate("/payment/result?status=success")}
                             className="btn-primary px-8 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            {isAuthenticated ? "Confirm Registration" : "Proceed to Payment"}
+                            {isAuthenticated
+                              ? "Confirm Registration"
+                              : cart.some(e => {
+                                  const prog = event?.programs.find(p => p.id === e.programId);
+                                  return prog?.paymentRequired && prog.fee > 0;
+                                })
+                              ? "Proceed to Payment"
+                              : "Confirm Registration"}
                           </button>
                         </div>
                         {isAuthenticated && (

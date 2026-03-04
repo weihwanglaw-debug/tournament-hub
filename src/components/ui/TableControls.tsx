@@ -30,7 +30,7 @@ export function useTableControls<T>(data: T[], _columns: unknown[] = []) {
     Object.entries(filters).forEach(([key, val]) => {
       if (!val) return;
       result = result.filter(row =>
-        String((row as any)[key] ?? "").toLowerCase().includes(val.toLowerCase())
+        String((row as Record<string, unknown>)[key] ?? "").toLowerCase().includes(val.toLowerCase())
       );
     });
     return result;
@@ -39,8 +39,8 @@ export function useTableControls<T>(data: T[], _columns: unknown[] = []) {
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered;
     return [...filtered].sort((a, b) => {
-      const av = String((a as any)[sortKey] ?? "");
-      const bv = String((b as any)[sortKey] ?? "");
+      const av = String((a as Record<string, unknown>)[sortKey] ?? "");
+      const bv = String((b as Record<string, unknown>)[sortKey] ?? "");
       return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
   }, [filtered, sortKey, sortDir]);

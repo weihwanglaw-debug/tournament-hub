@@ -1,50 +1,45 @@
 import { useState } from "react";
-import { Plus, Edit2, Key, Trash2, Check, X, Eye, EyeOff } from "lucide-react";
+import { Plus, Edit2, Key, Trash2, Eye, EyeOff, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "superadmin" | "eventadmin";
-  passwordHash: string;   // in real app this would be a hash; we store display placeholder
-  lastLogin?: string;
-}
-
-const INIT_USERS: User[] = [
-  { id: "u1", name: "System Admin",  email: "admin@trs.com",       role: "superadmin",  passwordHash: "••••••••", lastLogin: "2026-03-04" },
-  { id: "u2", name: "Event Manager", email: "events@trs.com",      role: "eventadmin",  passwordHash: "••••••••", lastLogin: "2026-03-02" },
-  { id: "u3", name: "Jane Tan",      email: "jane.tan@trs.com",    role: "eventadmin",  passwordHash: "••••••••", lastLogin: "" },
-];
+import { useAuth } from "@/contexts/AuthContext";
+import { mockUserStore } from "@/data/mockUsers";
+import type { AdminUser } from "@/types/config";
 
 type ModalMode = "create" | "edit" | "reset" | null;
 
 export default function UserManagement() {
-  const [users,   setUsers]   = useState<User[]>(INIT_USERS);
+  const { user: currentUser } = useAuth();
+
+  // Drive table from live store on each render
+  const [, forceRender] = useState(0);
+  const refresh = () => forceRender(n => n + 1);
+  const users = mockUserStore.getAll();
+
   const [modal,   setModal]   = useState<ModalMode>(null);
-  const [target,  setTarget]  = useState<User | null>(null);
+  const [target,  setTarget]  = useState<AdminUser | null>(null);
   const [delConf, setDelConf] = useState<string | null>(null);
 
-  // Form state
-  const [fName,  setFName]  = useState("");
-  const [fEmail, setFEmail] = useState("");
-  const [fRole,  setFRole]  = useState<"superadmin" | "eventadmin">("eventadmin");
-  const [fPass,  setFPass]  = useState("");
-  const [fPass2, setFPass2] = useState("");
+  const [fName,    setFName]    = useState("");
+  const [fEmail,   setFEmail]   = useState("");
+  const [fRole,    setFRole]    = useState<"superadmin" | "eventadmin">("eventadmin");
+  const [fPass,    setFPass]    = useState("");
+  const [fPass2,   setFPass2]   = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [errors, setErrors]    = useState<Record<string, string>>({});
+  const [errors,   setErrors]   = useState<Record<string, string>>({});
 
   const openCreate = () => {
-    setTarget(null); setFName(""); setFEmail(""); setFRole("eventadmin"); setFPass(""); setFPass2(""); setErrors({});
+    setTarget(null); setFName(""); setFEmail(""); setFRole("eventadmin");
+    setFPass(""); setFPass2(""); setErrors({});
     setModal("create");
   };
 
-  const openEdit = (u: User) => {
-    setTarget(u); setFName(u.name); setFEmail(u.email); setFRole(u.role); setFPass(""); setFPass2(""); setErrors({});
+  const openEdit = (u: AdminUser) => {
+    setTarget(u); setFName(u.name); setFEmail(u.email); setFRole(u.role);
+    setFPass(""); setFPass2(""); setErrors({});
     setModal("edit");
   };
 
-  const openReset = (u: User) => {
+  const openReset = (u: AdminUser) => {
     setTarget(u); setFPass(""); setFPass2(""); setErrors({});
     setModal("reset");
   };
@@ -55,11 +50,16 @@ export default function UserManagement() {
       if (!fName.trim())  e.name  = "Required";
       if (!fEmail.trim()) e.email = "Required";
       else if (!/\S+@\S+\.\S+/.test(fEmail)) e.email = "Invalid email";
+      // Check for duplicate email (exclude self when editing)
+      const emailExists = mockUserStore.getAll().some(
+        u => u.email === fEmail && u.id !== target?.id
+      );
+      if (emailExists) e.email = "Email already in use";
     }
     if (mode === "create" || mode === "reset") {
-      if (!fPass.trim())        e.pass  = "Required";
-      else if (fPass.length < 8) e.pass = "Min 8 characters";
-      if (fPass !== fPass2)     e.pass2 = "Passwords do not match";
+      if (!fPass.trim())         e.pass  = "Required";
+      else if (fPass.length < 8) e.pass  = "Min 8 characters";
+      if (fPass !== fPass2)      e.pass2 = "Passwords do not match";
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -68,22 +68,32 @@ export default function UserManagement() {
   const handleSave = () => {
     if (!validate(modal)) return;
     if (modal === "create") {
-      setUsers(prev => [...prev, {
-        id: `u${Date.now()}`, name: fName, email: fEmail, role: fRole, passwordHash: "••••••••",
-      }]);
+      mockUserStore.add({
+        id:           `u${Date.now()}`,
+        name:         fName,
+        email:        fEmail,
+        role:         fRole,
+        password:     fPass,
+        lastLogin:    "",
+      });
     } else if (modal === "edit" && target) {
-      setUsers(prev => prev.map(u => u.id === target.id ? { ...u, name: fName, email: fEmail, role: fRole } : u));
+      mockUserStore.update(target.id, { name: fName, email: fEmail, role: fRole });
     } else if (modal === "reset" && target) {
-      // In real app: POST /api/users/:id/reset-password
-      setUsers(prev => prev.map(u => u.id === target.id ? { ...u, passwordHash: "••••••••" } : u));
+      mockUserStore.update(target.id, { password: fPass });
     }
+    refresh();
     setModal(null);
   };
 
   const handleDelete = () => {
-    setUsers(prev => prev.filter(u => u.id !== delConf));
+    if (delConf) {
+      mockUserStore.remove(delConf);
+      refresh();
+    }
     setDelConf(null);
   };
+
+  const isSelf = (u: AdminUser) => u.id === currentUser?.id;
 
   const roleLabel = (r: string) => r === "superadmin" ? "Super Admin" : "Event Admin";
   const roleBadge = (r: string) => ({
@@ -131,7 +141,12 @@ export default function UserManagement() {
               const rb = roleBadge(u.role);
               return (
                 <tr key={u.id}>
-                  <td className="font-medium text-sm">{u.name}</td>
+                  <td className="font-medium text-sm">
+                    {u.name}
+                    {isSelf(u) && (
+                      <span className="ml-2 text-xs opacity-40">(you)</span>
+                    )}
+                  </td>
                   <td className="text-sm opacity-70 font-mono">{u.email}</td>
                   <td>
                     <span className="inline-flex px-2.5 py-1 text-xs font-semibold"
@@ -142,9 +157,16 @@ export default function UserManagement() {
                   <td className="text-xs opacity-50">{u.lastLogin || "Never"}</td>
                   <td>
                     <div className="flex items-center gap-0">
-                      <IABtn label="Edit User"           onClick={() => openEdit(u)}>  <Edit2 className="h-4 w-4" /></IABtn>
-                      <IABtn label="Reset Password"      onClick={() => openReset(u)}> <Key   className="h-4 w-4" /></IABtn>
-                      <IABtn label="Delete User" danger  onClick={() => setDelConf(u.id)}><Trash2 className="h-4 w-4" /></IABtn>
+                      <IABtn label="Edit User"      onClick={() => openEdit(u)}>  <Edit2 className="h-4 w-4" /></IABtn>
+                      <IABtn label="Reset Password" onClick={() => openReset(u)}> <Key   className="h-4 w-4" /></IABtn>
+                      <IABtn
+                        label={isSelf(u) ? "Cannot delete your own account" : "Delete User"}
+                        danger
+                        disabled={isSelf(u)}
+                        onClick={() => !isSelf(u) && setDelConf(u.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </IABtn>
                     </div>
                   </td>
                 </tr>
@@ -175,7 +197,7 @@ export default function UserManagement() {
               <input className="field-input" type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="jane@example.com" />
             </FF>
             <FF label="Role">
-              <select className="field-input" value={fRole} onChange={e => setFRole(e.target.value as any)}>
+              <select className="field-input" value={fRole} onChange={e => setFRole(e.target.value as "superadmin" | "eventadmin")}>
                 <option value="eventadmin">Event Admin</option>
                 <option value="superadmin">Super Admin</option>
               </select>
@@ -239,9 +261,7 @@ export default function UserManagement() {
           </div>
           <DialogFooter className="p-8 pt-0">
             <button onClick={() => setModal(null)} className="btn-outline px-5 py-2.5 text-sm font-medium">Cancel</button>
-            <button onClick={handleSave} className="btn-primary px-5 py-2.5 text-sm font-semibold">
-              Reset Password
-            </button>
+            <button onClick={handleSave} className="btn-primary px-5 py-2.5 text-sm font-semibold">Reset Password</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -283,14 +303,22 @@ function FF({ label, error, children }: { label: string; error?: string; childre
   );
 }
 
-function IABtn({ label, onClick, danger = false, children }: {
-  label: string; onClick: () => void; danger?: boolean; children: React.ReactNode;
+function IABtn({ label, onClick, danger = false, disabled = false, children }: {
+  label: string; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode;
 }) {
   return (
-    <button title={label} onClick={onClick}
-      className="p-2 transition-opacity hover:opacity-60"
-      style={{ color: danger ? "var(--badge-open-text)" : "var(--color-primary)" }}>
+    <button
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="p-2 transition-opacity hover:opacity-60 disabled:opacity-20 disabled:cursor-not-allowed"
+      style={{ color: danger ? "var(--badge-open-text)" : "var(--color-primary)" }}
+    >
       {children}
     </button>
   );
 }
+
+// suppress unused import warning
+const _Check = Check;
+const _EyeOff = EyeOff;

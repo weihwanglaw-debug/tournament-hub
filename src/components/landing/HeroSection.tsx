@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import config from "@/data/config.json";
+import { useLiveConfig } from "@/contexts/LiveConfigContext";
 
 export default function HeroSection() {
+  const { cfg } = useLiveConfig();
   return (
     <section
       className="relative flex items-center justify-center text-center px-8"
@@ -21,7 +22,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          {config.hero.title}
+          {cfg.heroTitle}
         </motion.h1>
         <motion.p
           className="text-lg md:text-xl opacity-80 max-w-2xl mx-auto"
@@ -29,7 +30,7 @@ export default function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.15 }}
         >
-          {config.hero.subtitle}
+          {cfg.heroSubtitle}
         </motion.p>
       </div>
     </section>

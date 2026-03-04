@@ -1,49 +1,45 @@
 import { useState } from "react";
-import { Save, Check, Plus, Trash2, Edit2, X } from "lucide-react";
-import config from "@/data/config.json";
+import { Check, Edit2, X } from "lucide-react";
+import { useLiveConfig } from "@/contexts/LiveConfigContext";
+import type { LiveConfig } from "@/contexts/LiveConfigContext";
 
-// ── Flatten ALL master config into a single key-value table ──────────────────
-// Each row: group | key | label | value | type (text | url | textarea | color)
+// Re-export the type so other files can use it if needed
+export type { LiveConfig };
+
 interface ConfigRow {
-  id:    string;
+  id:    keyof LiveConfig;
   group: string;
   label: string;
-  value: string;
   type:  "text" | "url" | "textarea";
 }
 
-const INITIAL_ROWS: ConfigRow[] = [
-  // Branding
-  { id: "branding.appName",   group: "Branding",  label: "Application Name",  value: config.branding.appName,  type: "text"     },
-  { id: "branding.logoUrl",   group: "Branding",  label: "Logo URL",           value: config.branding.logoUrl,  type: "url"      },
-  // Hero
-  { id: "hero.title",         group: "Hero",      label: "Hero Title",         value: config.hero.title,        type: "text"     },
-  { id: "hero.subtitle",      group: "Hero",      label: "Hero Subtitle",      value: config.hero.subtitle,     type: "textarea" },
-  // Payment
-  { id: "payment.currency",   group: "Payment",   label: "Currency Code",      value: config.payment.currency,  type: "text"     },
-  // Footer
-  { id: "footer.contactEmail",  group: "Footer",  label: "Contact Email",      value: config.footer.contactEmail,  type: "text" },
-  { id: "footer.copyrightText", group: "Footer",  label: "Copyright Text",     value: config.footer.copyrightText, type: "text" },
-  // Consent
-  { id: "consentText",          group: "Consent", label: "Consent Statement (applies to all events)", value: config.consentText, type: "textarea" },
+const CONFIG_ROWS: ConfigRow[] = [
+  { id: "appName",       group: "Branding",  label: "Application Name",                         type: "text"     },
+  { id: "logoUrl",       group: "Branding",  label: "Logo URL",                                 type: "url"      },
+  { id: "heroTitle",     group: "Hero",      label: "Hero Title",                               type: "text"     },
+  { id: "heroSubtitle",  group: "Hero",      label: "Hero Subtitle",                            type: "textarea" },
+  { id: "currency",      group: "Payment",   label: "Currency Code",                            type: "text"     },
+  { id: "contactEmail",  group: "Footer",    label: "Contact Email",                            type: "text"     },
+  { id: "copyrightText", group: "Footer",    label: "Copyright Text",                           type: "text"     },
+  { id: "consentText",   group: "Consent",   label: "Consent Statement (applies to all events)",type: "textarea" },
 ];
 
-const GROUPS = ["Branding", "Hero", "Payment", "Footer", "Consent"];
+const GROUPS = ["All", "Branding", "Hero", "Payment", "Footer", "Consent"];
 
 export default function MasterConfig() {
-  const [rows,      setRows]      = useState<ConfigRow[]>(INITIAL_ROWS);
-  const [editId,    setEditId]    = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [saved,     setSaved]     = useState<string | null>(null);
-  const [activeGroup, setActiveGroup] = useState("All");
+  const { cfg, update } = useLiveConfig();
+  const [editId,       setEditId]       = useState<keyof LiveConfig | null>(null);
+  const [editValue,    setEditValue]    = useState("");
+  const [saved,        setSaved]        = useState<string | null>(null);
+  const [activeGroup,  setActiveGroup]  = useState("All");
 
   const startEdit = (row: ConfigRow) => {
     setEditId(row.id);
-    setEditValue(row.value);
+    setEditValue(cfg[row.id]);
   };
 
-  const commitEdit = (id: string) => {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, value: editValue } : r));
+  const commitEdit = (id: keyof LiveConfig) => {
+    update(id, editValue);
     setEditId(null);
     setSaved(id);
     setTimeout(() => setSaved(null), 2000);
@@ -51,20 +47,20 @@ export default function MasterConfig() {
 
   const cancelEdit = () => setEditId(null);
 
-  const groups = ["All", ...GROUPS];
-  const visible = rows.filter(r => activeGroup === "All" || r.group === activeGroup);
-
-  // Group rows for display
+  const visible = CONFIG_ROWS.filter(r => activeGroup === "All" || r.group === activeGroup);
   const byGroup: Record<string, ConfigRow[]> = {};
   visible.forEach(r => { if (!byGroup[r.group]) byGroup[r.group] = []; byGroup[r.group].push(r); });
 
   return (
     <div>
-      <h1 className="font-bold text-2xl mb-8">Master Configuration</h1>
+      <h1 className="font-bold text-2xl mb-2">Master Configuration</h1>
+      <p className="text-xs opacity-50 mb-8">
+        Changes here apply live across the app. In production, values are persisted via PUT /api/config.
+      </p>
 
       {/* Group filter tabs */}
       <div className="flex flex-wrap gap-0 mb-8" style={{ borderBottom: "2px solid var(--color-table-border)" }}>
-        {groups.map(g => (
+        {GROUPS.map(g => (
           <button key={g} onClick={() => setActiveGroup(g)}
             className="px-5 py-2.5 text-sm font-semibold transition-colors"
             style={{
@@ -89,7 +85,7 @@ export default function MasterConfig() {
                 <thead>
                   <tr>
                     <th style={{ width: "30%" }}>Setting</th>
-                    <th>Value</th>
+                    <th>Current Value</th>
                     <th style={{ width: 80 }}>Action</th>
                   </tr>
                 </thead>
@@ -113,11 +109,9 @@ export default function MasterConfig() {
                               onKeyDown={e => { if (e.key === "Enter") commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
                           )
                         ) : (
-                          <div className="flex items-start justify-between gap-2 group">
-                            <span className={`text-sm ${row.type === "textarea" ? "whitespace-pre-wrap" : "truncate max-w-md"} ${!row.value ? "opacity-30 italic" : ""}`}>
-                              {row.value || "(empty)"}
-                            </span>
-                          </div>
+                          <span className={`text-sm ${row.type === "textarea" ? "whitespace-pre-wrap" : "truncate max-w-md block"} ${!cfg[row.id] ? "opacity-30 italic" : ""}`}>
+                            {cfg[row.id] || "(empty)"}
+                          </span>
                         )}
                       </td>
                       <td>
@@ -148,10 +142,6 @@ export default function MasterConfig() {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="mt-8 pt-6" style={{ borderTop: "1px solid var(--color-table-border)" }}>
-        <p className="text-xs opacity-40">Click any ✏️ to edit inline. Changes are saved immediately per row. In production, values are persisted via PUT /api/config.</p>
       </div>
     </div>
   );

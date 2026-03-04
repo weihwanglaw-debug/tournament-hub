@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LiveConfigProvider } from "@/contexts/LiveConfigContext";
 
 import Landing from "@/pages/Landing";
 import EventDetail from "@/pages/EventDetail";
@@ -25,30 +26,32 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/event/:id" element={<EventDetail />} />
-              <Route path="/payment/result" element={<PaymentResult />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<Dashboard />} />
-                <Route path="events" element={<AdminEvents />} />
-                <Route path="events/:eventId" element={<EventEdit />} />
-                <Route path="registrations" element={<AdminRegistrations />} />
-                <Route path="fixtures" element={<AdminFixtures />} />
-                <Route path="config" element={<MasterConfig />} />
-                <Route path="users" element={<UserManagement />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+      <LiveConfigProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/event/:id" element={<EventDetail />} />
+                <Route path="/payment/result" element={<PaymentResult />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="events" element={<AdminEvents />} />
+                  <Route path="events/:eventId" element={<EventEdit />} />
+                  <Route path="registrations" element={<AdminRegistrations />} />
+                  <Route path="fixtures" element={<AdminFixtures />} />
+                  <Route path="config" element={<MasterConfig />} />
+                  <Route path="users" element={<UserManagement />} />
+                </Route>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </LiveConfigProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

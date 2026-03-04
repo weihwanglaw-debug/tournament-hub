@@ -8,7 +8,7 @@ import { Plus, Eye, Users } from "lucide-react";
 
 export default function AdminEvents() {
   const navigate  = useNavigate();
-  const events    = config.events as TournamentEvent[];
+  const events = config.events as TournamentEvent[];
 
   const [filterStatus,    setFilterStatus]    = useState("");
   const [filterDateFrom,  setFilterDateFrom]  = useState("");
@@ -111,7 +111,7 @@ export default function AdminEvents() {
                 <tr key={event.id}>
                   <td className="font-medium">{event.name}</td>
                   <td className="text-sm opacity-70">
-                    {(event as any).isSports ? (event as any).sportType || "Sports" : "Non-sports"}
+                    {event.isSports ? event.sportType || "Sports" : "Non-sports"}
                   </td>
                   <td className="text-sm">
                     {formatDate(event.eventStartDate)} – {formatDate(event.eventEndDate)}

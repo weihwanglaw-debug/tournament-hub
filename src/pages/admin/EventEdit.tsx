@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2, Scissors } from "lucide-react";
 import config from "@/data/config.json";
 import type { TournamentEvent, Program } from "@/types/config";
 import { formatDate, getEventStatus } from "@/lib/eventUtils";
@@ -12,11 +12,18 @@ const SPORT_TYPES = ["Badminton", "Football", "Basketball", "Volleyball", "Swimm
 const MAX_IMAGE_MB = 2;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+function generateEventId() {
+  return `evt-${Date.now().toString(36)}`;
+}
+function generateProgramId() {
+  return `prog-${Date.now().toString(36)}`;
+}
+
 export default function EventEdit() {
   const { eventId } = useParams();
   const navigate    = useNavigate();
   const isNew       = eventId === "new";
-  const existing    = config.events.find(e => e.id === eventId) as TournamentEvent | undefined;
+  const existing = (config.events as TournamentEvent[]).find(e => e.id === eventId);
 
   const [editing, setEditing] = useState(isNew);
   const [programModalOpen, setProgramModalOpen] = useState(false);
@@ -24,8 +31,11 @@ export default function EventEdit() {
   const [seedingOpen,      setSeedingOpen]      = useState(false);
   const [seedingProgramId, setSeedingProgramId] = useState("");
 
+  // Local programs list — starts from existing config, supports add/edit in-session
+  const [programs, setPrograms] = useState<Program[]>(existing?.programs || []);
+
   // Gallery state
-  const [gallery, setGallery]         = useState<string[]>((existing as any)?.galleryUrls || []);
+  const [gallery, setGallery]         = useState<string[]>(existing?.galleryUrls || []);
   const [galleryError, setGalleryError] = useState("");
   const galleryRef = useRef<HTMLInputElement>(null);
 
@@ -43,9 +53,9 @@ export default function EventEdit() {
     bannerUrl:       existing?.bannerUrl       || "",
     prospectusUrl:   existing?.prospectusUrl   || "",
     // Sport settings at event level
-    isSports:    (existing as any)?.isSports    ?? true,
-    sportType:   (existing as any)?.sportType   || "Badminton",
-    fixtureMode: (existing as any)?.fixtureMode || "internal" as "internal" | "external",
+    isSports:    existing?.isSports    ?? true,
+    sportType:   existing?.sportType   || "Badminton",
+    fixtureMode: existing?.fixtureMode || "internal" as "internal" | "external",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -83,21 +93,33 @@ export default function EventEdit() {
     const e: Record<string, string> = {};
     if (!form.name.trim())  e.name  = "Required";
     if (!form.venue.trim()) e.venue = "Required";
+    if (!form.eventStartDate) e.eventStartDate = "Required";
+    if (!form.openDate)       e.openDate       = "Required";
+    if (!form.closeDate)      e.closeDate      = "Required";
     if (form.eventEndDate && form.eventStartDate && form.eventEndDate < form.eventStartDate)
-      e.eventEndDate = "Must be after start date";
+      e.eventEndDate = "Must be on or after start date";
     if (form.closeDate && form.eventStartDate && form.closeDate >= form.eventStartDate)
-      e.closeDate = "Must be before event start";
+      e.closeDate = "Must be before event start date";
+    if (form.openDate && form.closeDate && form.openDate >= form.closeDate)
+      e.openDate = "Must be before close date";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const handleSave = () => {
     if (!validate()) return;
+    if (isNew) {
+      const newId = generateEventId();
+      // In mock stage: show a toast/alert indicating the event would be saved
+      // Backend will persist; for now navigate to list as if saved
+      alert(`[MOCK] Event "${form.name}" created with ID ${newId}.\nIn production this will be persisted via POST /api/events.`);
+      navigate("/admin/events");
+      return;
+    }
     setEditing(false);
   };
 
-  const programs = existing?.programs || [];
-  const status   = existing ? getEventStatus(existing) : undefined;
+  const status = existing ? getEventStatus(existing) : undefined;
 
   return (
     <div>
@@ -189,7 +211,11 @@ export default function EventEdit() {
           </div>
           <FF label="Prospectus PDF">
             {editing
-              ? <input type="file" accept=".pdf" className="field-input" />
+              ? <input type="file" accept=".pdf" className="field-input"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) set("prospectusUrl", file.name);
+                  }} />
               : <p className="text-sm opacity-60">{form.prospectusUrl || "No prospectus uploaded"}</p>}
           </FF>
           <div className="md:col-span-2">
@@ -352,6 +378,9 @@ export default function EventEdit() {
                         <IBtn title="Edit Program" onClick={() => { setEditingProgram(prog); setProgramModalOpen(true); }}>
                           <Edit2 className="h-4 w-4" />
                         </IBtn>
+                        <IBtn title="Seeding" onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); }}>
+                          <Scissors className="h-4 w-4" />
+                        </IBtn>
                         <IBtn title="View Registrations" onClick={() => navigate(`/admin/registrations?event=${eventId}&program=${prog.id}`)}>
                           <Users className="h-4 w-4" />
                         </IBtn>
@@ -368,6 +397,17 @@ export default function EventEdit() {
       <ProgramModal
         open={programModalOpen}
         onClose={() => { setProgramModalOpen(false); setEditingProgram(null); }}
+        onSave={(savedProgram: Program) => {
+          if (editingProgram) {
+            // Edit existing
+            setPrograms(prev => prev.map(p => p.id === savedProgram.id ? savedProgram : p));
+          } else {
+            // Create new — assign a fresh ID
+            setPrograms(prev => [...prev, { ...savedProgram, id: generateProgramId(), currentParticipants: 0 }]);
+          }
+          setProgramModalOpen(false);
+          setEditingProgram(null);
+        }}
         program={editingProgram}
         isBadminton={isBadminton}
       />

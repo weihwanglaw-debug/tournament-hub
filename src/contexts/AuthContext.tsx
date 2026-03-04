@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import config from "@/data/config.json";
 import type { AdminUser } from "@/types/config";
+import { mockUserStore } from "@/data/mockUsers";
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -24,17 +24,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const saved = localStorage.getItem("trs_user");
     if (saved) {
-      try { setUser(JSON.parse(saved)); } catch { localStorage.removeItem("trs_user"); }
+      try {
+        const parsed: AdminUser = JSON.parse(saved);
+        // Re-validate against live store in case user was deleted
+        const stillExists = mockUserStore.getAll().find(u => u.id === parsed.id);
+        if (stillExists) setUser(stillExists);
+        else localStorage.removeItem("trs_user");
+      } catch {
+        localStorage.removeItem("trs_user");
+      }
     }
   }, []);
 
   const login = (email: string, password: string): string | null => {
-    const found = config.admin.users.find(
-      (u) => u.email === email && u.password === password
-    );
+    const found = mockUserStore.findByCredentials(email, password);
     if (!found) return "Invalid email or password";
-    setUser(found);
-    localStorage.setItem("trs_user", JSON.stringify(found));
+    mockUserStore.updateLastLogin(found.id);
+    const updated = mockUserStore.getAll().find(u => u.id === found.id) ?? found;
+    setUser(updated);
+    localStorage.setItem("trs_user", JSON.stringify(updated));
     return null;
   };
 

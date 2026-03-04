@@ -6,8 +6,9 @@ import type { Program } from "@/types/config";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onSave: (program: Program) => void;
   program: Program | null;
-  isBadminton?: boolean;   // passed from parent (event-level sport setting)
+  isBadminton?: boolean;
 }
 
 const FIELD_TYPES = [
@@ -19,7 +20,7 @@ const FIELD_TYPES = [
 
 type CF = { label: string; type: string; mandatory: boolean; options: string };
 
-export default function ProgramModal({ open, onClose, program, isBadminton = false }: Props) {
+export default function ProgramModal({ open, onClose, onSave, program, isBadminton = false }: Props) {
   const isEdit = !!program;
 
   const [form, setForm] = useState({
@@ -52,7 +53,7 @@ export default function ProgramModal({ open, onClose, program, isBadminton = fal
         maxAge:          program.maxAge,
         gender:          program.gender,
         fee:             program.fee.toFixed(2),
-        paymentRequired: (program as any).paymentRequired ?? true,
+        paymentRequired: program.paymentRequired ?? true,
         minPlayers:      program.minPlayers,
         maxPlayers:      program.maxPlayers,
         minParticipants: program.minParticipants ?? 4,
@@ -62,7 +63,7 @@ export default function ProgramModal({ open, onClose, program, isBadminton = fal
         enableGuardianInfo:   program.fields.enableGuardianInfo,
         enableRemark:         program.fields.enableRemark ?? false,
         customFields: program.fields.customFields.map(cf => ({
-          label: cf.label, type: cf.type, mandatory: cf.required, options: (cf as any).options || "",
+          label: cf.label, type: cf.type, mandatory: cf.required, options: cf.options || "",
         })),
       });
     } else {
@@ -89,7 +90,36 @@ export default function ProgramModal({ open, onClose, program, isBadminton = fal
 
   const handleSave = () => {
     if (!form.name.trim()) return;
-    onClose();
+    const savedProgram: Program = {
+      id: program?.id || "",          // ID assigned by parent on create
+      name: form.name,
+      type: form.type,
+      minAge: form.minAge,
+      maxAge: form.maxAge,
+      gender: form.gender,
+      fee: parseFloat(form.fee) || 0,
+      paymentRequired: form.paymentRequired,
+      minPlayers: form.minPlayers,
+      maxPlayers: form.maxPlayers,
+      minParticipants: form.minParticipants,
+      maxParticipants: form.maxParticipants,
+      currentParticipants: program?.currentParticipants ?? 0,
+      status: program?.status ?? "open",
+      sbaRequired: form.enableSbaId,
+      fields: {
+        enableSbaId:          form.enableSbaId,
+        enableDocumentUpload: form.enableDocumentUpload,
+        enableGuardianInfo:   form.enableGuardianInfo,
+        enableRemark:         form.enableRemark,
+        customFields: form.customFields.map(cf => ({
+          label:    cf.label,
+          type:     cf.type,
+          required: cf.mandatory,
+          options:  cf.options || undefined,
+        })),
+      },
+    };
+    onSave(savedProgram);
   };
 
   return (
@@ -220,7 +250,7 @@ export default function ProgramModal({ open, onClose, program, isBadminton = fal
                 <label key={opt.key}
                   className="flex items-center gap-2 text-sm cursor-pointer p-3"
                   style={{ border: "1px solid var(--color-table-border)" }}>
-                  <input type="checkbox" checked={(form as any)[opt.key]}
+                  <input type="checkbox" checked={form[opt.key as keyof typeof form] as boolean}
                     onChange={e => s(opt.key, e.target.checked)} />
                   {opt.label}
                 </label>

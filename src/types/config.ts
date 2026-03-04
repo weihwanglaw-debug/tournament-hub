@@ -22,6 +22,7 @@ export interface Program {
   gender: string;
   fee: number;
   paymentRequired: boolean;
+  sbaRequired?: boolean;
   minPlayers: number;
   maxPlayers: number;
   minParticipants: number;
@@ -60,8 +61,10 @@ export interface TournamentEvent {
 export interface AdminUser {
   id: string;
   email: string;
+  password: string;       // plaintext for mock; backend will hash
   role: "superadmin" | "eventadmin";
   name: string;
+  lastLogin?: string;
 }
 
 export interface ConfigEntry {

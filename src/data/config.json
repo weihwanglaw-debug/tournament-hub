@@ -9,24 +9,54 @@
   },
   "nav": {
     "menuItems": [
-      { "label": "Dashboard", "href": "/admin" },
-      { "label": "Events", "href": "/admin/events" },
-      { "label": "Registrations", "href": "/admin/registrations" },
-      { "label": "Fixtures", "href": "/admin/fixtures" }
+      {
+        "label": "Dashboard",
+        "href": "/admin"
+      },
+      {
+        "label": "Events",
+        "href": "/admin/events"
+      },
+      {
+        "label": "Registrations",
+        "href": "/admin/registrations"
+      },
+      {
+        "label": "Fixtures",
+        "href": "/admin/fixtures"
+      }
     ]
   },
   "footer": {
     "socialLinks": [
-      { "platform": "Facebook", "url": "https://facebook.com/sbatournaments" },
-      { "platform": "Instagram", "url": "https://instagram.com/sbatournaments" },
-      { "platform": "X", "url": "https://x.com/sbatournaments" },
-      { "platform": "LinkedIn", "url": "https://linkedin.com/company/sbatournaments" }
+      {
+        "platform": "Facebook",
+        "url": "https://facebook.com/sbatournaments"
+      },
+      {
+        "platform": "Instagram",
+        "url": "https://instagram.com/sbatournaments"
+      },
+      {
+        "platform": "X",
+        "url": "https://x.com/sbatournaments"
+      },
+      {
+        "platform": "LinkedIn",
+        "url": "https://linkedin.com/company/sbatournaments"
+      }
     ],
     "contactEmail": "tournaments@sba.org.sg",
-    "copyrightText": "© 2026 Singapore Badminton Association. All rights reserved.",
+    "copyrightText": "\u00a9 2026 Singapore Badminton Association. All rights reserved.",
     "extraLinks": [
-      { "label": "Privacy Policy", "href": "/privacy" },
-      { "label": "Terms of Service", "href": "/terms" }
+      {
+        "label": "Privacy Policy",
+        "href": "/privacy"
+      },
+      {
+        "label": "Terms of Service",
+        "href": "/terms"
+      }
     ]
   },
   "consentText": "I confirm that all information provided is accurate and complete. I agree to the tournament rules and regulations, and I consent to the collection and use of my personal data for the purpose of tournament registration, communication, and administration in accordance with the Personal Data Protection Act (PDPA).",
@@ -74,7 +104,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 48,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         },
         {
           "id": "prog-2",
@@ -96,7 +127,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 14,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         },
         {
           "id": "prog-3",
@@ -118,7 +150,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 32,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         },
         {
           "id": "prog-4",
@@ -137,12 +170,17 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": [
-              { "label": "Club Name", "type": "text", "required": false }
+              {
+                "label": "Club Name",
+                "type": "text",
+                "required": false
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 20,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         }
       ]
     },
@@ -183,12 +221,17 @@
             "enableDocumentUpload": true,
             "enableGuardianInfo": true,
             "customFields": [
-              { "label": "School Name", "type": "text", "required": true }
+              {
+                "label": "School Name",
+                "type": "text",
+                "required": true
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 10,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": true
         },
         {
           "id": "prog-6",
@@ -207,12 +250,17 @@
             "enableDocumentUpload": true,
             "enableGuardianInfo": true,
             "customFields": [
-              { "label": "School Name", "type": "text", "required": true }
+              {
+                "label": "School Name",
+                "type": "text",
+                "required": true
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 8,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": true
         },
         {
           "id": "prog-7",
@@ -234,7 +282,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 5,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": true
         }
       ]
     },
@@ -275,13 +324,22 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": [
-              { "label": "Club Name", "type": "text", "required": true },
-              { "label": "Team Captain", "type": "text", "required": true }
+              {
+                "label": "Club Name",
+                "type": "text",
+                "required": true
+              },
+              {
+                "label": "Team Captain",
+                "type": "text",
+                "required": true
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 6,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": true
         }
       ]
     },
@@ -322,12 +380,17 @@
             "enableDocumentUpload": true,
             "enableGuardianInfo": false,
             "customFields": [
-              { "label": "Country", "type": "text", "required": true }
+              {
+                "label": "Country",
+                "type": "text",
+                "required": true
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 18,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         },
         {
           "id": "prog-10",
@@ -346,12 +409,17 @@
             "enableDocumentUpload": true,
             "enableGuardianInfo": false,
             "customFields": [
-              { "label": "Country", "type": "text", "required": true }
+              {
+                "label": "Country",
+                "type": "text",
+                "required": true
+              }
             ]
           },
           "minParticipants": 4,
           "currentParticipants": 12,
-          "sbaRequired": true
+          "sbaRequired": true,
+          "paymentRequired": true
         }
       ]
     },
@@ -395,7 +463,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 30,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": false
         },
         {
           "id": "prog-12",
@@ -417,7 +486,8 @@
           },
           "minParticipants": 4,
           "currentParticipants": 14,
-          "sbaRequired": false
+          "sbaRequired": false,
+          "paymentRequired": false
         }
       ]
     }

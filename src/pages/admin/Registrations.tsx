@@ -11,9 +11,9 @@ const INIT_REGS = [
   { id: "R001", club: "Pasir Ris BC",    name: "Lee Wei Jie",             event: "evt-1", eventName: "Singapore Open 2026", program: "prog-1", programName: "Men's Singles",    paymentStatus: "Pending",  regStatus: "Pending",   amount: 80  },
   { id: "R002", club: "Tampines BC",     name: "Tan Mei Ling",            event: "evt-1", eventName: "Singapore Open 2026", program: "prog-2", programName: "Women's Singles",  paymentStatus: "Pending",  regStatus: "Pending",   amount: 80  },
   { id: "R003", club: "Jurong BC",       name: "Ravi Kumar / Wong Xiu",   event: "evt-1", eventName: "Singapore Open 2026", program: "prog-3", programName: "Mixed Doubles",    paymentStatus: "Paid",     regStatus: "Confirmed", amount: 120 },
-  { id: "R004", club: "Bishan SC",       name: "Michael Ng",              event: "evt-2", eventName: "Junior Tournament",   program: "prog-8", programName: "Boys U15 Singles", paymentStatus: "Paid",     regStatus: "Confirmed", amount: 40  },
-  { id: "R005", club: "Serangoon BC",    name: "Rachel Tan",              event: "evt-2", eventName: "Junior Tournament",   program: "prog-8", programName: "Girls U15 Singles",paymentStatus: "Refunded", regStatus: "Cancelled", amount: 40  },
-  { id: "R006", club: "Yishun United",   name: "Wei Hao",                 event: "evt-3", eventName: "Inter-Club League",   program: "prog-9", programName: "Team Event",       paymentStatus: "Pending",  regStatus: "Pending",   amount: 200 },
+  { id: "R004", club: "Bishan SC",       name: "Michael Ng",              event: "evt-2", eventName: "Junior Tournament",   program: "prog-5", programName: "Boys U15 Singles", paymentStatus: "Paid",     regStatus: "Confirmed", amount: 40  },
+  { id: "R005", club: "Serangoon BC",    name: "Rachel Tan",              event: "evt-2", eventName: "Junior Tournament",   program: "prog-6", programName: "Girls U15 Singles",paymentStatus: "Refunded", regStatus: "Cancelled", amount: 40  },
+  { id: "R006", club: "Yishun United",   name: "Wei Hao",                 event: "evt-3", eventName: "Inter-Club League",   program: "prog-8", programName: "Team Event",       paymentStatus: "Pending",  regStatus: "Pending",   amount: 200 },
 ];
 
 // ── Sample payments with line-item structure ────────────────────────────────
@@ -53,6 +53,15 @@ const INIT_PAYMENTS: PaymentRecord[] = [
     paymentStatus: "Pending",
     lineItems: [
       { id: "li4", label: "Registration Fee — Men's Singles", amount: 80, refundedAmount: 0, refundStatus: "None" },
+    ],
+  },
+  {
+    id: "TXN-005", registrationId: "R006", event: "Inter-Club League", program: "Team Event",
+    participants: "Wei Hao", method: "Others", paidDate: "",
+    receiptNumber: "",
+    paymentStatus: "Pending",
+    lineItems: [
+      { id: "li5", label: "Registration Fee — Team Event", amount: 200, refundedAmount: 0, refundStatus: "None" },
     ],
   },
 ];
@@ -153,9 +162,26 @@ export default function AdminRegistrations() {
 
   const handleCancelAndRefund = () => {
     if (!cancelReason.trim()) return;
+    const reg = regData.find(r => r.id === cancelModal);
+    const wasPaid = reg?.paymentStatus === "Paid";
     setRegData(prev => prev.map(r => r.id === cancelModal
-      ? { ...r, regStatus: "Cancelled", paymentStatus: r.paymentStatus === "Paid" ? "Refunded" : r.paymentStatus }
+      ? { ...r, regStatus: "Cancelled", paymentStatus: wasPaid ? "Refunded" : r.paymentStatus }
       : r));
+    // Mirror refund on the payment record
+    if (wasPaid) {
+      const today = new Date().toISOString().slice(0, 10);
+      setPayments(prev => prev.map(p => {
+        if (p.registrationId !== cancelModal) return p;
+        const updatedItems = p.lineItems.map(li => ({
+          ...li,
+          refundedAmount: li.amount,
+          refundStatus: "Full" as const,
+          refundDate: today,
+          refundReason: `Cancelled: ${cancelReason}`,
+        }));
+        return { ...p, lineItems: updatedItems, paymentStatus: "Refunded" };
+      }));
+    }
     setCancelModal(null); setCancelReason("");
   };
 

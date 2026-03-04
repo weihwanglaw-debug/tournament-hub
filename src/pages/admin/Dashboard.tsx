@@ -1,18 +1,24 @@
 import config from "@/data/config.json";
 import type { TournamentEvent } from "@/types/config";
 import { getEventStatus } from "@/lib/eventUtils";
-import { CalendarDays, CalendarCheck, Activity, FileDown } from "lucide-react";
+import { CalendarDays, CalendarCheck, Activity, FileDown, Users } from "lucide-react";
+
+// In mock stage: derive registration count from sample data total participants
+const MOCK_TOTAL_REGISTRATIONS = 6;   // matches INIT_REGS length in Registrations.tsx
+const MOCK_CONFIRMED           = 2;
 
 export default function Dashboard() {
-  const events = config.events as TournamentEvent[];
-  const openCount = events.filter((e) => getEventStatus(e) === "open").length;
+  const events        = config.events as TournamentEvent[];
+  const openCount     = events.filter((e) => getEventStatus(e) === "open").length;
   const upcomingCount = events.filter((e) => getEventStatus(e) === "upcoming").length;
-  const activeCount = openCount;
+  const totalPrograms = events.reduce((s, e) => s + e.programs.length, 0);
 
   const metrics = [
-    { label: "Open Registrations", value: openCount, icon: CalendarCheck, color: "var(--badge-open-text)" },
-    { label: "Upcoming Events", value: upcomingCount, icon: CalendarDays, color: "var(--badge-soon-text)" },
-    { label: "Active Events", value: activeCount, icon: Activity, color: "var(--color-primary)" },
+    { label: "Open Events",          value: openCount,                  icon: CalendarCheck, color: "var(--badge-open-text)"  },
+    { label: "Upcoming Events",      value: upcomingCount,              icon: CalendarDays,  color: "var(--badge-soon-text)"  },
+    { label: "Total Programs",       value: totalPrograms,              icon: Activity,      color: "var(--color-primary)"    },
+    { label: "Total Registrations",  value: MOCK_TOTAL_REGISTRATIONS,   icon: Users,         color: "var(--color-primary)"    },
+    { label: "Confirmed",            value: MOCK_CONFIRMED,             icon: Users,         color: "var(--badge-open-text)"  },
   ];
 
   const reports = [
@@ -23,12 +29,17 @@ export default function Dashboard() {
     "Fixture Schedule",
   ];
 
+  const handleDownload = (report: string, format: string) => {
+    // Mock: in production this triggers GET /api/reports/:type?format=xlsx|csv
+    alert(`[MOCK] Download "${report}" as ${format}\nIn production this will call GET /api/reports.`);
+  };
+
   return (
     <div>
       <h1 className="font-heading font-bold text-2xl mb-8">Dashboard</h1>
 
       {/* Metrics */}
-      <div className="grid sm:grid-cols-3 gap-5 mb-12">
+      <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-5 mb-12">
         {metrics.map((m) => (
           <div
             key={m.label}
@@ -37,7 +48,7 @@ export default function Dashboard() {
           >
             <div className="flex items-center gap-3 mb-3">
               <m.icon className="h-5 w-5" style={{ color: m.color }} />
-              <span className="text-sm font-medium opacity-70">{m.label}</span>
+              <span className="text-xs font-medium opacity-70">{m.label}</span>
             </div>
             <p className="font-heading font-bold text-3xl" style={{ color: m.color }}>
               {m.value}
@@ -57,16 +68,28 @@ export default function Dashboard() {
           >
             <span className="text-sm font-medium">{report}</span>
             <div className="flex gap-2">
-              <button className="flex items-center gap-1 text-xs font-medium px-3 py-1.5" style={{ color: "var(--color-primary)" }}>
+              <button
+                onClick={() => handleDownload(report, "Excel")}
+                className="flex items-center gap-1 text-xs font-medium px-3 py-1.5"
+                style={{ color: "var(--color-primary)" }}
+              >
                 <FileDown className="h-3 w-3" /> Excel
               </button>
-              <button className="flex items-center gap-1 text-xs font-medium px-3 py-1.5" style={{ color: "var(--color-primary)" }}>
+              <button
+                onClick={() => handleDownload(report, "CSV")}
+                className="flex items-center gap-1 text-xs font-medium px-3 py-1.5"
+                style={{ color: "var(--color-primary)" }}
+              >
                 <FileDown className="h-3 w-3" /> CSV
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      <p className="text-xs mt-6 opacity-40">
+        Registration counts are mock values. Reports will be generated from live data in production.
+      </p>
     </div>
   );
 }

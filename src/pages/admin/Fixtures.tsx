@@ -91,8 +91,8 @@ export default function AdminFixtures() {
   // Derive mode from event settings
   const selEventObj   = events.find(e => e.id === selEvent);
   const selProgramObj = selEventObj?.programs.find(p => p.id === selProgram);
-  const mode          = (selEventObj as any)?.fixtureMode || "internal";
-  const isBadminton   = (selEventObj as any)?.sportType === "Badminton";
+  const mode          = selEventObj?.fixtureMode || "internal";
+  const isBadminton   = selEventObj?.sportType === "Badminton";
 
   // ── External mode state ──
   const [seeds,    setSeeds]    = useState<SeedEntry[]>(SAMPLE_SEEDS);
@@ -162,7 +162,7 @@ export default function AdminFixtures() {
     const p2g = draft.games.filter(g => g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1).length;
     let winner: "team1" | "team2" | null = null;
     let status: MatchStatus = "In Progress";
-    if (draft.walkover && draft.walkoverWinner) { winner = draft.walkoverWinner as any; status = "Walkover"; }
+    if (draft.walkover && draft.walkoverWinner) { winner = draft.walkoverWinner as "team1" | "team2"; status = "Walkover"; }
     else if (draft.winner)                      { winner = draft.winner; status = "Completed"; }
     else if (draft.games.every(g => g.p1 !== "" && g.p2 !== "")) {
       winner = p1g > p2g ? "team1" : "team2"; status = "Completed";
@@ -568,7 +568,7 @@ export default function AdminFixtures() {
                 <div>
                   <label className="block text-xs font-semibold mb-2 opacity-70">Walkover Winner *</label>
                   <select className="field-input" value={draft.walkoverWinner}
-                    onChange={e => setDraft({ ...draft, walkoverWinner: e.target.value as any })}>
+                    onChange={e => setDraft({ ...draft, walkoverWinner: e.target.value as "team1" | "team2" | "" })}>
                     <option value="">Select winner…</option>
                     <option value="team1">{draft.team1.label}</option>
                     <option value="team2">{draft.team2.label}</option>
@@ -630,7 +630,7 @@ export default function AdminFixtures() {
                         Winner <span className="font-normal opacity-60">(auto-calculated · override if needed)</span>
                       </label>
                       <select className="field-input" value={draft.winner ?? ""}
-                        onChange={e => setDraft({ ...draft, winner: (e.target.value || null) as any })}>
+                        onChange={e => setDraft({ ...draft, winner: (e.target.value || null) as "team1" | "team2" | null })}>
                         <option value="">Auto</option>
                         <option value="team1">{draft.team1.label}</option>
                         <option value="team2">{draft.team2.label}</option>

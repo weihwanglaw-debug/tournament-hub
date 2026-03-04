@@ -23,8 +23,13 @@ export default function StatusBadge({ status }: { status: BadgeStatus }) {
 }
 
 export function getProgramCapacityStatus(program: Program): BadgeStatus {
+  // Respect the program's explicit status field first
+  if (program.status === "closed")   return "closed";
+  if (program.status === "upcoming") return "upcoming";
+
+  // Then compute from capacity
   const ratio = program.currentParticipants / program.maxParticipants;
-  if (ratio >= 1) return "full";
+  if (ratio >= 1)   return "full";
   if (ratio >= 0.8) return "nearly_full";
   return "open";
 }
