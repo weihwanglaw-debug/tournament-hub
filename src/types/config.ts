@@ -1,7 +1,8 @@
 export interface CustomField {
   label: string;
-  type: string;
+  type: string;         // text | number | date | select
   required: boolean;
+  options?: string;     // comma-separated for select type
 }
 
 export interface ProgramFields {
@@ -15,14 +16,17 @@ export interface ProgramFields {
 export interface Program {
   id: string;
   name: string;
-  type: string;
+  type: string;          // Knockout | Group Stage + Knockout | Round Robin | League
   minAge: number;
   maxAge: number;
   gender: string;
   fee: number;
+  paymentRequired: boolean;
   minPlayers: number;
   maxPlayers: number;
+  minParticipants: number;
   maxParticipants: number;
+  currentParticipants: number;
   status: string;
   fields: ProgramFields;
 }
@@ -34,6 +38,7 @@ export interface TournamentEvent {
   venue: string;
   venueAddress: string;
   bannerUrl: string;
+  galleryUrls: string[];           // ✅ REQUIRED
   prospectusUrl: string;
   eventStartDate: string;
   eventEndDate: string;
@@ -42,14 +47,28 @@ export interface TournamentEvent {
   maxParticipants: number;
   sponsorInfo: string;
   consentStatement: string;
+
+  isSports: boolean;
+  sportType: string;
+  fixtureMode: "internal" | "external";
+
   programs: Program[];
 }
 
+
+
 export interface AdminUser {
+  id: string;
   email: string;
-  password: string;
-  role: string;
+  role: "superadmin" | "eventadmin";
   name: string;
+}
+
+export interface ConfigEntry {
+  key: string;
+  label: string;
+  value: string;
+  group: string;
 }
 
 export interface Config {
@@ -69,6 +88,7 @@ export interface Config {
 }
 
 export type EventStatus = "open" | "upcoming" | "closed";
+export type ProgramStatus = "open" | "upcoming" | "closed" | "full" | "nearly_full";
 
 export interface Participant {
   id: string;
@@ -80,6 +100,8 @@ export interface Participant {
   email: string;
   contactNumber: string;
   nationality: string;
+  clubSchoolCompany: string;
+  tshirtSize: string;
   sbaId?: string;
   guardianName?: string;
   guardianContact?: string;
@@ -93,4 +115,32 @@ export interface CartEntry {
   programName: string;
   fee: number;
   participants: Participant[];
+}
+
+// Payment structures
+export type PaymentMethod = "Credit Card" | "PayNow" | "Cash" | "Bank Transfer" | "Others";
+export type PaymentStatus = "Pending" | "Paid" | "Refunded" | "Partially Refunded";
+export type RefundStatus  = "None" | "Full" | "Partial";
+
+export interface PaymentLineItem {
+  id: string;
+  label: string;          // e.g. "Registration Fee — Men's Singles"
+  amount: number;
+  refundedAmount: number;
+  refundStatus: RefundStatus;
+  refundDate?: string;
+  refundReason?: string;
+}
+
+export interface PaymentRecord {
+  id: string;               // TXN-001
+  registrationId: string;   // R001
+  event: string;
+  program: string;
+  participants: string;
+  method: PaymentMethod;
+  paidDate: string;
+  receiptNumber: string;
+  lineItems: PaymentLineItem[];
+  paymentStatus: PaymentStatus;
 }

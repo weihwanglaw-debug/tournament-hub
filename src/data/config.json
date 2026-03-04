@@ -41,6 +41,7 @@
       "venue": "Singapore Sports Hub",
       "venueAddress": "1 Stadium Drive, Singapore 397629",
       "bannerUrl": "",
+      "galleryUrls": [],
       "prospectusUrl": "/sample-prospectus.pdf",
       "eventStartDate": "2026-04-10",
       "eventEndDate": "2026-04-12",
@@ -49,6 +50,9 @@
       "maxParticipants": 256,
       "sponsorInfo": "Proudly sponsored by SportsDirect and YonexSG",
       "consentStatement": "",
+      "isSports": true,
+      "sportType": "Badminton",
+      "fixtureMode": "internal",
       "programs": [
         {
           "id": "prog-1",
@@ -67,7 +71,10 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 48,
+          "sbaRequired": true
         },
         {
           "id": "prog-2",
@@ -86,7 +93,10 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 14,
+          "sbaRequired": true
         },
         {
           "id": "prog-3",
@@ -105,7 +115,10 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 32,
+          "sbaRequired": true
         },
         {
           "id": "prog-4",
@@ -126,7 +139,10 @@
             "customFields": [
               { "label": "Club Name", "type": "text", "required": false }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 20,
+          "sbaRequired": true
         }
       ]
     },
@@ -137,6 +153,7 @@
       "venue": "Jurong East Sports Centre",
       "venueAddress": "21 Jurong East Street 31, Singapore 609517",
       "bannerUrl": "",
+      "galleryUrls": [],
       "prospectusUrl": "/sample-prospectus.pdf",
       "eventStartDate": "2026-04-20",
       "eventEndDate": "2026-04-22",
@@ -145,6 +162,9 @@
       "maxParticipants": 128,
       "sponsorInfo": "Supported by Ministry of Education Sports Division",
       "consentStatement": "",
+      "isSports": true,
+      "sportType": "Badminton",
+      "fixtureMode": "internal",
       "programs": [
         {
           "id": "prog-5",
@@ -165,7 +185,10 @@
             "customFields": [
               { "label": "School Name", "type": "text", "required": true }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 10,
+          "sbaRequired": false
         },
         {
           "id": "prog-6",
@@ -186,7 +209,10 @@
             "customFields": [
               { "label": "School Name", "type": "text", "required": true }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 8,
+          "sbaRequired": false
         },
         {
           "id": "prog-7",
@@ -205,7 +231,10 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 5,
+          "sbaRequired": false
         }
       ]
     },
@@ -216,6 +245,7 @@
       "venue": "Toa Payoh Sports Hall",
       "venueAddress": "301 Lor 6 Toa Payoh, Singapore 319392",
       "bannerUrl": "",
+      "galleryUrls": [],
       "prospectusUrl": "/sample-prospectus.pdf",
       "eventStartDate": "2026-05-05",
       "eventEndDate": "2026-05-08",
@@ -224,6 +254,9 @@
       "maxParticipants": 200,
       "sponsorInfo": "",
       "consentStatement": "",
+      "isSports": true,
+      "sportType": "Badminton",
+      "fixtureMode": "internal",
       "programs": [
         {
           "id": "prog-8",
@@ -245,7 +278,10 @@
               { "label": "Club Name", "type": "text", "required": true },
               { "label": "Team Captain", "type": "text", "required": true }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 6,
+          "sbaRequired": false
         }
       ]
     },
@@ -256,6 +292,7 @@
       "venue": "OCBC Arena",
       "venueAddress": "5 Stadium Drive, Singapore 397631",
       "bannerUrl": "",
+      "galleryUrls": [],
       "prospectusUrl": "/sample-prospectus.pdf",
       "eventStartDate": "2026-06-01",
       "eventEndDate": "2026-06-03",
@@ -264,6 +301,9 @@
       "maxParticipants": 128,
       "sponsorInfo": "Title sponsor: OCBC Bank",
       "consentStatement": "",
+      "isSports": true,
+      "sportType": "Badminton",
+      "fixtureMode": "internal",
       "programs": [
         {
           "id": "prog-9",
@@ -284,7 +324,10 @@
             "customFields": [
               { "label": "Country", "type": "text", "required": true }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 18,
+          "sbaRequired": true
         },
         {
           "id": "prog-10",
@@ -305,7 +348,10 @@
             "customFields": [
               { "label": "Country", "type": "text", "required": true }
             ]
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 12,
+          "sbaRequired": true
         }
       ]
     },
@@ -316,6 +362,7 @@
       "venue": "Bishan Sports Hall",
       "venueAddress": "5 Bishan Street 14, Singapore 579783",
       "bannerUrl": "",
+      "galleryUrls": [],
       "prospectusUrl": "",
       "eventStartDate": "2026-03-01",
       "eventEndDate": "2026-03-02",
@@ -324,6 +371,9 @@
       "maxParticipants": 100,
       "sponsorInfo": "",
       "consentStatement": "",
+      "isSports": true,
+      "sportType": "Badminton",
+      "fixtureMode": "internal",
       "programs": [
         {
           "id": "prog-11",
@@ -342,7 +392,10 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 30,
+          "sbaRequired": false
         },
         {
           "id": "prog-12",
@@ -361,15 +414,28 @@
             "enableDocumentUpload": false,
             "enableGuardianInfo": false,
             "customFields": []
-          }
+          },
+          "minParticipants": 4,
+          "currentParticipants": 14,
+          "sbaRequired": false
         }
       ]
     }
   ],
   "admin": {
     "users": [
-      { "email": "admin@trs.com", "password": "admin123", "role": "superadmin", "name": "System Admin" },
-      { "email": "manager@trs.com", "password": "manager123", "role": "admin", "name": "Event Manager" }
+      {
+        "email": "admin@trs.com",
+        "password": "admin123",
+        "role": "superadmin",
+        "name": "System Admin"
+      },
+      {
+        "email": "manager@trs.com",
+        "password": "manager123",
+        "role": "admin",
+        "name": "Event Manager"
+      }
     ]
   }
 }

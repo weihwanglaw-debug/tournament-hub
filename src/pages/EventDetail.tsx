@@ -1,83 +1,124 @@
-import { useState, useMemo } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, MapPin, Users, Download, ArrowLeft, ShoppingCart, Plus, Trash2, AlertCircle } from "lucide-react";
+import {
+  Calendar, MapPin, Users, Download, ArrowLeft,
+  ShoppingCart, Plus, Trash2, AlertCircle, Edit2,
+  Search, CheckCircle, XCircle,
+} from "lucide-react";
 import config from "@/data/config.json";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
-import StatusBadge from "@/components/events/StatusBadge";
+import StatusBadge, { getProgramCapacityStatus } from "@/components/events/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
-import ConsentModal from "@/components/registration/ConsentModal";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+
+// ── SBA Master list (mock — replace with API call later) ──────────────────
+const SBA_MASTER: Record<string, { fullName: string; dob: string; gender: string; clubSchoolCompany: string }> = {
+  "SBA-001": { fullName: "Lee Wei Jie",   dob: "1998-04-12", gender: "Male",   clubSchoolCompany: "Pasir Ris Badminton Club"  },
+  "SBA-002": { fullName: "Tan Mei Ling",  dob: "2000-07-25", gender: "Female", clubSchoolCompany: "Tampines Badminton Club"   },
+  "SBA-003": { fullName: "Ravi Kumar",    dob: "1995-11-03", gender: "Male",   clubSchoolCompany: "Jurong Badminton Club"     },
+  "SBA-004": { fullName: "Wong Xiu Ying", dob: "2002-02-18", gender: "Female", clubSchoolCompany: "Bishan Sports Club"       },
+};
+
+const MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
+const currentYear = new Date().getFullYear();
+const YEARS = Array.from({ length: 80 }, (_, i) => String(currentYear - i));
+const TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
-const months = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-const currentYear = new Date().getFullYear();
-const years = Array.from({ length: 80 }, (_, i) => String(currentYear - i));
-
-export default function EventDetail() {
-  const { id } = useParams();
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
-  const event = config.events.find((e) => e.id === id) as TournamentEvent | undefined;
-
-  // Registration state
-  const [registering, setRegistering] = useState(!!params.get("program"));
-  const [step, setStep] = useState(params.get("program") ? 2 : 1);
-  const [selectedProgramId, setSelectedProgramId] = useState(params.get("program") || "");
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [cart, setCart] = useState<CartEntry[]>([]);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [formError, setFormError] = useState("");
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [pendingParticipants, setPendingParticipants] = useState<Participant[]>([]);
-
-  const selectedProgram = event?.programs.find((p) => p.id === selectedProgramId);
-
-  const blankParticipant = (): Participant => ({
+function blankParticipant(): Participant {
+  return {
     id: generateId(),
     fullName: "",
-    dobDay: "",
-    dobMonth: "",
-    dobYear: "",
+    dobDay: "", dobMonth: "", dobYear: "",
     gender: "",
     email: "",
     contactNumber: "",
     nationality: "",
+    clubSchoolCompany: "",
+    tshirtSize: "",
     sbaId: "",
     guardianName: "",
     guardianContact: "",
     documentFile: null,
     remark: "",
     customFieldValues: {},
-  });
+  };
+}
 
-  const handleSelectProgram = (pid: string) => {
-    setSelectedProgramId(pid);
-    const prog = event?.programs.find((p) => p.id === pid);
-    if (prog) {
-      const initial = Array.from({ length: prog.minPlayers }, () => blankParticipant());
-      setParticipants(initial);
-    }
+// ── Main component ────────────────────────────────────────────────────────
+export default function EventDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+
+  const event = config.events.find((e) => e.id === id) as TournamentEvent | undefined;
+
+  // Registration state
+  const [step, setStep] = useState(1);
+  const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [cart, setCart] = useState<CartEntry[]>([]);
+  const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState("");
+  const [consentChecked, setConsentChecked] = useState(false);
+
+  // Existing participants for auto-fill
+  const [existingParticipants, setExistingParticipants] = useState<Participant[]>([]);
+  const [suggestions, setSuggestions] = useState<{ idx: number; matches: Participant[] } | null>(null);
+
+  // SBA retrieve state per participant slot
+  const [sbaStatus, setSbaStatus] = useState<Record<number, "idle" | "loading" | "found" | "not_found">>({});
+
+  // Admin override modal
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+
+  const status = event ? getEventStatus(event) : "closed";
+  const currency = config.payment.currency || "SGD";
+  const totalPrice = cart.reduce((sum, e) => sum + e.fee, 0);
+
+  // ── Program selection ───────────────────────────────────────────────────
+  const handleSelectProgram = (prog: Program) => {
+    setSelectedProgram(prog);
+    const initial = Array.from({ length: prog.minPlayers }, () => blankParticipant());
+    setParticipants(initial);
     setErrors({});
     setFormError("");
-    setRegistering(true);
+    setSbaStatus({});
+    setSuggestions(null);
     setStep(2);
   };
 
+  // ── Participant field updates ───────────────────────────────────────────
   const updateParticipant = (idx: number, field: string, value: string) => {
     setParticipants((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
     );
+
+    // Auto-fill suggestion trigger on fullName
+    if (field === "fullName" && value.length >= 3) {
+      const matches = existingParticipants.filter((ep) =>
+        ep.fullName.toLowerCase().startsWith(value.toLowerCase())
+      );
+      if (matches.length > 0) setSuggestions({ idx, matches });
+      else setSuggestions(null);
+    } else if (field === "fullName") {
+      setSuggestions(null);
+    }
   };
 
   const updateCustomField = (idx: number, label: string, value: string) => {
@@ -88,70 +129,138 @@ export default function EventDetail() {
     );
   };
 
+  const applyAutoFill = (participantIdx: number, existing: Participant) => {
+    setParticipants((prev) =>
+      prev.map((p, i) =>
+        i === participantIdx
+          ? { ...existing, id: p.id, documentFile: null }
+          : p
+      )
+    );
+    setSuggestions(null);
+  };
+
   const addParticipant = () => {
-    if (!selectedProgram) return;
-    if (participants.length >= selectedProgram.maxPlayers) return;
+    if (!selectedProgram || participants.length >= selectedProgram.maxPlayers) return;
     setParticipants((prev) => [...prev, blankParticipant()]);
   };
 
   const removeParticipant = (idx: number) => {
-    if (!selectedProgram) return;
-    if (participants.length <= selectedProgram.minPlayers) return;
+    if (!selectedProgram || participants.length <= selectedProgram.minPlayers) return;
     setParticipants((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // ── SBA ID retrieve ─────────────────────────────────────────────────────
+  const retrieveBySbaId = (idx: number, sbaId: string) => {
+    if (!sbaId.trim()) return;
+    setSbaStatus((prev) => ({ ...prev, [idx]: "loading" }));
+    setTimeout(() => {
+      const found = SBA_MASTER[sbaId.trim()];
+      if (found) {
+        const [year, month, day] = found.dob.split("-");
+        setParticipants((prev) =>
+          prev.map((p, i) =>
+            i === idx
+              ? {
+                  ...p,
+                  fullName: found.fullName,
+                  dobDay: day,
+                  dobMonth: MONTHS[parseInt(month, 10) - 1],
+                  dobYear: year,
+                  gender: found.gender,
+                  clubSchoolCompany: found.clubSchoolCompany,
+                }
+              : p
+          )
+        );
+        setSbaStatus((prev) => ({ ...prev, [idx]: "found" }));
+      } else {
+        setSbaStatus((prev) => ({ ...prev, [idx]: "not_found" }));
+      }
+    }, 500);
+  };
+
+  // ── Validation ──────────────────────────────────────────────────────────
   const validate = (): boolean => {
     if (!selectedProgram) return false;
     const errs: Record<string, string> = {};
     let formErr = "";
 
-    participants.forEach((p, i) => {
-      const prefix = `p${i}`;
-      if (!p.fullName.trim()) errs[`${prefix}.fullName`] = "Required";
-      if (!p.dobDay || !p.dobMonth || !p.dobYear) errs[`${prefix}.dob`] = "Complete date required";
-      if (!p.gender) errs[`${prefix}.gender`] = "Required";
-      if (!p.email.trim()) errs[`${prefix}.email`] = "Required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)) errs[`${prefix}.email`] = "Invalid email";
-      if (!p.contactNumber.trim()) errs[`${prefix}.contactNumber`] = "Required";
-      if (!p.nationality.trim()) errs[`${prefix}.nationality`] = "Required";
+    // Capacity check
+    if (selectedProgram.currentParticipants >= selectedProgram.maxParticipants) {
+      formErr = "This program is full and no longer accepting registrations.";
+      setErrors(errs);
+      setFormError(formErr);
+      return false;
+    }
 
+    participants.forEach((p, i) => {
+      const px = `p${i}`;
+      if (!p.fullName.trim())         errs[`${px}.fullName`]          = "Required";
+      if (!p.dobDay || !p.dobMonth || !p.dobYear) errs[`${px}.dob`] = "Complete date required";
+      if (!p.gender)                  errs[`${px}.gender`]            = "Required";
+      if (!p.email.trim())            errs[`${px}.email`]             = "Required";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)) errs[`${px}.email`] = "Invalid email";
+      if (!p.contactNumber.trim())    errs[`${px}.contactNumber`]     = "Required";
+      if (!p.nationality.trim())      errs[`${px}.nationality`]       = "Required";
+      if (!p.clubSchoolCompany.trim())errs[`${px}.clubSchoolCompany`] = "Required";
+      if (!p.tshirtSize)              errs[`${px}.tshirtSize`]        = "Required";
+
+      // Age
       if (p.dobDay && p.dobMonth && p.dobYear) {
-        const monthIdx = months.indexOf(p.dobMonth);
+        const monthIdx = MONTHS.indexOf(p.dobMonth);
         const dob = new Date(+p.dobYear, monthIdx, +p.dobDay);
         const today = new Date();
         let age = today.getFullYear() - dob.getFullYear();
         const mDiff = today.getMonth() - dob.getMonth();
         if (mDiff < 0 || (mDiff === 0 && today.getDate() < dob.getDate())) age--;
         if (age < selectedProgram.minAge || age > selectedProgram.maxAge) {
-          errs[`${prefix}.dob`] = `Age must be ${selectedProgram.minAge}–${selectedProgram.maxAge}`;
+          errs[`${px}.dob`] = `Age must be ${selectedProgram.minAge}–${selectedProgram.maxAge}`;
         }
       }
 
+      // Gender eligibility
+      if (p.gender && selectedProgram.gender !== "Mixed") {
+        if (selectedProgram.gender === "Male" && p.gender !== "Male")
+          errs[`${px}.gender`] = "Male players only";
+        if (selectedProgram.gender === "Female" && p.gender !== "Female")
+          errs[`${px}.gender`] = "Female players only";
+      }
+
+      // Guardian
       if (selectedProgram.fields.enableGuardianInfo) {
-        if (!p.guardianName?.trim()) errs[`${prefix}.guardianName`] = "Required";
-        if (!p.guardianContact?.trim()) errs[`${prefix}.guardianContact`] = "Required";
+        if (!p.guardianName?.trim())    errs[`${px}.guardianName`]    = "Required";
+        if (!p.guardianContact?.trim()) errs[`${px}.guardianContact`] = "Required";
       }
 
+      // Custom fields
       selectedProgram.fields.customFields.forEach((cf) => {
-        if (cf.required && !p.customFieldValues[cf.label]?.trim()) {
-          errs[`${prefix}.custom.${cf.label}`] = "Required";
-        }
+        if (cf.required && !p.customFieldValues[cf.label]?.trim())
+          errs[`${px}.custom.${cf.label}`] = "Required";
       });
 
-      const dupe = cart.some((entry) =>
-        entry.programId === selectedProgram.id &&
-        entry.participants.some(
-          (ep) => ep.fullName === p.fullName && ep.dobDay === p.dobDay && ep.dobMonth === p.dobMonth && ep.dobYear === p.dobYear
-        )
-      );
-      if (dupe) errs[`${prefix}.fullName`] = "Already registered in this program";
+      // Duplicate check
+      const dupe = cart.some((entry, ci) => {
+        if (editingCartIndex !== null && ci === editingCartIndex) return false;
+        return (
+          entry.programId === selectedProgram.id &&
+          entry.participants.some(
+            (ep) =>
+              ep.fullName === p.fullName &&
+              ep.dobDay === p.dobDay &&
+              ep.dobMonth === p.dobMonth &&
+              ep.dobYear === p.dobYear
+          )
+        );
+      });
+      if (dupe) errs[`${px}.fullName`] = "Already registered in this program";
     });
 
+    // Mixed doubles
     if (selectedProgram.gender === "Mixed" && selectedProgram.maxPlayers === 2 && participants.length === 2) {
       const genders = participants.map((p) => p.gender);
-      if (!(genders.includes("Male") && genders.includes("Female"))) {
+      if (!(genders.includes("Male") && genders.includes("Female")))
         formErr = "Mixed Doubles requires exactly 1 Male and 1 Female player.";
-      }
     }
 
     setErrors(errs);
@@ -159,44 +268,87 @@ export default function EventDetail() {
     return Object.keys(errs).length === 0 && !formErr;
   };
 
-  const handleAddToCart = () => {
-    if (!validate()) return;
-    setPendingParticipants([...participants]);
-    setConsentOpen(true);
-  };
-
-  const confirmAddToCart = () => {
+  // ── Add to cart ─────────────────────────────────────────────────────────
+  const addToCart = () => {
     if (!selectedProgram) return;
-    setCart((prev) => [
-      ...prev,
-      {
-        programId: selectedProgram.id,
-        programName: selectedProgram.name,
-        fee: selectedProgram.fee,
-        participants: pendingParticipants,
-      },
-    ]);
-    setConsentOpen(false);
-    setPendingParticipants([]);
-    setParticipants([blankParticipant()]);
-    setSelectedProgramId("");
+    const entry: CartEntry = {
+      programId: selectedProgram.id,
+      programName: selectedProgram.name,
+      fee: selectedProgram.fee,
+      participants: [...participants],
+    };
+
+    if (editingCartIndex !== null) {
+      setCart((prev) => prev.map((c, i) => (i === editingCartIndex ? entry : c)));
+      setEditingCartIndex(null);
+    } else {
+      setCart((prev) => [...prev, entry]);
+    }
+
+    // Update session participants for auto-fill
+    participants.forEach((p) => {
+      const exists = existingParticipants.some(
+        (ep) => ep.fullName === p.fullName && ep.dobDay === p.dobDay && ep.dobYear === p.dobYear
+      );
+      if (!exists) setExistingParticipants((prev) => [...prev, { ...p }]);
+    });
+
+    setSelectedProgram(null);
+    setParticipants([]);
+    setErrors({});
+    setFormError("");
+    setSbaStatus({});
     setStep(3);
   };
 
+  const handleAddToCart = () => {
+    if (validate()) addToCart();
+  };
+
+  // Admin override
+  const handleOverride = () => {
+    if (overrideReason.trim().length < 10) return;
+    console.log("[AUDIT]", {
+      timestamp: new Date().toISOString(),
+      admin: user?.name,
+      fieldOverridden: Object.keys(errors).join(", "),
+      formError,
+      overrideReason,
+    });
+    setErrors({});
+    setFormError("");
+    setOverrideOpen(false);
+    setOverrideReason("");
+    addToCart();
+  };
+
+  // ── Cart actions ────────────────────────────────────────────────────────
   const removeCartEntry = (idx: number) => {
     setCart((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const totalPrice = cart.reduce((sum, e) => sum + e.fee, 0);
-  const currency = config.payment.currency || "SGD";
+  const editCartEntry = (idx: number) => {
+    const entry = cart[idx];
+    const prog = event?.programs.find((p) => p.id === entry.programId);
+    if (!prog) return;
+    setSelectedProgram(prog);
+    setParticipants([...entry.participants]);
+    setEditingCartIndex(idx);
+    setErrors({});
+    setFormError("");
+    setSbaStatus({});
+    setSuggestions(null);
+    setStep(2);
+  };
 
+  // ── Not found ───────────────────────────────────────────────────────────
   if (!event) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center pt-16">
           <div className="text-center">
-            <h1 className="font-heading text-2xl font-bold mb-4">Event Not Found</h1>
+            <h1 className="text-2xl font-bold mb-4">Event Not Found</h1>
             <button onClick={() => navigate("/")} className="btn-primary px-5 py-2.5 text-sm">
               Back to Home
             </button>
@@ -207,17 +359,15 @@ export default function EventDetail() {
     );
   }
 
-  const status = getEventStatus(event);
-
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
+
       <main className="flex-1 pt-16" style={{ backgroundColor: "var(--color-page-bg)" }}>
-        {/* Hero banner */}
-        <div
-          className="py-14 px-8"
-          style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
-        >
+
+        {/* ── Hero banner ── */}
+        <div className="py-14 px-8" style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}>
           <div className="max-w-5xl mx-auto">
             <button
               onClick={() => navigate("/")}
@@ -226,8 +376,8 @@ export default function EventDetail() {
               <ArrowLeft className="h-4 w-4" /> Back to events
             </button>
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-              <div className="flex items-start gap-3 mb-3">
-                <h1 className="font-heading font-bold text-3xl md:text-4xl" style={{ color: "var(--color-hero-text)" }}>
+              <div className="flex items-start gap-3 mb-3 flex-wrap">
+                <h1 className="font-bold text-3xl md:text-4xl" style={{ color: "var(--color-hero-text)" }}>
                   {event.name}
                 </h1>
                 <StatusBadge status={status} />
@@ -237,14 +387,19 @@ export default function EventDetail() {
           </div>
         </div>
 
-        {/* Event info */}
         <div className="max-w-5xl mx-auto py-12 px-8">
+
+          {/* ── Section 1: Event Info ── */}
           <div className="grid md:grid-cols-2 gap-10 mb-12">
             <div className="space-y-5">
-              <InfoRow icon={Calendar} label="Event Dates" value={`${formatDate(event.eventStartDate)} – ${formatDate(event.eventEndDate)}`} />
-              <InfoRow icon={MapPin} label="Venue" value={`${event.venue}, ${event.venueAddress}`} />
-              <InfoRow icon={Users} label="Max Participants" value={String(event.maxParticipants)} />
-              <InfoRow icon={Calendar} label="Registration Period" value={`${formatDate(event.openDate)} – ${formatDate(event.closeDate)}`} />
+              <InfoRow icon={Calendar} label="Event Dates"
+                value={`${formatDate(event.eventStartDate)} – ${formatDate(event.eventEndDate)}`} />
+              <InfoRow icon={MapPin} label="Venue"
+                value={`${event.venue}, ${event.venueAddress}`} />
+              <InfoRow icon={Users} label="Max Participants"
+                value={String(event.maxParticipants)} />
+              <InfoRow icon={Calendar} label="Registration Period"
+                value={`${formatDate(event.openDate)} – ${formatDate(event.closeDate)}`} />
               {event.sponsorInfo && (
                 <p className="text-sm opacity-70 italic">{event.sponsorInfo}</p>
               )}
@@ -261,70 +416,104 @@ export default function EventDetail() {
                 </a>
               )}
               {status === "upcoming" && (
-                <div className="p-5 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
+                <div className="p-4 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
                   Registration opens on {formatDate(event.openDate)}
                 </div>
               )}
               {status === "closed" && (
-                <div className="p-5 text-sm" style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>
+                <div className="p-4 text-sm" style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>
                   Registration Closed
                 </div>
               )}
             </div>
           </div>
 
-          {/* Programs table */}
-          <h2 className="font-heading font-bold text-xl mb-6">Programs</h2>
-          <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
-            <table className="trs-table">
-              <thead>
-                <tr>
-                  <th>Program</th>
-                  <th>Type</th>
-                  <th>Age</th>
-                  <th>Gender</th>
-                  <th className="text-right">Fee</th>
-                  <th className="text-center">Players</th>
-                  <th className="text-center">Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {event.programs.map((prog) => (
-                  <tr key={prog.id}>
-                    <td className="font-medium">{prog.name}</td>
-                    <td>{prog.type}</td>
-                    <td>{prog.minAge}–{prog.maxAge}</td>
-                    <td>{prog.gender}</td>
-                    <td className="text-right font-semibold" style={{ color: "var(--color-primary)" }}>
-                      ${prog.fee}
-                    </td>
-                    <td className="text-center">
-                      {prog.minPlayers === prog.maxPlayers ? prog.maxPlayers : `${prog.minPlayers}–${prog.maxPlayers}`}
-                    </td>
-                    <td className="text-center">
-                      <StatusBadge status={status} />
-                    </td>
-                    <td>
+          {/* Google Maps embed */}
+          {event.venueAddress && (
+            <div className="mb-12 overflow-hidden" style={{ border: "1px solid var(--color-table-border)", height: "200px" }}>
+              <iframe
+                title="Venue Map"
+                width="100%"
+                height="100%"
+                style={{ border: 0 }}
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+                src={`https://maps.google.com/maps?q=${encodeURIComponent(event.venue + " " + event.venueAddress)}&output=embed`}
+              />
+            </div>
+          )}
+
+          {/* ── Section 2: Program Cards ── */}
+          <h2 className="font-bold text-xl mb-6">Programs</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+            {event.programs.map((prog) => {
+              const capStatus = getProgramCapacityStatus(prog);
+              const isFull = capStatus === "full";
+              const canRegister = status === "open" && !isFull;
+              return (
+                <div
+                  key={prog.id}
+                  className="flex flex-col"
+                  style={{
+                    border: "1px solid var(--color-table-border)",
+                    backgroundColor: "var(--color-row-hover)",
+                  }}
+                >
+                  {/* Coloured top bar */}
+                  <div className="h-1" style={{ backgroundColor: "var(--color-primary)" }} />
+                  <div className="p-6 flex flex-col flex-1">
+                    <div className="flex items-start justify-between mb-3 gap-2">
+                      <h3 className="font-bold text-base leading-tight flex-1">{prog.name}</h3>
+                      <StatusBadge status={capStatus} />
+                    </div>
+
+                    <div className="space-y-1.5 text-xs mb-4" style={{ color: "var(--color-body-text)" }}>
+                      <div className="flex items-center gap-2">
+                        <span className="opacity-50">Type</span>
+                        <span className="font-medium">{prog.type}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="opacity-50">Gender</span>
+                        <span className="font-medium">{prog.gender}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="opacity-50">Age</span>
+                        <span className="font-medium">{prog.minAge}–{prog.maxAge} yrs</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="opacity-50">Players</span>
+                        <span className="font-medium">
+                          {prog.minPlayers === prog.maxPlayers
+                            ? prog.maxPlayers
+                            : `${prog.minPlayers}–${prog.maxPlayers}`} per entry
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-auto flex items-center justify-between pt-4"
+                      style={{ borderTop: "1px solid var(--color-table-border)" }}>
+                      <span className="font-bold text-lg" style={{ color: "var(--color-primary)" }}>
+                        {currency} ${prog.fee}
+                      </span>
                       <button
-                        disabled={status !== "open"}
-                        onClick={() => handleSelectProgram(prog.id)}
+                        disabled={!canRegister}
+                        onClick={() => handleSelectProgram(prog)}
                         className="btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        Register
+                        {isFull ? "Full" : "Register"}
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Registration Section */}
-          {registering && status === "open" && (
-            <div className="mt-16 section-anchor" id="registration">
+          {/* ── Section 3: Registration Steps ── */}
+          {status === "open" && (
+            <div className="section-anchor" id="registration">
               <div className="h-px mb-12" style={{ backgroundColor: "var(--color-table-border)" }} />
-              <h2 className="font-heading font-bold text-2xl mb-8">Registration</h2>
 
               {/* Step indicator */}
               <div className="flex items-center gap-3 mb-10">
@@ -350,127 +539,227 @@ export default function EventDetail() {
               </div>
 
               <AnimatePresence mode="wait">
-                {/* STEP 1 — Program Selection */}
-                {step === 1 && (
-                  <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                    <h3 className="font-heading font-bold text-lg mb-5">Select a Program</h3>
-                    <div className="grid gap-4">
-                      {event.programs.map((prog) => (
-                        <button
-                          key={prog.id}
-                          disabled={status !== "open"}
-                          onClick={() => handleSelectProgram(prog.id)}
-                          className="text-left p-5 transition-all disabled:opacity-40"
-                          style={{
-                            border: `2px solid ${selectedProgramId === prog.id ? "var(--color-primary)" : "var(--color-table-border)"}`,
-                            backgroundColor: selectedProgramId === prog.id ? "var(--color-row-hover)" : "transparent",
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold">{prog.name}</span>
-                            <span className="font-bold" style={{ color: "var(--color-primary)" }}>${prog.fee}</span>
-                          </div>
-                          <p className="text-xs mt-2 opacity-60">
-                            {prog.type} · {prog.gender} · Ages {prog.minAge}–{prog.maxAge} · {prog.minPlayers === prog.maxPlayers ? prog.maxPlayers : `${prog.minPlayers}–${prog.maxPlayers}`} player(s)
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
 
-                {/* STEP 2 — Participant Form */}
+                {/* ── STEP 2: Participant Form ── */}
                 {step === 2 && selectedProgram && (
-                  <motion.div key="step2" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                  <motion.div key="step2"
+                    initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+
                     <div className="flex items-center justify-between mb-6">
-                      <h3 className="font-heading font-bold text-lg">
-                        {selectedProgram.name} — Participant Details
+                      <h3 className="font-bold text-lg">
+                        {editingCartIndex !== null ? "Edit: " : ""}{selectedProgram.name} — Participant Details
                       </h3>
-                      <button onClick={() => setStep(1)} className="text-sm font-medium" style={{ color: "var(--color-primary)" }}>
-                        Change Program
+                      <button
+                        onClick={() => { setStep(cart.length > 0 ? 3 : 1); setSelectedProgram(null); setEditingCartIndex(null); }}
+                        className="text-sm font-medium"
+                        style={{ color: "var(--color-primary)" }}
+                      >
+                        Cancel
                       </button>
                     </div>
 
+                    {/* Form-level error */}
                     {formError && (
-                      <div className="flex items-center gap-2 p-4 mb-5 text-sm" style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
-                        <AlertCircle className="h-4 w-4" /> {formError}
+                      <div className="flex items-center gap-2 p-4 mb-5 text-sm"
+                        style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                        <AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}
+                      </div>
+                    )}
+
+                    {/* Admin override button — only shown when there are errors and user is admin */}
+                    {isAuthenticated && (Object.keys(errors).length > 0 || formError) && (
+                      <div className="mb-5">
+                        <button
+                          onClick={() => setOverrideOpen(true)}
+                          className="btn-outline px-4 py-2 text-xs font-semibold"
+                          style={{ borderColor: "var(--badge-soon-text)", color: "var(--badge-soon-text)" }}
+                        >
+                          Override Validation (Admin)
+                        </button>
                       </div>
                     )}
 
                     {participants.map((p, idx) => (
-                      <div
-                        key={p.id}
-                        className="p-6 mb-5"
-                        style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}
-                      >
+                      <div key={p.id} className="p-6 mb-5"
+                        style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
                         <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-heading font-semibold text-sm">Player {idx + 1}</h4>
+                          <h4 className="font-semibold text-sm">Player {idx + 1}</h4>
                           {participants.length > selectedProgram.minPlayers && (
-                            <button onClick={() => removeParticipant(idx)} className="text-xs flex items-center gap-1 opacity-60 hover:opacity-100">
+                            <button onClick={() => removeParticipant(idx)}
+                              className="text-xs flex items-center gap-1 opacity-60 hover:opacity-100">
                               <Trash2 className="h-3 w-3" /> Remove
                             </button>
                           )}
                         </div>
 
                         <div className="grid sm:grid-cols-2 gap-5">
+
+                          {/* Full Name with auto-fill suggestion */}
                           <Field label="Full Name (as per NRIC/Passport)" error={errors[`p${idx}.fullName`]}>
-                            <input className="field-input" value={p.fullName} onChange={(e) => updateParticipant(idx, "fullName", e.target.value)} />
+                            <div className="relative">
+                              <input
+                                className="field-input"
+                                value={p.fullName}
+                                onChange={(e) => updateParticipant(idx, "fullName", e.target.value)}
+                                autoComplete="off"
+                              />
+                              {suggestions?.idx === idx && suggestions.matches.length > 0 && (
+                                <div className="absolute z-20 w-full shadow-lg"
+                                  style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)", top: "100%" }}>
+                                  {suggestions.matches.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => applyAutoFill(idx, m)}
+                                      className="w-full text-left px-3 py-2.5 text-xs hover:opacity-70 transition-opacity"
+                                      style={{ borderBottom: "1px solid var(--color-table-border)" }}
+                                    >
+                                      <span className="font-semibold">{m.fullName}</span>
+                                      <span className="opacity-60 ml-2">
+                                        {m.dobDay} {m.dobMonth} {m.dobYear} · {m.clubSchoolCompany}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </Field>
 
+                          {/* DOB */}
                           <Field label="Date of Birth" error={errors[`p${idx}.dob`]}>
                             <div className="flex gap-2">
-                              <select className="field-input flex-1" value={p.dobDay} onChange={(e) => updateParticipant(idx, "dobDay", e.target.value)}>
+                              <select className="field-input flex-1" value={p.dobDay}
+                                onChange={(e) => updateParticipant(idx, "dobDay", e.target.value)}>
                                 <option value="">Day</option>
-                                {days.map((d) => <option key={d} value={d}>{d}</option>)}
+                                {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
                               </select>
-                              <select className="field-input flex-1" value={p.dobMonth} onChange={(e) => updateParticipant(idx, "dobMonth", e.target.value)}>
+                              <select className="field-input flex-1" value={p.dobMonth}
+                                onChange={(e) => updateParticipant(idx, "dobMonth", e.target.value)}>
                                 <option value="">Month</option>
-                                {months.map((m) => <option key={m} value={m}>{m}</option>)}
+                                {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
                               </select>
-                              <select className="field-input flex-1" value={p.dobYear} onChange={(e) => updateParticipant(idx, "dobYear", e.target.value)}>
+                              <select className="field-input flex-1" value={p.dobYear}
+                                onChange={(e) => updateParticipant(idx, "dobYear", e.target.value)}>
                                 <option value="">Year</option>
-                                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
                               </select>
                             </div>
                           </Field>
 
+                          {/* Gender */}
                           <Field label="Gender" error={errors[`p${idx}.gender`]}>
-                            <select className="field-input" value={p.gender} onChange={(e) => updateParticipant(idx, "gender", e.target.value)}>
+                            <select className="field-input" value={p.gender}
+                              onChange={(e) => updateParticipant(idx, "gender", e.target.value)}>
                               <option value="">Select</option>
                               <option value="Male">Male</option>
                               <option value="Female">Female</option>
                             </select>
                           </Field>
 
+                          {/* Email */}
                           <Field label="Email" error={errors[`p${idx}.email`]}>
-                            <input type="email" className="field-input" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} />
+                            <input type="email" className="field-input" value={p.email}
+                              onChange={(e) => updateParticipant(idx, "email", e.target.value)} />
                           </Field>
 
+                          {/* Contact */}
                           <Field label="Contact Number" error={errors[`p${idx}.contactNumber`]}>
-                            <input className="field-input" value={p.contactNumber} onChange={(e) => updateParticipant(idx, "contactNumber", e.target.value)} />
+                            <input className="field-input" value={p.contactNumber}
+                              onChange={(e) => updateParticipant(idx, "contactNumber", e.target.value)} />
                           </Field>
 
+                          {/* Nationality */}
                           <Field label="Nationality" error={errors[`p${idx}.nationality`]}>
-                            <input className="field-input" value={p.nationality} onChange={(e) => updateParticipant(idx, "nationality", e.target.value)} />
+                            <input className="field-input" value={p.nationality}
+                              onChange={(e) => updateParticipant(idx, "nationality", e.target.value)} />
                           </Field>
 
+                          {/* Club / School / Company */}
+                          <Field label="Club / School / Company" error={errors[`p${idx}.clubSchoolCompany`]}>
+                            <input className="field-input" value={p.clubSchoolCompany}
+                              onChange={(e) => updateParticipant(idx, "clubSchoolCompany", e.target.value)} />
+                          </Field>
+
+                          {/* T-Shirt Size */}
+                          <Field label="T-Shirt Size" error={errors[`p${idx}.tshirtSize`]}>
+                            <select className="field-input" value={p.tshirtSize}
+                              onChange={(e) => updateParticipant(idx, "tshirtSize", e.target.value)}>
+                              <option value="">Select</option>
+                              {TSHIRT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </Field>
+
+                          {/* SBA ID with retrieve */}
                           {selectedProgram.fields.enableSbaId && (
-                            <Field label="SBA ID">
-                              <input className="field-input" value={p.sbaId || ""} onChange={(e) => updateParticipant(idx, "sbaId", e.target.value)} placeholder="Enter SBA ID" />
-                            </Field>
+                            <div className="sm:col-span-2">
+                              <Field label="SBA ID">
+                                <div className="flex gap-2">
+                                  <input
+                                    className="field-input flex-1"
+                                    value={p.sbaId || ""}
+                                    onChange={(e) => {
+                                      updateParticipant(idx, "sbaId", e.target.value);
+                                      setSbaStatus((prev) => ({ ...prev, [idx]: "idle" }));
+                                    }}
+                                    placeholder="e.g. SBA-001"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => retrieveBySbaId(idx, p.sbaId || "")}
+                                    disabled={sbaStatus[idx] === "loading"}
+                                    className="btn-primary px-4 py-2 text-xs font-semibold whitespace-nowrap disabled:opacity-60"
+                                  >
+                                    {sbaStatus[idx] === "loading" ? "Loading…" : "Retrieve →"}
+                                  </button>
+                                </div>
+                                {sbaStatus[idx] === "found" && (
+                                  <p className="text-xs mt-1 flex items-center gap-1"
+                                    style={{ color: "var(--badge-open-text)" }}>
+                                    <CheckCircle className="h-3 w-3" /> Details retrieved ✓
+                                  </p>
+                                )}
+                                {sbaStatus[idx] === "not_found" && (
+                                  <p className="text-xs mt-1 flex items-center gap-1"
+                                    style={{ color: "var(--badge-open-text)" }}>
+                                    <XCircle className="h-3 w-3" /> SBA ID not found. Please enter details manually.
+                                  </p>
+                                )}
+                              </Field>
+                            </div>
                           )}
 
+                          {/* Guardian */}
                           {selectedProgram.fields.enableGuardianInfo && (
                             <>
                               <Field label="Guardian Name" error={errors[`p${idx}.guardianName`]}>
-                                <input className="field-input" value={p.guardianName || ""} onChange={(e) => updateParticipant(idx, "guardianName", e.target.value)} />
+                                <input className="field-input" value={p.guardianName || ""}
+                                  onChange={(e) => updateParticipant(idx, "guardianName", e.target.value)} />
                               </Field>
                               <Field label="Guardian Contact Number" error={errors[`p${idx}.guardianContact`]}>
-                                <input className="field-input" value={p.guardianContact || ""} onChange={(e) => updateParticipant(idx, "guardianContact", e.target.value)} />
+                                <input className="field-input" value={p.guardianContact || ""}
+                                  onChange={(e) => updateParticipant(idx, "guardianContact", e.target.value)} />
                               </Field>
                             </>
                           )}
 
+                          {/* Document upload */}
+                          {selectedProgram.fields.enableDocumentUpload && (
+                            <Field label="Document Upload (PDF/JPG/PNG)">
+                              <input
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                className="field-input"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  setParticipants((prev) =>
+                                    prev.map((pp, i) => i === idx ? { ...pp, documentFile: file } : pp)
+                                  );
+                                }}
+                              />
+                            </Field>
+                          )}
+
+                          {/* Custom fields */}
                           {selectedProgram.fields.customFields.map((cf) => (
                             <Field key={cf.label} label={cf.label} error={errors[`p${idx}.custom.${cf.label}`]}>
                               <input
@@ -481,19 +770,20 @@ export default function EventDetail() {
                             </Field>
                           ))}
 
-                          {selectedProgram.fields.enableDocumentUpload && (
-                            <Field label="Document Upload (PDF/JPG/PNG)">
-                              <input
-                                type="file"
-                                accept=".pdf,.jpg,.jpeg,.png"
-                                className="field-input"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0] || null;
-                                  setParticipants((prev) => prev.map((pp, i) => i === idx ? { ...pp, documentFile: file } : pp));
-                                }}
-                              />
-                            </Field>
+                          {/* Remark */}
+                          {selectedProgram.fields.enableRemark && (
+                            <div className="sm:col-span-2">
+                              <Field label="Remark">
+                                <textarea
+                                  className="field-input"
+                                  rows={2}
+                                  value={p.remark || ""}
+                                  onChange={(e) => updateParticipant(idx, "remark", e.target.value)}
+                                />
+                              </Field>
+                            </div>
                           )}
+
                         </div>
                       </div>
                     ))}
@@ -509,70 +799,103 @@ export default function EventDetail() {
                     )}
 
                     <div className="flex gap-3">
-                      <button onClick={() => { setStep(1); setRegistering(false); }} className="btn-outline px-6 py-2.5 text-sm font-medium">
+                      <button
+                        onClick={() => { setStep(cart.length > 0 ? 3 : 1); setSelectedProgram(null); setEditingCartIndex(null); }}
+                        className="btn-outline px-6 py-2.5 text-sm font-medium"
+                      >
                         Back
                       </button>
                       <button onClick={handleAddToCart} className="btn-primary px-6 py-2.5 text-sm font-semibold">
-                        Add to Cart
+                        {editingCartIndex !== null ? "Update Cart" : "Add to Cart"}
                       </button>
                     </div>
                   </motion.div>
                 )}
 
-                {/* STEP 3 — Cart */}
+                {/* ── STEP 3: Cart ── */}
                 {step === 3 && (
-                  <motion.div key="step3" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                  <motion.div key="step3"
+                    initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+
                     <div className="flex items-center gap-2 mb-6">
                       <ShoppingCart className="h-5 w-5" style={{ color: "var(--color-primary)" }} />
-                      <h3 className="font-heading font-bold text-lg">Your Cart</h3>
+                      <h3 className="font-bold text-lg">Your Cart</h3>
                     </div>
 
                     {cart.length === 0 ? (
                       <div className="text-center py-12 opacity-60">
                         <p>Your cart is empty.</p>
-                        <button onClick={() => setStep(1)} className="mt-3 text-sm font-medium" style={{ color: "var(--color-primary)" }}>
+                        <button onClick={() => setStep(1)} className="mt-3 text-sm font-medium"
+                          style={{ color: "var(--color-primary)" }}>
                           Add a registration
                         </button>
                       </div>
                     ) : (
                       <>
                         {cart.map((entry, idx) => (
-                          <div
-                            key={idx}
-                            className="p-5 mb-3 flex items-start justify-between"
-                            style={{ border: "1px solid var(--color-table-border)" }}
-                          >
+                          <div key={idx} className="p-5 mb-3 flex items-start justify-between"
+                            style={{ border: "1px solid var(--color-table-border)" }}>
                             <div>
                               <p className="font-semibold">{entry.programName}</p>
                               <p className="text-sm opacity-70 mt-1">
                                 {entry.participants.map((p) => p.fullName).join(", ")}
                               </p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                               <span className="font-bold" style={{ color: "var(--color-primary)" }}>
                                 {currency} ${entry.fee}
                               </span>
-                              <button onClick={() => removeCartEntry(idx)} className="opacity-50 hover:opacity-100">
+                              <button
+                                onClick={() => editCartEntry(idx)}
+                                className="p-1.5 opacity-50 hover:opacity-100"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => removeCartEntry(idx)}
+                                className="p-1.5 opacity-50 hover:opacity-100"
+                                title="Remove"
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </button>
                             </div>
                           </div>
                         ))}
 
-                        <div className="flex items-center justify-between py-5 border-t mt-5" style={{ borderColor: "var(--color-table-border)" }}>
-                          <span className="font-heading font-bold text-lg">Total</span>
-                          <span className="font-heading font-bold text-xl" style={{ color: "var(--color-primary)" }}>
+                        {/* Total */}
+                        <div className="flex items-center justify-between py-5"
+                          style={{ borderTop: "1px solid var(--color-table-border)" }}>
+                          <span className="font-bold text-lg">Total</span>
+                          <span className="font-bold text-xl" style={{ color: "var(--color-primary)" }}>
                             {currency} ${totalPrice}
                           </span>
                         </div>
 
-                        <div className="flex gap-3 mt-5">
+                        {/* Consent checkbox */}
+                        <div className="p-5 mb-5"
+                          style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                          <label className="flex items-start gap-3 cursor-pointer text-sm leading-relaxed">
+                            <input
+                              type="checkbox"
+                              checked={consentChecked}
+                              onChange={(e) => setConsentChecked(e.target.checked)}
+                              className="mt-0.5 flex-shrink-0"
+                            />
+                            <span style={{ color: "var(--color-body-text)" }}>
+                              {config.consentText}
+                            </span>
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
                           <button onClick={() => setStep(1)} className="btn-outline px-6 py-2.5 text-sm font-medium">
                             Add More
                           </button>
                           <button
+                            disabled={!consentChecked}
                             onClick={() => navigate("/payment/result?status=success")}
-                            className="btn-primary px-8 py-2.5 text-sm font-semibold"
+                            className="btn-primary px-8 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {isAuthenticated ? "Confirm Registration" : "Proceed to Payment"}
                           </button>
@@ -586,22 +909,60 @@ export default function EventDetail() {
                     )}
                   </motion.div>
                 )}
+
               </AnimatePresence>
             </div>
           )}
         </div>
       </main>
 
-      <ConsentModal
-        open={consentOpen}
-        onClose={() => setConsentOpen(false)}
-        onConfirm={confirmAddToCart}
-      />
+      {/* ── Admin Override Modal ── */}
+      <Dialog open={overrideOpen} onOpenChange={(v) => { if (!v) { setOverrideOpen(false); setOverrideReason(""); } }}>
+        <DialogContent className="max-w-md p-0"
+          style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+          <DialogHeader className="p-8 pb-0">
+            <DialogTitle className="font-bold text-xl">Override Validation</DialogTitle>
+          </DialogHeader>
+          <div className="p-8 pt-4 space-y-4">
+            <p className="text-sm opacity-70">
+              You are about to bypass validation as an admin. This action will be audit logged.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold mb-2 opacity-70">
+                Reason for override <span className="opacity-50">(min 10 characters)</span>
+              </label>
+              <textarea
+                className="field-input"
+                rows={3}
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Enter reason..."
+              />
+              <p className="text-xs mt-1 opacity-40">{overrideReason.trim().length} / 10 min</p>
+            </div>
+          </div>
+          <DialogFooter className="p-8 pt-0">
+            <button onClick={() => { setOverrideOpen(false); setOverrideReason(""); }}
+              className="btn-outline px-5 py-2.5 text-sm font-medium">
+              Cancel
+            </button>
+            <button
+              onClick={handleOverride}
+              disabled={overrideReason.trim().length < 10}
+              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Confirm Override
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Footer />
     </div>
   );
 }
 
+// ── Helper components ───────────────────────────────────────────────────────
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
   return (
     <div className="flex items-start gap-3">
@@ -619,7 +980,9 @@ function Field({ label, error, children }: { label: string; error?: string; chil
     <div>
       <label className="block text-xs font-semibold mb-2 opacity-70">{label}</label>
       {children}
-      {error && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{error}</p>}
+      {error && (
+        <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{error}</p>
+      )}
     </div>
   );
 }

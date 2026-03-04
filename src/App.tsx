@@ -16,6 +16,8 @@ import AdminEvents from "@/pages/admin/Events";
 import EventEdit from "@/pages/admin/EventEdit";
 import AdminRegistrations from "@/pages/admin/Registrations";
 import AdminFixtures from "@/pages/admin/Fixtures";
+import MasterConfig from "@/pages/admin/Masterconfig";
+import UserManagement from "@/pages/admin/Usermanagement";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +41,8 @@ const App = () => (
                 <Route path="events/:eventId" element={<EventEdit />} />
                 <Route path="registrations" element={<AdminRegistrations />} />
                 <Route path="fixtures" element={<AdminFixtures />} />
+                <Route path="config" element={<MasterConfig />} />
+                <Route path="users" element={<UserManagement />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
