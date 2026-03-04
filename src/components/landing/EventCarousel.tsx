@@ -52,9 +52,9 @@ export default function EventCarousel() {
   if (visibleEvents.length === 0) return null;
 
   return (
-    <section className="py-16 px-6" style={{ backgroundColor: "var(--color-page-bg)" }}>
+    <section className="py-20 px-8" style={{ backgroundColor: "var(--color-page-bg)" }}>
       <div className="max-w-6xl mx-auto">
-        <h2 className="font-heading font-bold text-2xl md:text-3xl mb-8">
+        <h2 className="font-heading font-bold text-2xl md:text-3xl mb-10">
           Upcoming Tournaments
         </h2>
 
@@ -62,8 +62,8 @@ export default function EventCarousel() {
           {canPrev && (
             <button
               onClick={() => emblaApi?.scrollPrev()}
-              className="absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
-              style={{ backgroundColor: "var(--color-primary)", color: "#fff" }}
+              className="absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 flex items-center justify-center shadow-lg"
+              style={{ backgroundColor: "var(--color-primary)", color: "var(--color-hero-text)" }}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -71,8 +71,8 @@ export default function EventCarousel() {
           {canNext && (
             <button
               onClick={() => emblaApi?.scrollNext()}
-              className="absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
-              style={{ backgroundColor: "var(--color-primary)", color: "#fff" }}
+              className="absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 flex items-center justify-center shadow-lg"
+              style={{ backgroundColor: "var(--color-primary)", color: "var(--color-hero-text)" }}
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -92,30 +92,28 @@ export default function EventCarousel() {
                     onClick={() => navigate(`/event/${event.id}`)}
                   >
                     <div
-                      className="card-lift rounded-xl overflow-hidden h-full"
+                      className="card-lift overflow-hidden h-full"
                       style={{
                         backgroundColor: "var(--color-row-hover)",
                         border: "1px solid var(--color-table-border)",
                       }}
                     >
                       {/* Colored top bar */}
-                      <div className="h-2" style={{ backgroundColor: "var(--color-primary)" }} />
-                      <div className="p-5">
-                        <div className="flex items-start justify-between mb-3">
-                          <h3
-                            className="font-heading font-bold text-lg leading-tight line-clamp-2 flex-1 mr-2"
-                          >
+                      <div className="h-1" style={{ backgroundColor: "var(--color-primary)" }} />
+                      <div className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <h3 className="font-heading font-bold text-lg leading-tight line-clamp-2 flex-1 mr-2">
                             {event.name}
                           </h3>
                           <StatusBadge status={status} />
                         </div>
                         <p
-                          className="text-sm mb-4 line-clamp-2 opacity-70"
+                          className="text-sm mb-5 line-clamp-2 opacity-70"
                           style={{ color: "var(--color-body-text)" }}
                         >
                           {event.description}
                         </p>
-                        <div className="space-y-1.5 text-sm" style={{ color: "var(--color-body-text)" }}>
+                        <div className="space-y-2 text-sm" style={{ color: "var(--color-body-text)" }}>
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 opacity-60" />
                             <span>
@@ -127,7 +125,7 @@ export default function EventCarousel() {
                             <span>{event.venue}</span>
                           </div>
                         </div>
-                        <div className="mt-4 text-sm font-semibold" style={{ color: "var(--color-primary)" }}>
+                        <div className="mt-5 text-sm font-semibold" style={{ color: "var(--color-primary)" }}>
                           {event.programs.length} program{event.programs.length !== 1 ? "s" : ""} available →
                         </div>
                       </div>

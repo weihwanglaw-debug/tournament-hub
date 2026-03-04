@@ -41,7 +41,7 @@
   --border: 214 32% 91%;
   --input: 214 32% 91%;
   --ring: 12 78% 60%;
-  --radius: 0.625rem;
+  --radius: 0rem;
 
   --sidebar-background: 210 29% 23%;
   --sidebar-foreground: 216 33% 97%;
@@ -92,7 +92,7 @@
   --border: 240 4% 16%;
   --input: 240 4% 16%;
   --ring: 350 90% 60%;
-  --radius: 0.625rem;
+  --radius: 0rem;
 
   --sidebar-background: 240 6% 7%;
   --sidebar-foreground: 213 32% 78%;
@@ -110,12 +110,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: 'Roboto', system-ui, sans-serif;
     background-color: var(--color-page-bg);
     color: var(--color-body-text);
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', system-ui, sans-serif;
+    font-family: 'Roboto', system-ui, sans-serif;
+    font-weight: 700;
     color: var(--color-heading);
   }
 }
@@ -127,11 +128,21 @@
 
 .btn-primary {
   background-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-hero-text);
   transition: background-color 0.2s;
 }
 .btn-primary:hover {
   background-color: var(--color-primary-hover);
+}
+
+.btn-outline {
+  border: 1px solid var(--color-table-border);
+  color: var(--color-body-text);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.btn-outline:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 /* Card hover lift */
@@ -145,15 +156,45 @@
 
 .field-input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
   border: 1px solid var(--color-table-border);
   background-color: var(--color-page-bg);
   color: var(--color-body-text);
   font-size: 0.875rem;
+  font-family: 'Roboto', system-ui, sans-serif;
   outline: none;
   transition: border-color 0.2s;
 }
 .field-input:focus {
   border-color: var(--color-primary);
+}
+.field-input::placeholder {
+  color: var(--color-body-text);
+  opacity: 0.4;
+}
+
+/* Tables */
+.trs-table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: collapse;
+}
+.trs-table thead tr {
+  background-color: var(--color-hero-bg);
+  color: var(--color-hero-text);
+}
+.trs-table th {
+  padding: 0.875rem 1.25rem;
+  font-weight: 600;
+  text-align: left;
+}
+.trs-table td {
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--color-table-border);
+}
+.trs-table tbody tr {
+  transition: background-color 0.15s;
+}
+.trs-table tbody tr:hover {
+  background-color: var(--color-row-hover);
 }

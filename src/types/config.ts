@@ -8,6 +8,7 @@ export interface ProgramFields {
   enableSbaId: boolean;
   enableDocumentUpload: boolean;
   enableGuardianInfo: boolean;
+  enableRemark?: boolean;
   customFields: CustomField[];
 }
 
@@ -83,6 +84,7 @@ export interface Participant {
   guardianName?: string;
   guardianContact?: string;
   documentFile?: File | null;
+  remark?: string;
   customFieldValues: Record<string, string>;
 }
 

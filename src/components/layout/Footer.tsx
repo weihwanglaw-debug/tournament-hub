@@ -12,7 +12,7 @@ const iconMap: Record<string, React.ElementType> = {
 export default function Footer() {
   return (
     <footer
-      className="py-10 px-6"
+      className="py-12 px-8"
       style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
     >
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
@@ -26,7 +26,7 @@ export default function Footer() {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                className="p-2 hover:bg-white/10 transition-colors"
                 aria-label={link.platform}
               >
                 <Icon className="h-5 w-5" />
@@ -59,7 +59,7 @@ export default function Footer() {
         )}
       </div>
 
-      <div className="max-w-6xl mx-auto mt-6 pt-4 border-t border-white/20 text-center text-xs opacity-60">
+      <div className="max-w-6xl mx-auto mt-8 pt-4 border-t border-white/20 text-center text-xs opacity-60">
         {config.footer.copyrightText}
       </div>
     </footer>

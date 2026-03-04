@@ -4,12 +4,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import config from "@/data/config.json";
 import { LogOut, ChevronDown, Sun, Moon, Trophy } from "lucide-react";
+import LoginModal from "@/components/auth/LoginModal";
 
 export default function Header() {
   const { isAuthenticated, user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -18,73 +20,77 @@ export default function Header() {
   };
 
   return (
-    <header
-      className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center justify-between px-6"
-      style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
-    >
-      {/* Logo */}
-      <Link to="/" className="flex items-center gap-2 font-heading font-bold text-xl">
-        {config.branding.logoUrl ? (
-          <img src={config.branding.logoUrl} alt={config.branding.appName} className="h-8" />
-        ) : (
-          <Trophy className="h-6 w-6" />
-        )}
-        <span>{config.branding.appName}</span>
-      </Link>
+    <>
+      <header
+        className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center justify-between px-8"
+        style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
+      >
+        {/* Logo */}
+        <Link to="/" className="flex items-center gap-2 font-heading font-bold text-xl">
+          {config.branding.logoUrl ? (
+            <img src={config.branding.logoUrl} alt={config.branding.appName} className="h-8" />
+          ) : (
+            <Trophy className="h-6 w-6" />
+          )}
+          <span>{config.branding.appName}</span>
+        </Link>
 
-      {/* Right side */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-          title="Toggle theme"
-        >
-          {theme === "a" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-        </button>
-
-        {!isAuthenticated ? (
-          <Link
-            to="/login"
-            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold"
+        {/* Right side */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            className="p-2 hover:bg-white/10 transition-colors"
+            title="Toggle theme"
           >
-            Login
-          </Link>
-        ) : (
-          <div className="relative">
+            {theme === "a" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
+
+          {!isAuthenticated ? (
             <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium"
+              onClick={() => setLoginOpen(true)}
+              className="btn-primary px-5 py-2 text-sm font-semibold"
             >
-              {user?.name}
-              <ChevronDown className="h-4 w-4" />
+              Login
             </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-48 rounded-lg shadow-lg py-1 z-50"
-                style={{ background: "var(--color-page-bg)", color: "var(--color-body-text)" }}
+          ) : (
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-white/10 transition-colors text-sm font-medium"
               >
-                {config.nav.menuItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    to={item.href}
-                    onClick={() => setMenuOpen(false)}
-                    className="block px-4 py-2 text-sm hover:bg-black/5 transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-                <hr className="my-1" style={{ borderColor: "var(--color-table-border)" }} />
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-black/5 transition-colors flex items-center gap-2"
+                {user?.name}
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {menuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 w-48 shadow-lg py-1 z-50"
+                  style={{ background: "var(--color-page-bg)", color: "var(--color-body-text)" }}
                 >
-                  <LogOut className="h-4 w-4" /> Logout
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </header>
+                  {config.nav.menuItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={() => setMenuOpen(false)}
+                      className="block px-4 py-2.5 text-sm hover:bg-black/5 transition-colors"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                  <hr style={{ borderColor: "var(--color-table-border)" }} />
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-black/5 transition-colors flex items-center gap-2"
+                  >
+                    <LogOut className="h-4 w-4" /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+    </>
   );
 }
