@@ -27,14 +27,14 @@ export default function ConsentModal({ open, onClose, onConfirm }: ConsentModalP
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setAgreed(false); } }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="font-heading">Consent & Acknowledgment</DialogTitle>
+      <DialogContent className="max-w-lg p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+        <DialogHeader className="p-8 pb-0">
+          <DialogTitle className="font-heading font-bold text-xl">Consent & Acknowledgment</DialogTitle>
         </DialogHeader>
-        <div className="py-4 text-sm leading-relaxed" style={{ color: "var(--color-body-text)" }}>
+        <div className="p-8 pt-4 text-sm leading-relaxed" style={{ color: "var(--color-body-text)" }}>
           {config.consentText}
         </div>
-        <div className="flex items-start gap-3 py-2">
+        <div className="flex items-start gap-3 px-8 py-2">
           <Checkbox
             id="consent"
             checked={agreed}
@@ -44,18 +44,17 @@ export default function ConsentModal({ open, onClose, onConfirm }: ConsentModalP
             I have read and agree to the above terms and conditions.
           </label>
         </div>
-        <DialogFooter>
+        <DialogFooter className="p-8 pt-4">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-medium"
-            style={{ color: "var(--color-body-text)" }}
+            className="btn-outline px-5 py-2.5 text-sm font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!agreed}
-            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Confirm & Add to Cart
           </button>

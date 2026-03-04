@@ -4,18 +4,18 @@ import config from "@/data/config.json";
 export default function HeroSection() {
   return (
     <section
-      className="relative flex items-center justify-center text-center px-6"
+      className="relative flex items-center justify-center text-center px-8"
       style={{
         background: "var(--color-hero-bg)",
         color: "var(--color-hero-text)",
         minHeight: "420px",
-        paddingTop: "5rem",
-        paddingBottom: "3rem",
+        paddingTop: "6rem",
+        paddingBottom: "4rem",
       }}
     >
       <div className="max-w-3xl mx-auto">
         <motion.h1
-          className="font-heading font-extrabold text-4xl md:text-5xl lg:text-6xl leading-tight mb-4"
+          className="font-heading font-bold text-4xl md:text-5xl lg:text-6xl leading-tight mb-6"
           style={{ color: "var(--color-hero-text)" }}
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}

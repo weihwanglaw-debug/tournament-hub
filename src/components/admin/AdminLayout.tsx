@@ -31,10 +31,10 @@ export default function AdminLayout() {
     <div className="flex min-h-screen pt-16">
       {/* Sidebar */}
       <aside
-        className="w-60 fixed top-16 bottom-0 flex flex-col py-6 px-3 overflow-y-auto"
+        className="w-60 fixed top-16 bottom-0 flex flex-col py-8 px-4 overflow-y-auto"
         style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
       >
-        <div className="flex items-center gap-2 px-3 mb-6">
+        <div className="flex items-center gap-2 px-3 mb-8">
           <Trophy className="h-5 w-5" />
           <span className="font-heading font-bold text-sm">Admin Panel</span>
         </div>
@@ -46,7 +46,7 @@ export default function AdminLayout() {
               to={link.to}
               end={link.end}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                `flex items-center gap-3 px-3 py-3 text-sm font-medium transition-colors ${
                   isActive ? "bg-white/15" : "hover:bg-white/10"
                 }`
               }
@@ -58,10 +58,10 @@ export default function AdminLayout() {
         </nav>
 
         <div className="mt-auto px-3">
-          <p className="text-xs opacity-60 mb-2">{user?.name}</p>
+          <p className="text-xs opacity-60 mb-3">{user?.name}</p>
           <button
             onClick={() => { logout(); navigate("/"); }}
-            className="flex items-center gap-2 text-sm hover:bg-white/10 px-3 py-2 rounded-lg w-full transition-colors"
+            className="flex items-center gap-2 text-sm hover:bg-white/10 px-3 py-2.5 w-full transition-colors"
           >
             <LogOut className="h-4 w-4" /> Logout
           </button>
@@ -69,7 +69,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 ml-60 p-8" style={{ backgroundColor: "var(--color-page-bg)" }}>
+      <main className="flex-1 ml-60 p-10" style={{ backgroundColor: "var(--color-page-bg)" }}>
         <Outlet />
       </main>
     </div>
