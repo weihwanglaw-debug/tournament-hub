@@ -3,7 +3,6 @@ import { Check, Edit2, X } from "lucide-react";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
 import type { LiveConfig } from "@/contexts/LiveConfigContext";
 
-// Re-export the type so other files can use it if needed
 export type { LiveConfig };
 
 interface ConfigRow {
@@ -18,6 +17,7 @@ const CONFIG_ROWS: ConfigRow[] = [
   { id: "logoUrl",       group: "Branding",  label: "Logo URL",                                 type: "url"      },
   { id: "heroTitle",     group: "Hero",      label: "Hero Title",                               type: "text"     },
   { id: "heroSubtitle",  group: "Hero",      label: "Hero Subtitle",                            type: "textarea" },
+  { id: "heroImageUrl",  group: "Hero",      label: "Hero Background Image URL",                type: "url"      },
   { id: "currency",      group: "Payment",   label: "Currency Code",                            type: "text"     },
   { id: "contactEmail",  group: "Footer",    label: "Contact Email",                            type: "text"     },
   { id: "copyrightText", group: "Footer",    label: "Copyright Text",                           type: "text"     },
@@ -59,10 +59,10 @@ export default function MasterConfig() {
       </p>
 
       {/* Group filter tabs */}
-      <div className="flex flex-wrap gap-0 mb-8" style={{ borderBottom: "2px solid var(--color-table-border)" }}>
+      <div className="flex flex-wrap gap-0 mb-8 overflow-x-auto" style={{ borderBottom: "2px solid var(--color-table-border)" }}>
         {GROUPS.map(g => (
           <button key={g} onClick={() => setActiveGroup(g)}
-            className="px-5 py-2.5 text-sm font-semibold transition-colors"
+            className="px-5 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap"
             style={{
               color: activeGroup === g ? "var(--color-primary)" : "var(--color-body-text)",
               borderBottom: activeGroup === g ? "2px solid var(--color-primary)" : "2px solid transparent",
@@ -80,7 +80,8 @@ export default function MasterConfig() {
               style={{ borderBottom: "1px solid var(--color-table-border)" }}>
               {group}
             </p>
-            <div style={{ border: "1px solid var(--color-table-border)" }}>
+            {/* Desktop: table / Mobile: cards */}
+            <div className="hidden md:block" style={{ border: "1px solid var(--color-table-border)" }}>
               <table className="trs-table w-full">
                 <thead>
                   <tr>
@@ -139,6 +140,46 @@ export default function MasterConfig() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-3">
+              {groupRows.map(row => (
+                <div key={row.id} className="p-4" style={{ border: "1px solid var(--color-table-border)" }}>
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-medium">{row.label}</p>
+                      <p className="text-xs opacity-40 font-mono">{row.id}</p>
+                    </div>
+                    {editId === row.id ? (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => commitEdit(row.id)} className="p-1.5" style={{ color: "var(--badge-open-text)" }}>
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button onClick={cancelEdit} className="p-1.5 opacity-40"><X className="h-4 w-4" /></button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEdit(row)} className="p-1.5"
+                        style={{ color: saved === row.id ? "var(--badge-open-text)" : "var(--color-primary)" }}>
+                        {saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
+                      </button>
+                    )}
+                  </div>
+                  {editId === row.id ? (
+                    row.type === "textarea" ? (
+                      <textarea className="field-input text-sm w-full" rows={3}
+                        value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus />
+                    ) : (
+                      <input className="field-input text-sm w-full"
+                        value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus
+                        onKeyDown={e => { if (e.key === "Enter") commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
+                    )
+                  ) : (
+                    <p className={`text-sm mt-1 ${!cfg[row.id] ? "opacity-30 italic" : ""}`}>
+                      {cfg[row.id] || "(empty)"}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         ))}
