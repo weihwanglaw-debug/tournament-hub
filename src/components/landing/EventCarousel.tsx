@@ -7,6 +7,11 @@ import config from "@/data/config.json";
 import type { TournamentEvent } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
+import eventBanner1 from "@/assets/event-banner-1.jpg";
+import eventBanner2 from "@/assets/event-banner-2.jpg";
+import eventBanner3 from "@/assets/event-banner-3.jpg";
+
+const FALLBACK_BANNERS = [eventBanner1, eventBanner2, eventBanner3];
 
 export default function EventCarousel() {
   const navigate = useNavigate();
@@ -82,31 +87,52 @@ export default function EventCarousel() {
             <div className="flex gap-6">
               {visibleEvents.map((event, i) => {
                 const status = getEventStatus(event);
+                const bannerImage = event.bannerUrl || FALLBACK_BANNERS[i % FALLBACK_BANNERS.length];
                 return (
                   <motion.div
                     key={event.id}
-                    className="flex-none w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] cursor-pointer"
+                    className="flex-none w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] cursor-pointer group"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.1 }}
                     onClick={() => navigate(`/event/${event.id}`)}
                   >
                     <div
-                      className="card-lift overflow-hidden h-full"
+                      className="overflow-hidden h-full transition-all duration-300 group-hover:shadow-xl group-hover:-translate-y-1"
                       style={{
                         backgroundColor: "var(--color-row-hover)",
                         border: "1px solid var(--color-table-border)",
                       }}
                     >
-                      {/* Colored top bar */}
-                      <div className="h-1" style={{ backgroundColor: "var(--color-primary)" }} />
-                      <div className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <h3 className="font-heading font-bold text-lg leading-tight line-clamp-2 flex-1 mr-2">
-                            {event.name}
-                          </h3>
+                      {/* Banner image */}
+                      <div className="relative h-44 overflow-hidden">
+                        <div
+                          className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
+                          style={{ backgroundImage: `url(${bannerImage})` }}
+                        />
+                        <div
+                          className="absolute inset-0 transition-opacity duration-300"
+                          style={{
+                            background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.6) 100%)",
+                          }}
+                        />
+                        <div className="absolute top-3 right-3">
                           <StatusBadge status={status} />
                         </div>
+                        {/* Hover overlay accent */}
+                        <div
+                          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          style={{
+                            background: `linear-gradient(180deg, transparent 60%, var(--color-primary) 200%)`,
+                            opacity: 0,
+                          }}
+                        />
+                      </div>
+
+                      <div className="p-6">
+                        <h3 className="font-heading font-bold text-lg leading-tight line-clamp-2 mb-3">
+                          {event.name}
+                        </h3>
                         <p
                           className="text-sm mb-5 line-clamp-2 opacity-70"
                           style={{ color: "var(--color-body-text)" }}
@@ -125,7 +151,10 @@ export default function EventCarousel() {
                             <span>{event.venue}</span>
                           </div>
                         </div>
-                        <div className="mt-5 text-sm font-semibold" style={{ color: "var(--color-primary)" }}>
+                        <div
+                          className="mt-5 text-sm font-semibold flex items-center gap-1 transition-all duration-300 group-hover:gap-2"
+                          style={{ color: "var(--color-primary)" }}
+                        >
                           {event.programs.length} program{event.programs.length !== 1 ? "s" : ""} available →
                         </div>
                       </div>

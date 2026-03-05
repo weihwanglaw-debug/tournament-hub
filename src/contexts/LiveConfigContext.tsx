@@ -2,8 +2,6 @@
  * LiveConfigContext — wraps config.json values that can be edited at runtime
  * via MasterConfig. Components that read these values use this context instead
  * of importing config.json directly.
- *
- * In production, replace initialState with a GET /api/config fetch.
  */
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import rawConfig from "@/data/config.json";
@@ -13,6 +11,7 @@ export interface LiveConfig {
   logoUrl:       string;
   heroTitle:     string;
   heroSubtitle:  string;
+  heroImageUrl:  string;
   currency:      string;
   contactEmail:  string;
   copyrightText: string;
@@ -29,6 +28,7 @@ const defaults: LiveConfig = {
   logoUrl:       rawConfig.branding.logoUrl,
   heroTitle:     rawConfig.hero.title,
   heroSubtitle:  rawConfig.hero.subtitle,
+  heroImageUrl:  "",
   currency:      rawConfig.payment.currency,
   contactEmail:  rawConfig.footer.contactEmail,
   copyrightText: rawConfig.footer.copyrightText,
