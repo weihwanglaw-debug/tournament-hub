@@ -267,6 +267,9 @@
 .trs-table tbody tr {
   border-left: 3px solid transparent;
 }
+.trs-table tbody tr:nth-child(even) {
+  background-color: var(--color-row-stripe);
+}
 .trs-table tbody tr:hover {
   border-left-color: var(--color-primary);
 }
