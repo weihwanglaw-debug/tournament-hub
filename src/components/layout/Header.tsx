@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
@@ -12,16 +12,29 @@ export default function Header() {
   const { theme, toggleTheme } = useTheme();
   const { cfg } = useLiveConfig();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Determine if on a page with hero (landing or event detail)
+  const isHeroPage = location.pathname === "/" || location.pathname.startsWith("/event/");
 
   const handleLogout = () => {
     logout();
     setMenuOpen(false);
     navigate("/");
   };
+
+  // Scroll listener for transparent → solid header
+  useEffect(() => {
+    const handler = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", handler, { passive: true });
+    handler(); // initial check
+    return () => window.removeEventListener("scroll", handler);
+  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -34,11 +47,18 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
+  const showSolid = !isHeroPage || scrolled;
+
   return (
     <>
       <header
-        className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center justify-between px-8"
-        style={{ background: "var(--color-hero-bg)", color: "var(--color-hero-text)" }}
+        className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center justify-between px-8 transition-all duration-500"
+        style={{
+          background: showSolid ? "var(--color-hero-bg)" : "transparent",
+          color: "var(--color-hero-text)",
+          backdropFilter: showSolid ? "none" : "blur(8px)",
+          boxShadow: showSolid ? "0 2px 12px rgba(0,0,0,0.15)" : "none",
+        }}
       >
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 font-heading font-bold text-xl">
@@ -81,7 +101,6 @@ export default function Header() {
                   className="absolute right-0 top-full mt-1 w-48 shadow-lg py-1 z-50"
                   style={{ background: "var(--color-page-bg)", color: "var(--color-body-text)" }}
                 >
-                  {/* Only show admin nav links to authenticated users */}
                   {config.nav.menuItems.map((item) => (
                     <Link
                       key={item.href}

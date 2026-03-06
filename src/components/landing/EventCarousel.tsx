@@ -57,7 +57,7 @@ export default function EventCarousel() {
   if (visibleEvents.length === 0) return null;
 
   return (
-    <section className="py-20 px-8" style={{ backgroundColor: "var(--color-page-bg)" }}>
+    <section id="events-section" className="py-20 px-8" style={{ backgroundColor: "var(--color-page-bg)" }}>
       <div className="max-w-6xl mx-auto">
         <h2 className="font-heading font-bold text-2xl md:text-3xl mb-10">
           Current & Upcoming Events
@@ -119,14 +119,6 @@ export default function EventCarousel() {
                         <div className="absolute top-3 right-3">
                           <StatusBadge status={status} />
                         </div>
-                        {/* Hover overlay accent */}
-                        <div
-                          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          style={{
-                            background: `linear-gradient(180deg, transparent 60%, var(--color-primary) 200%)`,
-                            opacity: 0,
-                          }}
-                        />
                       </div>
 
                       <div className="p-6">
