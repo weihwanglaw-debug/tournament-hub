@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Edit2, Key, Trash2, Eye, EyeOff, Check, MoreVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +17,17 @@ export default function UserManagement() {
   const [target, setTarget] = useState<AdminUser | null>(null);
   const [delConf, setDelConf] = useState<string | null>(null);
   const [openAction, setOpenAction] = useState<string | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!openAction) return;
+    const handler = (e: MouseEvent) => {
+      if (actionRef.current && !actionRef.current.contains(e.target as Node))
+        setOpenAction(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openAction]);
 
   const [fName, setFName] = useState("");
   const [fEmail, setFEmail] = useState("");
@@ -65,7 +76,7 @@ export default function UserManagement() {
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
-        <h1 className="font-bold text-2xl">User Management</h1>
+        <div className="admin-page-title" style={{ marginBottom: 0 }}><h1>User Management</h1></div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold"><Plus className="h-4 w-4" /> Add User</button>
       </div>
 
@@ -95,10 +106,25 @@ export default function UserManagement() {
                   <td><span className="inline-flex px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: rb.bg, color: rb.text }}>{roleLabel(u.role)}</span></td>
                   <td className="text-xs opacity-50">{u.lastLogin || "Never"}</td>
                   <td>
-                    <div className="flex items-center gap-0">
-                      <IABtn label="Edit" onClick={() => openEdit(u)}><Edit2 className="h-4 w-4" /></IABtn>
-                      <IABtn label="Reset Password" onClick={() => openReset(u)}><Key className="h-4 w-4" /></IABtn>
-                      <IABtn label={isSelf(u) ? "Cannot delete self" : "Delete"} danger disabled={isSelf(u)} onClick={() => !isSelf(u) && setDelConf(u.id)}><Trash2 className="h-4 w-4" /></IABtn>
+                    <div className="relative" ref={openAction === u.id ? actionRef : undefined}>
+                      <button onClick={() => setOpenAction(openAction === u.id ? null : u.id)}
+                        className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      {openAction === u.id && (
+                        <div className="action-dropdown">
+                          <button onClick={() => { openEdit(u); setOpenAction(null); }}>
+                            <Edit2 className="h-4 w-4" /> Edit
+                          </button>
+                          <button onClick={() => { openReset(u); setOpenAction(null); }}>
+                            <Key className="h-4 w-4" /> Reset Password
+                          </button>
+                          <button disabled={isSelf(u)} onClick={() => { if (!isSelf(u)) { setDelConf(u.id); setOpenAction(null); } }}
+                            style={{ color: !isSelf(u) ? "var(--badge-open-text)" : undefined }}>
+                            <Trash2 className="h-4 w-4" /> {isSelf(u) ? "Cannot delete self" : "Delete"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -192,12 +218,4 @@ export default function UserManagement() {
 
 function FF({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (<div><label className="block text-xs font-semibold mb-2 opacity-70">{label}</label>{children}{error && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{error}</p>}</div>);
-}
-
-function IABtn({ label, onClick, danger = false, disabled = false, children }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <button title={label} onClick={onClick} disabled={disabled}
-      className="p-2 transition-opacity hover:opacity-60 disabled:opacity-20 disabled:cursor-not-allowed"
-      style={{ color: danger ? "var(--badge-open-text)" : "var(--color-primary)" }}>{children}</button>
-  );
 }

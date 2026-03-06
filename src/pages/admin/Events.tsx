@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import config from "@/data/config.json";
 import type { TournamentEvent } from "@/types/config";
@@ -15,6 +15,17 @@ export default function AdminEvents() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterRegStatus, setFilterRegStatus] = useState("");
   const [openAction, setOpenAction] = useState<string | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!openAction) return;
+    const handler = (e: MouseEvent) => {
+      if (actionRef.current && !actionRef.current.contains(e.target as Node))
+        setOpenAction(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openAction]);
 
   const filtered = useMemo(() => events.filter(ev => {
     if (filterStatus && getEventStatus(ev) !== filterStatus) return false;
@@ -29,7 +40,7 @@ export default function AdminEvents() {
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
-        <h1 className="font-bold text-2xl">Events & Programs</h1>
+        <div className="admin-page-title" style={{ marginBottom: 0 }}><h1>Events &amp; Programs</h1></div>
         <button onClick={() => navigate("/admin/events/new")}
           className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
           <Plus className="h-4 w-4" /> Create Event
@@ -83,9 +94,21 @@ export default function AdminEvents() {
                   <td><StatusBadge status={status} /></td>
                   <td className="text-sm">{event.programs.length}</td>
                   <td>
-                    <div className="flex items-center gap-1">
-                      <ActionBtn title="View / Edit" onClick={() => navigate(`/admin/events/${event.id}`)}><Eye className="h-4 w-4" /></ActionBtn>
-                      <ActionBtn title="Registrations" onClick={() => navigate(`/admin/registrations?event=${event.id}`)}><Users className="h-4 w-4" /></ActionBtn>
+                    <div className="relative" ref={openAction === event.id ? actionRef : undefined}>
+                      <button onClick={() => setOpenAction(openAction === event.id ? null : event.id)}
+                        className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      {openAction === event.id && (
+                        <div className="action-dropdown">
+                          <button onClick={() => { navigate(`/admin/events/${event.id}`); setOpenAction(null); }}>
+                            <Eye className="h-4 w-4" /> View / Edit
+                          </button>
+                          <button onClick={() => { navigate(`/admin/registrations?event=${event.id}`); setOpenAction(null); }}>
+                            <Users className="h-4 w-4" /> Registrations
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -146,12 +169,4 @@ export default function AdminEvents() {
 
 function FG({ label, children }: { label: string; children: React.ReactNode }) {
   return (<div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>);
-}
-
-function ActionBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button title={title} onClick={onClick} className="p-2 transition-colors hover:opacity-70" style={{ color: "var(--color-primary)" }}>
-      {children}
-    </button>
-  );
 }

@@ -53,8 +53,8 @@ export default function MasterConfig() {
 
   return (
     <div>
-      <h1 className="font-bold text-2xl mb-2">Master Configuration</h1>
-      <p className="text-xs opacity-50 mb-8">
+      <div className="admin-page-title"><h1>Master Configuration</h1></div>
+      <p className="text-xs opacity-50 mb-8 -mt-4">
         Changes here apply live across the app. In production, values are persisted via PUT /api/config.
       </p>
 

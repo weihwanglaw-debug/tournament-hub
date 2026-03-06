@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="font-heading font-bold text-2xl mb-8">Dashboard</h1>
+      <div className="admin-page-title"><h1>Dashboard</h1></div>
 
       {/* Metrics */}
       <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-5 mb-12">

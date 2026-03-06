@@ -14,6 +14,8 @@
   --color-table-border: #e2e8f0;
   --color-body-text: #4a5568;
   --color-row-hover: #edf2f7;
+  --color-row-stripe: #f7fafc;
+  --color-disabled-text: #a0aec0;
   --badge-open-bg: #fed7d7;
   --badge-open-text: #c53030;
   --badge-soon-bg: #feebc8;
@@ -65,6 +67,8 @@
   --color-table-border: #27272a;
   --color-body-text: #cbd5e1;
   --color-row-hover: rgba(244,63,94,0.05);
+  --color-row-stripe: rgba(255,255,255,0.02);
+  --color-disabled-text: #52525b;
   --badge-open-bg: rgba(244,63,94,0.16);
   --badge-open-text: #fb7185;
   --badge-soon-bg: rgba(251,191,36,0.13);
@@ -145,6 +149,23 @@
   color: var(--color-primary);
 }
 
+/* Back button — obvious style */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-body-text);
+  border: 1px solid var(--color-table-border);
+  transition: all 0.2s;
+}
+.btn-back:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 /* Card hover lift */
 .card-lift {
   transition: transform 0.25s ease, box-shadow 0.25s ease;
@@ -173,6 +194,29 @@
   opacity: 0.4;
 }
 
+/* ── Admin page title ────────────────────────────────── */
+.admin-page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+.admin-page-title::before {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 1.75rem;
+  background-color: var(--color-primary);
+  flex-shrink: 0;
+}
+.admin-page-title h1 {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
 /* Tables */
 .trs-table {
   width: 100%;
@@ -184,21 +228,140 @@
   color: var(--color-hero-text);
 }
 .trs-table th {
-  padding: 0.875rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   font-weight: 600;
   text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
 }
 .trs-table td {
   padding: 0.875rem 1.25rem;
   border-bottom: 1px solid var(--color-table-border);
   text-align: left;
-}
-.trs-table th {
-  text-align: left;
+  color: var(--color-body-text);
 }
 .trs-table tbody tr {
-  transition: background-color 0.15s;
+  transition: background-color 0.12s ease;
+}
+/* Alternating rows — very subtle primary tint on even rows */
+[data-theme="a"] .trs-table tbody tr:nth-child(even) {
+  background-color: rgba(232, 105, 74, 0.04);
+}
+[data-theme="b"] .trs-table tbody tr:nth-child(even) {
+  background-color: rgba(244, 63, 94, 0.05);
+}
+/* Hover — slightly stronger, text stays readable */
+[data-theme="a"] .trs-table tbody tr:hover {
+  background-color: rgba(232, 105, 74, 0.09);
+}
+[data-theme="b"] .trs-table tbody tr:hover {
+  background-color: rgba(244, 63, 94, 0.10);
+}
+/* Ensure text inside hovered rows stays visible */
+.trs-table tbody tr:hover td {
+  color: var(--color-body-text);
+}
+/* Left accent border on hover */
+.trs-table tbody tr {
+  border-left: 3px solid transparent;
 }
 .trs-table tbody tr:hover {
+  border-left-color: var(--color-primary);
+}
+
+/* Sticky section headers in admin */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--color-page-bg);
+  padding: 1rem 0 0.75rem;
+  border-bottom: 1px solid var(--color-table-border);
+  box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08);
+  margin-bottom: 1.5rem;
+}
+
+/* Tab bar styles — modern pill/segment style, mobile-friendly */
+.tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
   background-color: var(--color-row-hover);
+  border: 1px solid var(--color-table-border);
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+  flex-wrap: nowrap;
+}
+.tab-bar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+.tab-btn {
+  padding: 0.5rem 1.125rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--color-body-text);
+  background: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  opacity: 0.65;
+}
+.tab-btn:hover {
+  color: var(--color-primary);
+  opacity: 0.9;
+}
+.tab-btn.active {
+  color: var(--color-primary);
+  background-color: var(--color-page-bg);
+  border-color: var(--color-table-border);
+  opacity: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* Actions column should not expand */
+.trs-table th:last-child,
+.trs-table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* Action dropdown for tables */
+.action-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.25rem;
+  min-width: 12rem;
+  padding: 0.25rem 0;
+  z-index: 30;
+  background-color: var(--color-page-bg);
+  border: 1px solid var(--color-table-border);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.action-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  transition: background-color 0.15s;
+}
+.action-dropdown button:hover {
+  background-color: var(--color-row-hover);
+}
+.action-dropdown button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Loading cursor */
+.cursor-loading {
+  cursor: wait;
 }

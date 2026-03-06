@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -13,6 +13,7 @@ import StatusBadge, { getProgramCapacityStatus } from "@/components/events/Statu
 import { useAuth } from "@/contexts/AuthContext";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -52,11 +53,35 @@ function blankParticipant(): Participant {
   };
 }
 
-// ── Gallery Component ──
+// ── Gallery Component with swipe support ──
 function EventGallery({ images }: { images: string[] }) {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [swipeDir, setSwipeDir] = useState<1 | -1>(1);
+  const touchStart = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStart.current === null || lightboxIdx === null) return;
+    const diff = touchStart.current - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) { setSwipeDir(1); setLightboxIdx((lightboxIdx + 1) % images.length); }
+      else { setSwipeDir(-1); setLightboxIdx((lightboxIdx - 1 + images.length) % images.length); }
+    }
+    touchStart.current = null;
+  };
+
+  const goNext = (e: React.MouseEvent) => { e.stopPropagation(); setSwipeDir(1); setLightboxIdx(prev => ((prev ?? 0) + 1) % images.length); };
+  const goPrev = (e: React.MouseEvent) => { e.stopPropagation(); setSwipeDir(-1); setLightboxIdx(prev => ((prev ?? 0) - 1 + images.length) % images.length); };
 
   if (images.length === 0) return null;
+
+  const MAX_VISIBLE = 6;
+  const visibleImages = showAll ? images : images.slice(0, MAX_VISIBLE);
+  const hasMore = images.length > MAX_VISIBLE && !showAll;
 
   return (
     <div className="mb-12">
@@ -71,54 +96,111 @@ function EventGallery({ images }: { images: string[] }) {
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-300" />
         </div>
       ) : (
-        <div className={`grid gap-3 ${
-          images.length === 2 ? "grid-cols-2" :
-          images.length === 3 ? "grid-cols-2 md:grid-cols-3" :
-          "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-        }`}>
-          {images.map((img, i) => (
-            <div
-              key={i}
-              className={`relative overflow-hidden cursor-pointer group ${
-                i === 0 && images.length === 3 ? "col-span-2 md:col-span-1" : ""
-              }`}
-              style={{ border: "1px solid var(--color-table-border)" }}
-              onClick={() => setLightboxIdx(i)}
-            >
-              <div className="aspect-video">
-                <img src={img} alt={`Gallery ${i + 1}`}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+        <>
+          <div className={`grid gap-3 ${
+            images.length === 2 ? "grid-cols-2" :
+            "grid-cols-2 md:grid-cols-3"
+          }`}>
+            {visibleImages.map((img, i) => (
+              <div
+                key={i}
+                className="relative overflow-hidden cursor-pointer group"
+                style={{ border: "1px solid var(--color-table-border)" }}
+                onClick={() => { setLightboxIdx(i); setSwipeDir(1); }}
+              >
+                <div className="aspect-video">
+                  <img src={img} alt={`Gallery ${i + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                </div>
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
+                  <Search className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                </div>
+                {/* Show remaining count on last visible */}
+                {hasMore && i === MAX_VISIBLE - 1 && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <span className="text-white text-lg font-bold">+{images.length - MAX_VISIBLE}</span>
+                  </div>
+                )}
               </div>
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-                <Search className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {hasMore && (
+            <button onClick={() => setShowAll(true)}
+              className="mt-3 text-sm font-medium" style={{ color: "var(--color-primary)" }}>
+              Show all {images.length} photos
+            </button>
+          )}
+        </>
       )}
 
-      {/* Lightbox */}
-      {lightboxIdx !== null && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightboxIdx(null)}>
-          <button className="absolute top-4 right-4 p-2 text-white/70 hover:text-white" onClick={() => setLightboxIdx(null)}>
-            <X className="h-6 w-6" />
-          </button>
-          {images.length > 1 && (
-            <>
-              <button className="absolute left-4 p-2 text-white/70 hover:text-white"
-                onClick={e => { e.stopPropagation(); setLightboxIdx((lightboxIdx - 1 + images.length) % images.length); }}>
-                <ChevronLeft className="h-8 w-8" />
-              </button>
-              <button className="absolute right-4 p-2 text-white/70 hover:text-white"
-                onClick={e => { e.stopPropagation(); setLightboxIdx((lightboxIdx + 1) % images.length); }}>
-                <ChevronRight className="h-8 w-8" />
-              </button>
-            </>
-          )}
-          <img src={images[lightboxIdx]} alt="" className="max-w-full max-h-[85vh] object-contain" onClick={e => e.stopPropagation()} />
-          <div className="absolute bottom-4 text-white/60 text-sm">{lightboxIdx + 1} / {images.length}</div>
-        </div>
-      )}
+      {/* Lightbox with swipe */}
+      <AnimatePresence>
+        {lightboxIdx !== null && (
+          <motion.div
+            className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setLightboxIdx(null)}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            {/* Close */}
+            <button className="absolute top-4 right-4 p-2.5 text-white/60 hover:text-white z-10 bg-black/30 hover:bg-black/50 transition-all" onClick={() => setLightboxIdx(null)}>
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Prev/Next arrows — hidden on mobile (use swipe) */}
+            {images.length > 1 && (
+              <>
+                <button className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white/60 hover:text-white z-10 bg-black/30 hover:bg-black/50 transition-all items-center justify-center"
+                  onClick={goPrev}>
+                  <ChevronLeft className="h-7 w-7" />
+                </button>
+                <button className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white/60 hover:text-white z-10 bg-black/30 hover:bg-black/50 transition-all items-center justify-center"
+                  onClick={goNext}>
+                  <ChevronRight className="h-7 w-7" />
+                </button>
+              </>
+            )}
+
+            {/* Image with slide animation */}
+            <motion.img
+              key={lightboxIdx}
+              src={images[lightboxIdx]}
+              alt=""
+              className="max-w-full max-h-[85vh] object-contain px-4 md:px-20 select-none"
+              initial={{ opacity: 0, x: swipeDir * 60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: swipeDir * -60 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              onClick={e => e.stopPropagation()}
+              draggable={false}
+            />
+
+            {/* Bottom bar: counter + dots + swipe hint */}
+            <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-2 pb-5 pt-3 bg-gradient-to-t from-black/50 to-transparent">
+              {/* Dot indicators */}
+              {images.length > 1 && images.length <= 12 && (
+                <div className="flex gap-1.5">
+                  {images.map((_, i) => (
+                    <button key={i} onClick={e => { e.stopPropagation(); setSwipeDir(i > lightboxIdx ? 1 : -1); setLightboxIdx(i); }}
+                      className="w-1.5 h-1.5 rounded-full transition-all duration-200"
+                      style={{ backgroundColor: i === lightboxIdx ? "var(--color-primary)" : "rgba(255,255,255,0.35)" }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-3 text-white/50 text-xs">
+                <span>{lightboxIdx + 1} / {images.length}</span>
+                <span className="md:hidden flex items-center gap-1">
+                  <ChevronLeft className="h-3 w-3" /> Swipe <ChevronRight className="h-3 w-3" />
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -154,10 +236,8 @@ export default function EventDetail() {
 
   const bannerImage = event?.bannerUrl || FALLBACK_BANNERS[eventIndex % FALLBACK_BANNERS.length];
 
-  // Gallery: use event gallery URLs, or fallback to banners for demo
   const galleryImages = useMemo(() => {
     if (event?.galleryUrls && event.galleryUrls.length > 0) return event.galleryUrls;
-    // Demo: show 3 sample images for events that have no gallery
     return FALLBACK_BANNERS;
   }, [event]);
 
@@ -171,7 +251,6 @@ export default function EventDetail() {
     setSbaStatus({});
     setSuggestions(null);
     setStep(2);
-    // Scroll to registration section
     setTimeout(() => {
       registrationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -291,7 +370,7 @@ export default function EventDetail() {
         selectedProgram.gender === "Mixed" &&
         selectedProgram.maxPlayers === 2 &&
         participants.length === 2 &&
-        participants.every(p => p.gender)   // ← guard
+        participants.every(p => p.gender)
       ) {
       const genders = participants.map((p) => p.gender);
       if (!(genders.includes("Male") && genders.includes("Female")))
@@ -356,18 +435,22 @@ export default function EventDetail() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 pt-16" style={{ backgroundColor: "var(--color-page-bg)" }}>
+      <main className="flex-1" style={{ backgroundColor: "var(--color-page-bg)" }}>
 
         {/* ── Banner Hero ── */}
-        <div className="relative" style={{ minHeight: "320px" }}>
+        <div className="relative" style={{ minHeight: "380px" }}>
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${bannerImage})` }} />
-          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.7) 100%)" }} />
-          <div className="relative z-10 max-w-5xl mx-auto px-8 py-14">
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%)" }} />
+          <div className="relative z-10 max-w-5xl mx-auto px-8 pt-24 pb-14">
             <button onClick={() => navigate("/")}
-              className="flex items-center gap-1 text-sm mb-5 text-white/70 hover:text-white transition-colors">
+              className="flex items-center gap-2 text-sm mb-6 px-4 py-2 text-white/80 hover:text-white transition-colors"
+              style={{ border: "1px solid rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.1)" }}>
               <ArrowLeft className="h-4 w-4" /> Back to events
             </button>
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--color-primary)" }}>
+                {event.venue}
+              </p>
               <div className="flex items-start gap-3 mb-3 flex-wrap">
                 <h1 className="font-bold text-3xl md:text-4xl text-white">{event.name}</h1>
                 <StatusBadge status={status} />
@@ -663,9 +746,9 @@ export default function EventDetail() {
                           <span className="font-bold text-xl" style={{ color: "var(--color-primary)" }}>{currency} ${totalPrice}</span>
                         </div>
                         <div className="p-5 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-                          <label className="flex items-start gap-3 cursor-pointer text-sm leading-relaxed">
-                            <input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+                          <label className="flex items-start justify-between gap-4 cursor-pointer text-sm leading-relaxed">
                             <span style={{ color: "var(--color-body-text)" }}>{config.consentText}</span>
+                            <Switch checked={consentChecked} onCheckedChange={setConsentChecked} />
                           </label>
                         </div>
                         <div className="flex flex-wrap gap-3">

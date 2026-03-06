@@ -93,6 +93,8 @@ export interface Program {
   fixtureFormat?: FixtureFormat;       // defaults to "knockout" if absent
   formatConfig?:  FixtureFormatConfig; // format-specific settings
   scoringRule?:   ScoringRuleId;       // defaults to "badminton_21" if absent
+  maxSeeds?:      number;              // max number of seeded participants (0 = no seeding)
+  participantSeeds?: SeedEntry[];      // pre-loaded from registrations
 }
 
 // ── Event ─────────────────────────────────────────────────────────────────────

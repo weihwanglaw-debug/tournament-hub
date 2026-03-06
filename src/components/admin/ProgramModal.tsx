@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import type { Program, FixtureFormat, ScoringRuleId, FixtureFormatConfig, TiebreakCriteria } from "@/types/config";
 import { SCORING_RULES } from "@/lib/fixtureEngine";
 
@@ -401,10 +402,10 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                       onChange={e => fc({ pointsForDraw: +e.target.value })} />
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={formatConfig.homeAndAway ?? false}
-                    onChange={e => fc({ homeAndAway: e.target.checked })} />
-                  Home &amp; Away (each pair plays twice)
+                <label className="flex items-center justify-between gap-3 text-sm cursor-pointer p-3" style={{ border: "1px solid var(--color-table-border)" }}>
+                  <span>Home &amp; Away (each pair plays twice)</span>
+                  <Switch checked={formatConfig.homeAndAway ?? false}
+                    onCheckedChange={v => fc({ homeAndAway: v })} />
                 </label>
                 <TiebreakSelector
                   selected={formatConfig.tiebreakOrder ?? []}
@@ -484,7 +485,12 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
 
           {/* ── Fee ── */}
           <Sec title="Fee">
-            <div className="flex flex-wrap items-end gap-6">
+            <label className="flex items-center justify-between gap-3 text-sm cursor-pointer p-3 mb-4" style={{ border: "1px solid var(--color-table-border)" }}>
+              <span className="font-semibold">Payment Required</span>
+              <Switch checked={form.paymentRequired}
+                onCheckedChange={v => { s("paymentRequired", v); if (!v) s("fee", "0.00"); }} />
+            </label>
+            {form.paymentRequired ? (
               <div>
                 <Lbl>Registration Fee (SGD)</Lbl>
                 <div className="flex">
@@ -495,24 +501,15 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                     className="field-input w-36"
                     style={{ borderLeft: "none" }}
                     value={form.fee}
-                    disabled={!form.paymentRequired}
                     onChange={e => s("fee", e.target.value)}
                     onBlur={e => s("fee", parseFloat(e.target.value || "0").toFixed(2))}
                   />
                 </div>
                 {formErrors.fee && <Err>{formErrors.fee}</Err>}
               </div>
-              <div className="pb-1">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={form.paymentRequired}
-                    onChange={e => { s("paymentRequired", e.target.checked); if (!e.target.checked) s("fee", "0.00"); }} />
-                  Payment Required
-                </label>
-                {!form.paymentRequired && (
-                  <p className="text-xs mt-1 opacity-50">Fee set to $0.00 (free entry)</p>
-                )}
-              </div>
-            </div>
+            ) : (
+              <p className="text-xs opacity-50">Free entry — no payment will be collected.</p>
+            )}
           </Sec>
 
           {/* ── Optional fields ── */}
@@ -525,11 +522,11 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                 ...(isBadminton ? [{ key: "enableSbaId", label: "SBA ID Lookup" }] : []),
               ].map(opt => (
                 <label key={opt.key}
-                  className="flex items-center gap-2 text-sm cursor-pointer p-3"
+                  className="flex items-center justify-between gap-3 text-sm cursor-pointer p-3"
                   style={{ border: "1px solid var(--color-table-border)" }}>
-                  <input type="checkbox" checked={form[opt.key as keyof typeof form] as boolean}
-                    onChange={e => s(opt.key, e.target.checked)} />
-                  {opt.label}
+                  <span>{opt.label}</span>
+                  <Switch checked={form[opt.key as keyof typeof form] as boolean}
+                    onCheckedChange={v => s(opt.key, v)} />
                 </label>
               ))}
             </div>
@@ -555,10 +552,10 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                       </select>
                     </div>
                     <div className="flex items-end pb-2 gap-4">
-                      <label className="flex items-center gap-1.5 text-sm cursor-pointer whitespace-nowrap">
-                        <input type="checkbox" checked={cf.mandatory}
-                          onChange={e => updateCF(idx, "mandatory", e.target.checked)} />
-                        Mandatory
+                      <label className="flex items-center justify-between gap-3 text-sm cursor-pointer whitespace-nowrap">
+                        <span>Mandatory</span>
+                        <Switch checked={cf.mandatory}
+                          onCheckedChange={v => updateCF(idx, "mandatory", v)} />
                       </label>
                       <button onClick={() => removeCF(idx)} className="opacity-40 hover:opacity-80">
                         <Trash2 className="h-4 w-4" />

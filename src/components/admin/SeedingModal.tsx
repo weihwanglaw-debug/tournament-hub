@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 interface SeedingModalProps {
   open: boolean;
@@ -66,9 +67,9 @@ export default function SeedingModal({ open, onClose, programId }: SeedingModalP
           )}
 
           <div className="mt-8 pt-5" style={{ borderTop: "1px solid var(--color-table-border)" }}>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={finalized} onChange={(e) => setFinalized(e.target.checked)} />
+            <label className="flex items-center justify-between gap-3 text-sm cursor-pointer p-3" style={{ border: "1px solid var(--color-table-border)" }}>
               <span>Finalize seeding (required before fixture generation)</span>
+              <Switch checked={finalized} onCheckedChange={setFinalized} />
             </label>
           </div>
         </div>

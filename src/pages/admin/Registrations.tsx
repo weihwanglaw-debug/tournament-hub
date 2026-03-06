@@ -5,8 +5,9 @@ import config from "@/data/config.json";
 import type { TournamentEvent, PaymentRecord, PaymentLineItem, PaymentMethod } from "@/types/config";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/TableControls";
+import { Switch } from "@/components/ui/switch";
 
-// ── Sample data (same as before) ──
+// ── Sample data ──
 const INIT_REGS = [
   { id: "R001", club: "Pasir Ris BC", name: "Lee Wei Jie", event: "evt-1", eventName: "Singapore Open 2026", program: "prog-1", programName: "Men's Singles", paymentStatus: "Pending", regStatus: "Pending", amount: 80 },
   { id: "R002", club: "Tampines BC", name: "Tan Mei Ling", event: "evt-1", eventName: "Singapore Open 2026", program: "prog-2", programName: "Women's Singles", paymentStatus: "Pending", regStatus: "Pending", amount: 80 },
@@ -56,7 +57,6 @@ export default function AdminRegistrations() {
   const [openAction, setOpenAction] = useState<string | null>(null);
   const actionRef = useRef<HTMLDivElement | null>(null);
 
-  // Close action dropdown on outside click
   useEffect(() => {
     if (!openAction) return;
     const handler = (e: MouseEvent) => {
@@ -162,21 +162,18 @@ export default function AdminRegistrations() {
 
   return (
     <div>
-      <h1 className="font-bold text-2xl mb-8">Registrations & Payments</h1>
+      <div className="sticky-header">
+        <div className="admin-page-title"><h1>Registrations &amp; Payments</h1></div>
 
-      {/* Tabs */}
-      <div className="flex mb-8 overflow-x-auto" style={{ borderBottom: "2px solid var(--color-table-border)" }}>
-        {(["registrations", "payments"] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
-            className="px-6 py-3 text-sm font-semibold transition-colors whitespace-nowrap"
-            style={{
-              color: activeTab === tab ? "var(--color-primary)" : "var(--color-body-text)",
-              borderBottom: activeTab === tab ? "2px solid var(--color-primary)" : "2px solid transparent",
-              marginBottom: "-2px",
-            }}>
-            {tab === "registrations" ? "Registration List" : "Payment Transaction Log"}
-          </button>
-        ))}
+        {/* Tabs */}
+        <div className="tab-bar mb-6">
+          {(["registrations", "payments"] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`tab-btn ${activeTab === tab ? "active" : ""}`}>
+              {tab === "registrations" ? "Registration List" : "Payment Transaction Log"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ═══ REGISTRATIONS TAB ═══ */}
@@ -245,11 +242,30 @@ export default function AdminRegistrations() {
                         <td><RegBadge status={reg.regStatus} /></td>
                         <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>${reg.amount.toFixed(2)}</td>
                         <td>
-                          <div className="flex items-center gap-0">
-                            <Abtn label="Mark as Paid" enabled={canMarkPaid} onClick={() => setMarkPaidModal(reg.id)}><CheckCircle className="h-4 w-4" /></Abtn>
-                            <Abtn label="Refund" enabled={canRefund} onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } }}><RefreshCw className="h-4 w-4" /></Abtn>
-                            <Abtn label="Cancel" enabled={canCancel} danger onClick={() => setCancelModal(reg.id)}><XCircle className="h-4 w-4" /></Abtn>
-                            {payment?.receiptNumber && <Abtn label="Receipt" enabled onClick={() => setReceiptModal(payment)}><Receipt className="h-4 w-4" /></Abtn>}
+                          <div className="relative" ref={openAction === reg.id ? actionRef : undefined}>
+                            <button onClick={() => setOpenAction(openAction === reg.id ? null : reg.id)}
+                              className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {openAction === reg.id && (
+                              <div className="action-dropdown">
+                                <button disabled={!canMarkPaid} onClick={() => { setMarkPaidModal(reg.id); setOpenAction(null); }}>
+                                  <CheckCircle className="h-4 w-4" /> Mark as Paid
+                                </button>
+                                <button disabled={!canRefund} onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } setOpenAction(null); }}>
+                                  <RefreshCw className="h-4 w-4" /> Refund
+                                </button>
+                                <button disabled={!canCancel} onClick={() => { setCancelModal(reg.id); setOpenAction(null); }}
+                                  style={{ color: canCancel ? "var(--badge-open-text)" : undefined }}>
+                                  <XCircle className="h-4 w-4" /> Cancel
+                                </button>
+                                {payment?.receiptNumber && (
+                                  <button onClick={() => { setReceiptModal(payment); setOpenAction(null); }}>
+                                    <Receipt className="h-4 w-4" /> View Receipt
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -283,12 +299,11 @@ export default function AdminRegistrations() {
                         <MoreVertical className="h-4 w-4" />
                       </button>
                       {openAction === reg.id && (
-                        <div className="absolute right-0 top-full mt-1 w-48 shadow-lg z-20 py-1"
-                          style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-                          {canMarkPaid && <button onClick={() => { setMarkPaidModal(reg.id); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70">Mark as Paid</button>}
-                          {canRefund && <button onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70">Refund</button>}
-                          {canCancel && <button onClick={() => { setCancelModal(reg.id); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70" style={{ color: "var(--badge-open-text)" }}>Cancel</button>}
-                          {payment?.receiptNumber && <button onClick={() => { setReceiptModal(payment); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70">View Receipt</button>}
+                        <div className="action-dropdown">
+                          {canMarkPaid && <button onClick={() => { setMarkPaidModal(reg.id); setOpenAction(null); }}>Mark as Paid</button>}
+                          {canRefund && <button onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } setOpenAction(null); }}>Refund</button>}
+                          {canCancel && <button onClick={() => { setCancelModal(reg.id); setOpenAction(null); }} style={{ color: "var(--badge-open-text)" }}>Cancel</button>}
+                          {payment?.receiptNumber && <button onClick={() => { setReceiptModal(payment); setOpenAction(null); }}>View Receipt</button>}
                         </div>
                       )}
                     </div>
@@ -347,7 +362,11 @@ export default function AdminRegistrations() {
                         <td className="text-sm">{totalRefunded > 0 ? <span style={{ color: "var(--badge-open-text)" }}>${totalRefunded.toFixed(2)}</span> : <span className="opacity-30">—</span>}</td>
                         <td><PayBadge status={txn.paymentStatus} /></td>
                         <td className="text-xs opacity-70">{txn.paidDate || "—"}</td>
-                        <td><button title="Details" onClick={() => setReceiptModal(txn)} className="p-2 hover:opacity-60" style={{ color: "var(--color-primary)" }}><Receipt className="h-4 w-4" /></button></td>
+                        <td>
+                          <button title="Details" onClick={() => setReceiptModal(txn)} className="p-2 hover:opacity-60" style={{ color: "var(--color-primary)" }}>
+                            <Receipt className="h-4 w-4" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -386,7 +405,9 @@ export default function AdminRegistrations() {
       {/* Mark as Paid */}
       <Dialog open={!!markPaidModal} onOpenChange={v => { if (!v) { setMarkPaidModal(null); setMarkPaidRemark(""); } }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="p-8 pb-0"><DialogTitle className="font-bold text-xl">Mark as Paid</DialogTitle></DialogHeader>
+          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-xl">Mark as Paid</DialogTitle>
+          </DialogHeader>
           <div className="p-8 pt-4 space-y-4">
             <FG label="Payment Method *"><select className="field-input" value={markPaidMethod} onChange={e => setMarkPaidMethod(e.target.value as PaymentMethod)}>
               <option value="Credit Card">Credit Card</option><option value="PayNow">PayNow</option><option value="Cash">Cash</option><option value="Bank Transfer">Bank Transfer</option><option value="Others">Others</option>
@@ -403,7 +424,9 @@ export default function AdminRegistrations() {
       {/* Cancel */}
       <Dialog open={!!cancelModal} onOpenChange={v => { if (!v) { setCancelModal(null); setCancelReason(""); } }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="p-8 pb-0"><DialogTitle className="font-bold text-xl">Cancel Registration</DialogTitle></DialogHeader>
+          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-xl">Cancel Registration</DialogTitle>
+          </DialogHeader>
           <div className="p-8 pt-4 space-y-4">
             <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>If paid, a refund will be triggered automatically.</div>
             <FG label="Reason *"><textarea className="field-input" rows={3} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="Enter reason..." /></FG>
@@ -418,14 +441,16 @@ export default function AdminRegistrations() {
       {/* Refund */}
       <Dialog open={!!refundModal} onOpenChange={v => { if (!v) { setRefundModal(null); setRefundSelections({}); } }}>
         <DialogContent className="max-w-lg p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="p-8 pb-0"><DialogTitle className="font-bold text-xl">Process Refund</DialogTitle></DialogHeader>
+          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-xl">Process Refund</DialogTitle>
+          </DialogHeader>
           <div className="p-8 pt-4 space-y-5">
             <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>Selected items will be refunded. Each requires a reason.</div>
             {refundModal?.lineItems.map(li => (
               <div key={li.id} className="p-4 space-y-3" style={{ border: "1px solid var(--color-table-border)" }}>
                 <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" disabled={li.refundStatus === "Full"} checked={refundSelections[li.id]?.selected || false}
-                    onChange={e => setRefundSelections(prev => ({ ...prev, [li.id]: { selected: e.target.checked, reason: prev[li.id]?.reason || "" } }))} className="mt-0.5" />
+                  <Switch disabled={li.refundStatus === "Full"} checked={refundSelections[li.id]?.selected || false}
+                    onCheckedChange={checked => setRefundSelections(prev => ({ ...prev, [li.id]: { selected: !!checked, reason: prev[li.id]?.reason || "" } }))} />
                   <div className="flex-1"><div className="flex items-center justify-between"><span className="text-sm font-medium">{li.label}</span><span className="font-bold text-sm ml-3" style={{ color: "var(--color-primary)" }}>${li.amount.toFixed(2)}</span></div>
                     {li.refundStatus === "Full" && <p className="text-xs mt-1 opacity-50">Already refunded on {li.refundDate}</p>}</div>
                 </label>
@@ -448,7 +473,9 @@ export default function AdminRegistrations() {
       {/* Receipt */}
       <Dialog open={!!receiptModal} onOpenChange={v => { if (!v) setReceiptModal(null); }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="p-8 pb-0"><DialogTitle className="font-bold text-xl">{receiptModal?.receiptNumber ? `Receipt ${receiptModal.receiptNumber}` : "Payment Details"}</DialogTitle></DialogHeader>
+          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-xl">{receiptModal?.receiptNumber ? `Receipt ${receiptModal.receiptNumber}` : "Payment Details"}</DialogTitle>
+          </DialogHeader>
           <div className="p-8 pt-4 space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div><p className="opacity-50 text-xs">Transaction ID</p><p className="font-mono">{receiptModal?.id}</p></div>
@@ -478,16 +505,6 @@ export default function AdminRegistrations() {
 
 function FG({ label, children }: { label: string; children: React.ReactNode }) {
   return (<div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>);
-}
-
-function Abtn({ label, enabled, onClick, danger = false, children }: { label: string; enabled: boolean; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
-  return (
-    <button title={enabled ? label : `${label} — unavailable`} disabled={!enabled} onClick={onClick}
-      className="p-2 transition-colors disabled:cursor-not-allowed"
-      style={{ color: enabled ? (danger ? "var(--badge-open-text)" : "var(--color-primary)") : "var(--color-table-border)" }}>
-      {children}
-    </button>
-  );
 }
 
 function PayBadge({ status }: { status: string }) {
