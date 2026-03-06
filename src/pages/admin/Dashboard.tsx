@@ -3,9 +3,11 @@ import type { TournamentEvent } from "@/types/config";
 import { getEventStatus } from "@/lib/eventUtils";
 import { CalendarDays, CalendarCheck, Activity, FileDown, Users } from "lucide-react";
 
-// In mock stage: derive registration count from sample data total participants
-const MOCK_TOTAL_REGISTRATIONS = 6;   // matches INIT_REGS length in Registrations.tsx
-const MOCK_CONFIRMED           = 2;
+// Registration stats sourced from config.json mockStats
+// Update these numbers in config.json as sample data changes
+const mockStats = (config as unknown as { mockStats: Record<string, number> }).mockStats ?? {
+  totalRegistrations: 0, confirmed: 0, pending: 0, cancelled: 0,
+};
 
 export default function Dashboard() {
   const events        = config.events as TournamentEvent[];
@@ -14,11 +16,11 @@ export default function Dashboard() {
   const totalPrograms = events.reduce((s, e) => s + e.programs.length, 0);
 
   const metrics = [
-    { label: "Open Events",          value: openCount,                  icon: CalendarCheck, color: "var(--badge-open-text)"  },
-    { label: "Upcoming Events",      value: upcomingCount,              icon: CalendarDays,  color: "var(--badge-soon-text)"  },
-    { label: "Total Programs",       value: totalPrograms,              icon: Activity,      color: "var(--color-primary)"    },
-    { label: "Total Registrations",  value: MOCK_TOTAL_REGISTRATIONS,   icon: Users,         color: "var(--color-primary)"    },
-    { label: "Confirmed",            value: MOCK_CONFIRMED,             icon: Users,         color: "var(--badge-open-text)"  },
+    { label: "Open Events",          value: openCount,                        icon: CalendarCheck, color: "var(--badge-open-text)"  },
+    { label: "Upcoming Events",      value: upcomingCount,                    icon: CalendarDays,  color: "var(--badge-soon-text)"  },
+    { label: "Total Programs",       value: totalPrograms,                    icon: Activity,      color: "var(--color-primary)"    },
+    { label: "Total Registrations",  value: mockStats.totalRegistrations,     icon: Users,         color: "var(--color-primary)"    },
+    { label: "Confirmed",            value: mockStats.confirmed,              icon: Users,         color: "var(--badge-open-text)"  },
   ];
 
   const reports = [
@@ -88,7 +90,7 @@ export default function Dashboard() {
       </div>
 
       <p className="text-xs mt-6 opacity-40">
-        Registration counts are mock values. Reports will be generated from live data in production.
+        Registration counts are sourced from config.json → mockStats. Update those numbers when sample data changes.
       </p>
     </div>
   );

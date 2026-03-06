@@ -287,7 +287,12 @@ export default function EventDetail() {
       });
       if (dupe) errs[`${px}.fullName`] = "Already registered in this program";
     });
-    if (selectedProgram.gender === "Mixed" && selectedProgram.maxPlayers === 2 && participants.length === 2) {
+    if (
+        selectedProgram.gender === "Mixed" &&
+        selectedProgram.maxPlayers === 2 &&
+        participants.length === 2 &&
+        participants.every(p => p.gender)   // ← guard
+      ) {
       const genders = participants.map((p) => p.gender);
       if (!(genders.includes("Male") && genders.includes("Female")))
         formErr = "Mixed Doubles requires exactly 1 Male and 1 Female player.";
@@ -299,7 +304,11 @@ export default function EventDetail() {
   // ── Add to cart ──
   const addToCart = () => {
     if (!selectedProgram) return;
-    const entry: CartEntry = { programId: selectedProgram.id, programName: selectedProgram.name, fee: selectedProgram.fee, participants: [...participants] };
+    const entry: CartEntry = { programId: selectedProgram.id
+      , programName: selectedProgram.name
+      , fee: selectedProgram.paymentRequired ? selectedProgram.fee : 0
+      , participants: [...participants] };
+
     if (editingCartIndex !== null) {
       setCart((prev) => prev.map((c, i) => (i === editingCartIndex ? entry : c)));
       setEditingCartIndex(null);
@@ -663,7 +672,10 @@ export default function EventDetail() {
                           <button onClick={() => setStep(1)} className="btn-outline px-6 py-2.5 text-sm font-medium">Add More</button>
                           <button disabled={!consentChecked} onClick={() => navigate("/payment/result?status=success")}
                             className="btn-primary px-8 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
-                            {isAuthenticated ? "Confirm Registration" : cart.some(e => { const prog = event?.programs.find(p => p.id === e.programId); return prog?.paymentRequired && prog.fee > 0; }) ? "Proceed to Payment" : "Confirm Registration"}
+                            {cart.some(e => {
+                              const prog = event?.programs.find(p => p.id === e.programId);
+                              return prog?.paymentRequired && e.fee > 0;
+                            }) ? "Proceed to Payment" : "Confirm Registration"}
                           </button>
                         </div>
                         {isAuthenticated && <p className="text-xs mt-3 opacity-60">Payment can be collected or waived by admin later.</p>}

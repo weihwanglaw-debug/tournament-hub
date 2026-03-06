@@ -60,7 +60,7 @@ export default function EventCarousel() {
     <section className="py-20 px-8" style={{ backgroundColor: "var(--color-page-bg)" }}>
       <div className="max-w-6xl mx-auto">
         <h2 className="font-heading font-bold text-2xl md:text-3xl mb-10">
-          Upcoming Tournaments
+          Current & Upcoming Events
         </h2>
 
         <div className="relative">

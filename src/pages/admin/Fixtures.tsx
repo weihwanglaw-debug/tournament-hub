@@ -1,42 +1,26 @@
 import { useState, useMemo } from "react";
-import { Download, Upload, Plus, Trash2, ChevronDown, ChevronUp,
-  Trophy, AlertTriangle, Users, CheckCircle, Lock } from "lucide-react";
+import {
+  Download, Upload, Plus, Trash2, ChevronDown, ChevronUp,
+  Trophy, AlertTriangle, Users, CheckCircle, Lock, Printer,
+  LayoutList, GitBranch,
+} from "lucide-react";
 import config from "@/data/config.json";
-import type { TournamentEvent } from "@/types/config";
+import type {
+  TournamentEvent, SeedEntry, BracketState, MatchEntry, TeamEntry,
+  Official, GroupEntry, SectionEntry, GroupStanding, FixtureFormat,
+} from "@/types/config";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/TableControls";
+import {
+  generateDraw, generateNextKnockoutRound, generateKnockoutFromGroups,
+  generateCrossSectionMatches, computeGroupStandings, isBracketLocked,
+  isPhaseComplete, SCORING_RULES,
+} from "@/lib/fixtureEngine";
 
-// ── Types ────────────────────────────────────────────────────────────────────
-type MatchStatus = "Scheduled" | "In Progress" | "Completed" | "Walkover";
-
-interface GameScore { p1: string; p2: string; }
-interface Official  { id: string; role: string; name: string; }
-
-interface TeamEntry {
-  label: string;      // club / school / company
-  participants: string[];
-  seed?: number;
-}
-
-interface MatchEntry {
-  id: string;
-  round: number;
-  team1: TeamEntry;
-  team2: TeamEntry;
-  games: GameScore[];
-  winner: "team1" | "team2" | null;
-  walkover: boolean;
-  walkoverWinner: "team1" | "team2" | "";
-  startTime: string;
-  endTime: string;
-  officials: Official[];
-  status: MatchStatus;
-  expanded: boolean;
-}
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const ROLE_SUGGESTIONS = ["Referee", "Linesman", "Umpire", "Court Marshal", "Scorer", "Ball Boy"];
 
-// ── Sample SBA master list ───────────────────────────────────────────────────
 const SBA_MASTER = [
   { sbaId: "SBA-001", name: "Lee Wei Jie",   club: "Pasir Ris BC",  ranking: 1 },
   { sbaId: "SBA-002", name: "Tan Mei Ling",  club: "Tampines BC",   ranking: 2 },
@@ -44,85 +28,63 @@ const SBA_MASTER = [
   { sbaId: "SBA-004", name: "Wong Xiu Ying", club: "Bishan SC",     ranking: 4 },
 ];
 
-// ── Sample participant seeding list ─────────────────────────────────────────
-interface SeedEntry { id: string; club: string; participants: string[]; seed: number | null; }
-
 const SAMPLE_SEEDS: SeedEntry[] = [
-  { id: "s1", club: "Pasir Ris BC",  participants: ["Lee Wei Jie"],                   seed: 1 },
-  { id: "s2", club: "Tampines BC",   participants: ["Tan Ah Kow"],                    seed: null },
-  { id: "s3", club: "Jurong BC",     participants: ["Ravi Kumar"],                    seed: 2 },
-  { id: "s4", club: "Bishan SC",     participants: ["Wong Beng Huat"],                seed: null },
-  { id: "s5", club: "Serangoon BC",  participants: ["Ahmad Farid"],                   seed: 3 },
-  { id: "s6", club: "Yishun BC",     participants: ["Lim Jun Wei"],                   seed: null },
-  { id: "s7", club: "Tampines BC",   participants: ["Lee Wei Jie", "Tan Mei Ling"],   seed: null },
-  { id: "s8", club: "Pasir Ris BC",  participants: ["Ravi Kumar",  "Wong Xiu Ying"], seed: null },
-];
-
-// ── Sample matches ────────────────────────────────────────────────────────────
-const SAMPLE_MATCHES: MatchEntry[] = [
-  {
-    id: "M001", round: 1,
-    team1: { label: "Pasir Ris BC",  participants: ["Lee Wei Jie"],              seed: 1 },
-    team2: { label: "Tampines BC",   participants: ["Tan Ah Kow"],               seed: undefined },
-    games: [{ p1: "21", p2: "15" }, { p1: "18", p2: "21" }, { p1: "21", p2: "18" }],
-    winner: "team1", walkover: false, walkoverWinner: "",
-    startTime: "09:00", endTime: "09:42",
-    officials: [{ id: "o1", role: "Referee", name: "Ahmad Bin Ismail" }],
-    status: "Completed", expanded: false,
-  },
-  {
-    id: "M002", round: 1,
-    team1: { label: "Jurong BC",     participants: ["Ravi Kumar"],               seed: 2 },
-    team2: { label: "Bishan SC",     participants: ["Wong Beng Huat"],           seed: undefined },
-    games: [{ p1: "", p2: "" }],
-    winner: null, walkover: false, walkoverWinner: "",
-    startTime: "", endTime: "", officials: [], status: "Scheduled", expanded: false,
-  },
+  { id: "s1", club: "Pasir Ris BC", participants: ["Lee Wei Jie"],                 seed: 1 },
+  { id: "s2", club: "Tampines BC",  participants: ["Tan Ah Kow"],                  seed: null },
+  { id: "s3", club: "Jurong BC",    participants: ["Ravi Kumar"],                  seed: 2 },
+  { id: "s4", club: "Bishan SC",    participants: ["Wong Beng Huat"],              seed: null },
+  { id: "s5", club: "Serangoon BC", participants: ["Ahmad Farid"],                 seed: 3 },
+  { id: "s6", club: "Yishun BC",    participants: ["Lim Jun Wei"],                 seed: null },
+  { id: "s7", club: "Tampines BC",  participants: ["Lee Wei Jie", "Tan Mei Ling"], seed: null },
+  { id: "s8", club: "Pasir Ris BC", participants: ["Ravi Kumar", "Wong Xiu Ying"],seed: null },
 ];
 
 function genId() { return Math.random().toString(36).slice(2, 8); }
+
+type ViewMode = "table" | "bracket" | "print";
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ═════════════════════════════════════════════════════════════════════════════
 
 export default function AdminFixtures() {
   const events = config.events as TournamentEvent[];
 
   const [selEvent,   setSelEvent]   = useState("");
   const [selProgram, setSelProgram] = useState("");
+  const [sbaFile,    setSbaFile]    = useState<string | null>(null);
+  const [seeds,      setSeeds]      = useState<SeedEntry[]>(SAMPLE_SEEDS);
+  const [bracketState, setBracketState] = useState<BracketState | null>(null);
+  const [viewMode,   setViewMode]   = useState<ViewMode>("table");
+  const [activeTab,  setActiveTab]  = useState<string>(""); // group/section id or "knockout"
+  const [page,  setPage]  = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
-  // Derive mode from event settings
+  // Score modal
+  const [scoreModal, setScoreModal] = useState<MatchEntry | null>(null);
+  const [draft,      setDraft]      = useState<MatchEntry | null>(null);
+
+  // Derived values
   const selEventObj   = events.find(e => e.id === selEvent);
   const selProgramObj = selEventObj?.programs.find(p => p.id === selProgram);
   const mode          = selEventObj?.fixtureMode || "internal";
   const isBadminton   = selEventObj?.sportType === "Badminton";
+  const format        = (selProgramObj?.fixtureFormat ?? "knockout") as FixtureFormat;
+  const formatConfig  = selProgramObj?.formatConfig ?? {};
+  const scoringRule   = selProgramObj?.scoringRule ?? "badminton_21";
+  const regClosed     = selEventObj ? new Date() > new Date(selEventObj.closeDate) : false;
+  const minMet        = seeds.length >= (selProgramObj?.minParticipants ?? 0);
+  const canGenerate   = regClosed && minMet && !bracketState;
+  const locked        = bracketState ? isBracketLocked(bracketState) : false;
+  const phaseComplete = bracketState ? isPhaseComplete(bracketState) : false;
 
-  // ── External mode state ──
-  const [seeds,    setSeeds]    = useState<SeedEntry[]>(SAMPLE_SEEDS);
-  const [sbaFile,  setSbaFile]  = useState<string | null>(null);
+  // Auto-set active tab when bracket is generated
+  const allGroupIds    = bracketState?.groups.map(g => g.id) ?? [];
+  const allSectionIds  = bracketState?.sections.map(s => s.id) ?? [];
+  const isGroupFormat  = ["group_knockout", "round_robin", "league", "heats_final"].includes(format);
+  const isSectional    = format === "sectional_knockout";
 
-  // ── Internal mode state ──
-  const [matches,    setMatches]    = useState<MatchEntry[]>(SAMPLE_MATCHES);
-  const [scoreModal, setScoreModal] = useState<MatchEntry | null>(null);
-  const [draft,      setDraft]      = useState<MatchEntry | null>(null);
-  const [page, setPage]         = useState(1);
-  const [perPage, setPerPage]   = useState(10);
-
-  // Round analysis
-  const rounds    = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b);
-  const maxRound  = rounds.length > 0 ? Math.max(...rounds) : 0;
-  const currentRoundMatches = matches.filter(m => m.round === maxRound);
-  const currentRoundDone    = currentRoundMatches.length > 0 &&
-    currentRoundMatches.every(m => m.status === "Completed" || m.status === "Walkover");
-  const canGenerateNext = currentRoundDone;
-
-  // Pagination
-  const totalPages   = Math.max(1, Math.ceil(matches.length / perPage));
-  const pagedMatches = matches.slice((page - 1) * perPage, page * perPage);
-
-  // ── Participant requirement check ──
-  const regClosed      = selEventObj ? new Date() > new Date(selEventObj.closeDate) : false;
-  const minMet         = seeds.length >= (selProgramObj?.minParticipants || 0);
-  const canGenerate    = regClosed && minMet;
-
-  // ── Seeding helpers ──
+  // ── Seeding ───────────────────────────────────────────────────────────────
   const autoAssignSeeding = () => {
     setSeeds(prev => prev.map(entry => {
       const match = SBA_MASTER.find(s =>
@@ -131,11 +93,47 @@ export default function AdminFixtures() {
       return match ? { ...entry, seed: match.ranking } : entry;
     }));
   };
-
   const updateSeed = (id: string, val: string) =>
     setSeeds(prev => prev.map(s => s.id === id ? { ...s, seed: val ? +val : null } : s));
 
-  // ── Internal mode helpers ──
+  // ── Generate initial bracket ──────────────────────────────────────────────
+  const handleGenerate = () => {
+    const state = generateDraw(seeds, format, formatConfig, scoringRule);
+    setBracketState(state);
+    // Set default tab
+    if (state.groups.length > 0) setActiveTab(state.groups[0].id);
+    else if (state.sections.length > 0) setActiveTab(state.sections[0].id);
+    else setActiveTab("knockout");
+  };
+
+  // ── After group phase: generate KO ───────────────────────────────────────
+  const handleGenerateKnockout = () => {
+    if (!bracketState) return;
+    const koMatches = generateKnockoutFromGroups(
+      bracketState.groups, formatConfig, scoringRule
+    );
+    setBracketState(prev => prev ? { ...prev, matches: koMatches, phase: "knockout" } : prev);
+    setActiveTab("knockout");
+  };
+
+  // ── After section phase: generate cross-section ───────────────────────────
+  const handleGenerateCrossSection = () => {
+    if (!bracketState) return;
+    const crossMatches = generateCrossSectionMatches(bracketState.sections);
+    setBracketState(prev => prev ? { ...prev, matches: crossMatches } : prev);
+    setActiveTab("knockout");
+  };
+
+  // ── Advance KO round ──────────────────────────────────────────────────────
+  const handleNextRound = () => {
+    if (!bracketState) return;
+    const next = generateNextKnockoutRound(bracketState.matches);
+    if (next.length > 0) {
+      setBracketState(prev => prev ? { ...prev, matches: [...prev.matches, ...next] } : prev);
+    }
+  };
+
+  // ── Score modal ───────────────────────────────────────────────────────────
   const openScore = (match: MatchEntry) => {
     setDraft({ ...match, games: match.games.map(g => ({ ...g })) });
     setScoreModal(match);
@@ -157,73 +155,88 @@ export default function AdminFixtures() {
     draft && setDraft({ ...draft, officials: draft.officials.filter((_, i) => i !== idx) });
 
   const saveScore = () => {
-    if (!draft) return;
+    if (!draft || !bracketState) return;
     const p1g = draft.games.filter(g => g.p1 !== "" && g.p2 !== "" && +g.p1 > +g.p2).length;
     const p2g = draft.games.filter(g => g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1).length;
     let winner: "team1" | "team2" | null = null;
-    let status: MatchStatus = "In Progress";
+    let status: MatchEntry["status"] = "In Progress";
     if (draft.walkover && draft.walkoverWinner) { winner = draft.walkoverWinner as "team1" | "team2"; status = "Walkover"; }
-    else if (draft.winner)                      { winner = draft.winner; status = "Completed"; }
+    else if (draft.winner) { winner = draft.winner; status = "Completed"; }
     else if (draft.games.every(g => g.p1 !== "" && g.p2 !== "")) {
       winner = p1g > p2g ? "team1" : "team2"; status = "Completed";
     }
-    setMatches(prev => prev.map(m => m.id === scoreModal!.id ? { ...draft, winner, status } : m));
+    const updated = { ...draft, winner, status };
+
+    // Update match in correct location (knockout matches, group matches, or section matches)
+    setBracketState(prev => {
+      if (!prev) return prev;
+      const updateInList = (list: MatchEntry[]) =>
+        list.map(m => m.id === scoreModal!.id ? updated : m);
+      return {
+        ...prev,
+        locked: true, // First save always locks the bracket
+        matches: updateInList(prev.matches),
+        groups:  prev.groups.map(g => ({ ...g, matches: updateInList(g.matches) })),
+        sections:prev.sections.map(s => ({ ...s, matches: updateInList(s.matches) })),
+      };
+    });
     setScoreModal(null); setDraft(null);
   };
 
-  const generateNextRound = () => {
-    const winners = currentRoundMatches.map(m =>
-      m.winner === "team1" ? m.team1 : m.winner === "team2" ? m.team2 : null
-    ).filter(Boolean) as TeamEntry[];
-    const newRound = maxRound + 1;
-    const newMatches: MatchEntry[] = [];
-    for (let i = 0; i < winners.length - 1; i += 2) {
-      newMatches.push({
-        id: `M${String(matches.length + newMatches.length + 1).padStart(3, "0")}`,
-        round: newRound,
-        team1: winners[i], team2: winners[i + 1],
-        games: [{ p1: "", p2: "" }], winner: null,
-        walkover: false, walkoverWinner: "",
-        startTime: "", endTime: "", officials: [],
-        status: "Scheduled", expanded: false,
-      });
-    }
-    setMatches(prev => [...prev, ...newMatches]);
+  const toggleExpand = (matchId: string) => {
+    setBracketState(prev => {
+      if (!prev) return prev;
+      const toggle = (list: MatchEntry[]) =>
+        list.map(m => m.id === matchId ? { ...m, expanded: !m.expanded } : m);
+      return {
+        ...prev,
+        matches:  toggle(prev.matches),
+        groups:   prev.groups.map(g => ({ ...g, matches: toggle(g.matches) })),
+        sections: prev.sections.map(s => ({ ...s, matches: toggle(s.matches) })),
+      };
+    });
   };
 
-  const generateInitialBracket = () => {
-    const seeded   = [...seeds].sort((a, b) => (a.seed ?? 999) - (b.seed ?? 999));
-    const newMatches: MatchEntry[] = [];
-    for (let i = 0; i < seeded.length - 1; i += 2) {
-      newMatches.push({
-        id: `M${String(i / 2 + 1).padStart(3, "0")}`, round: 1,
-        team1: { label: seeded[i].club,     participants: seeded[i].participants,     seed: seeded[i].seed     ?? undefined },
-        team2: { label: seeded[i+1].club,   participants: seeded[i+1].participants,   seed: seeded[i+1].seed   ?? undefined },
-        games: [{ p1: "", p2: "" }], winner: null,
-        walkover: false, walkoverWinner: "",
-        startTime: "", endTime: "", officials: [],
-        status: "Scheduled", expanded: false,
-      });
-    }
-    setMatches(newMatches);
+  // ── Current tab's match list for table view ───────────────────────────────
+  const tabMatches: MatchEntry[] = useMemo(() => {
+    if (!bracketState) return [];
+    if (activeTab === "knockout") return bracketState.matches;
+    const group = bracketState.groups.find(g => g.id === activeTab);
+    if (group) return group.matches;
+    const section = bracketState.sections.find(s => s.id === activeTab);
+    if (section) return section.matches;
+    return bracketState.matches;
+  }, [bracketState, activeTab]);
+
+  const totalPages   = Math.max(1, Math.ceil(tabMatches.length / perPage));
+  const pagedMatches = tabMatches.slice((page - 1) * perPage, page * perPage);
+
+  // Knockout matches for "Generate Next Round" logic
+  const koMatches    = bracketState?.matches ?? [];
+  const maxKoRound   = koMatches.length > 0 ? Math.max(...koMatches.map(m => m.round)) : 0;
+  const currKoRound  = koMatches.filter(m => m.round === maxKoRound);
+  const koRoundDone  = currKoRound.length > 0 && currKoRound.every(m => m.status === "Completed" || m.status === "Walkover");
+  const canNextRound = koRoundDone && currKoRound.length > 1;
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  const handleReset = () => {
+    setBracketState(null);
+    setActiveTab("");
+    setPage(1);
   };
 
-  const ssBadge = (s: MatchStatus) => {
-    if (s === "Completed" || s === "Walkover") return { bg: "var(--badge-open-bg)",   text: "var(--badge-open-text)"   };
-    if (s === "In Progress")                   return { bg: "var(--badge-soon-bg)",   text: "var(--badge-soon-text)"   };
-    return                                            { bg: "var(--badge-closed-bg)", text: "var(--badge-closed-text)" };
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
 
   return (
-    <div>
-      <h1 className="font-bold text-2xl mb-8">Fixture Management</h1>
+    <div className="print:p-0">
+      <h1 className="font-bold text-2xl mb-8 print:hidden">Fixture Management</h1>
 
-      {/* Event + Program selectors */}
-      <div className="flex flex-wrap gap-4 mb-8">
+      {/* ── Selectors ── */}
+      <div className="flex flex-wrap gap-4 mb-8 print:hidden">
         <div>
           <label className="block text-xs font-semibold mb-2 opacity-70">Event</label>
           <select className="field-input w-64" value={selEvent}
-            onChange={e => { setSelEvent(e.target.value); setSelProgram(""); }}>
+            onChange={e => { setSelEvent(e.target.value); setSelProgram(""); setBracketState(null); }}>
             <option value="">Select event…</option>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
           </select>
@@ -232,18 +245,24 @@ export default function AdminFixtures() {
           <div>
             <label className="block text-xs font-semibold mb-2 opacity-70">Program</label>
             <select className="field-input w-52" value={selProgram}
-              onChange={e => setSelProgram(e.target.value)}>
+              onChange={e => { setSelProgram(e.target.value); setBracketState(null); setSeeds(SAMPLE_SEEDS); }}>
               <option value="">Select program…</option>
               {selEventObj?.programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
         )}
         {selEvent && (
-          <div className="flex items-end pb-1">
+          <div className="flex items-end pb-1 gap-2">
             <span className="text-xs px-3 py-2 font-semibold"
               style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
-              Mode: {mode === "internal" ? "Internal Bracket" : "External (TournamentSoftware)"}
+              {mode === "internal" ? "Internal Bracket" : "External (TournamentSoftware)"}
             </span>
+            {selProgram && (
+              <span className="text-xs px-3 py-2 font-semibold"
+                style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                {SCORING_RULES[scoringRule]?.label ?? scoringRule}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -257,8 +276,6 @@ export default function AdminFixtures() {
           {/* ══ EXTERNAL MODE ══ */}
           {mode === "external" && (
             <div className="space-y-8">
-
-              {/* Step 1: Import SBA */}
               <StepCard n={1} title="Import SBA Player Ranking File"
                 description="Upload the official SBA file to update the master ranking list.">
                 <label className="inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer">
@@ -268,45 +285,9 @@ export default function AdminFixtures() {
                 </label>
                 {sbaFile && <p className="text-xs mt-2 opacity-60">Loaded: {sbaFile}</p>}
               </StepCard>
-
-              {/* Step 2: Assign seeding */}
               <StepCard n={2} title="Assign Seeding to Participants">
-                <div className="flex gap-3 mb-5">
-                  <button onClick={autoAssignSeeding}
-                    className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
-                    <CheckCircle className="h-4 w-4" /> Auto-Assign from SBA Rankings
-                  </button>
-                  <span className="self-center text-xs opacity-40">or set manually below</span>
-                </div>
-                <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
-                  <table className="trs-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Club / School / Company</th>
-                        <th>Participants</th>
-                        <th style={{ width: 100 }}>Seeding</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {seeds.map((s, i) => (
-                        <tr key={s.id}>
-                          <td className="text-sm opacity-50">{i + 1}</td>
-                          <td className="font-medium text-sm">{s.club}</td>
-                          <td className="text-sm opacity-70">{s.participants.join(" / ")}</td>
-                          <td>
-                            <input type="number" min="1" className="field-input w-16 py-1 text-sm text-center"
-                              value={s.seed ?? ""} placeholder="—"
-                              onChange={e => updateSeed(s.id, e.target.value)} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SeedingTable seeds={seeds} isBadminton={isBadminton} onAutoAssign={autoAssignSeeding} onUpdateSeed={updateSeed} />
               </StepCard>
-
-              {/* Step 3: Export */}
               <StepCard n={3} title="Export Participant List to TournamentSoftware">
                 <button className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
                   <Download className="h-4 w-4" /> Export Participant List with Seeding
@@ -319,218 +300,180 @@ export default function AdminFixtures() {
           {mode === "internal" && (
             <div className="space-y-6">
 
-              {/* Pre-flight check */}
-              <div className="p-5 space-y-2" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-                <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Requirements to Generate Fixture</p>
-                <CheckRow ok={regClosed} label={regClosed
-                  ? "Registration is closed"
-                  : `Registration still open (closes ${selEventObj?.closeDate})`} />
-                <CheckRow ok={minMet} label={minMet
-                  ? `Minimum participants met (${seeds.length} registered)`
-                  : `Need at least ${selProgramObj?.minParticipants || "?"} participants (${seeds.length} registered)`} />
-              </div>
-
-              {/* Seeding assignment */}
-              {selProgram && (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-base">Participant Seeding</h3>
-                    <button onClick={autoAssignSeeding}
-                      disabled={!isBadminton}
-                      title={isBadminton ? "Auto-assign from SBA" : "SBA auto-assign only available for Badminton"}
-                      className="btn-outline flex items-center gap-2 px-4 py-2 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed">
-                      <CheckCircle className="h-3.5 w-3.5" /> Auto-Assign from SBA
-                    </button>
-                  </div>
-                  <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
-                    <table className="trs-table">
-                      <thead>
-                        <tr>
-                          <th>Club / School / Company</th>
-                          <th>Participants</th>
-                          <th style={{ width: 100 }}>Seeding</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {seeds.map(s => (
-                          <tr key={s.id}>
-                            <td className="font-medium text-sm">{s.club}</td>
-                            <td className="text-sm opacity-70">{s.participants.join(" / ")}</td>
-                            <td>
-                              <input type="number" min="1" className="field-input w-16 py-1 text-sm text-center"
-                                value={s.seed ?? ""} placeholder="—"
-                                onChange={e => updateSeed(s.id, e.target.value)} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Generate / next round */}
-              <div className="flex flex-wrap gap-3 items-center">
-                <button onClick={generateInitialBracket} disabled={!canGenerate}
-                  title={canGenerate ? "" : "Registration must be closed and min participants met"}
-                  className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
-                  Generate Round 1 Bracket
-                </button>
-                {canGenerateNext && (
-                  <button onClick={generateNextRound}
-                    className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
-                    Generate Round {maxRound + 1} Bracket
-                  </button>
-                )}
-                {maxRound > 0 && (
-                  <span className="text-xs opacity-50">
-                    Current round: {maxRound} ·{" "}
-                    {currentRoundDone ? "All matches complete ✓" : `${currentRoundMatches.filter(m => m.status === "Completed" || m.status === "Walkover").length} / ${currentRoundMatches.length} done`}
+              {/* ── Locked banner ── */}
+              {locked && (
+                <div className="flex items-center gap-3 px-5 py-3"
+                  style={{ backgroundColor: "var(--badge-soon-bg)", border: "1px solid var(--color-table-border)" }}>
+                  <Lock className="h-4 w-4 flex-shrink-0" style={{ color: "var(--badge-soon-text)" }} />
+                  <span className="text-sm font-semibold" style={{ color: "var(--badge-soon-text)" }}>
+                    Bracket locked — competition in progress. Draw cannot be changed.
                   </span>
-                )}
-              </div>
-
-              {/* Round tabs */}
-              {rounds.length > 0 && (
-                <div className="flex gap-0"
-                  style={{ borderBottom: "2px solid var(--color-table-border)" }}>
-                  {rounds.map(r => (
-                    <span key={r} className="px-5 py-2 text-sm font-semibold"
-                      style={{
-                        borderBottom: r === maxRound ? "2px solid var(--color-primary)" : "2px solid transparent",
-                        color: r === maxRound ? "var(--color-primary)" : "var(--color-body-text)",
-                        marginBottom: "-2px",
-                      }}>
-                      Round {r}
-                      {r < maxRound && <CheckCircle className="h-3 w-3 inline ml-1" style={{ color: "var(--color-primary)" }} />}
-                    </span>
-                  ))}
                 </div>
               )}
 
-              {/* Match table */}
-              {matches.length > 0 && (
-                <div style={{ border: "1px solid var(--color-table-border)" }}>
-                  <div className="overflow-x-auto">
-                    <table className="trs-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 36 }}></th>
-                          <th>Match</th>
-                          <th>Round</th>
-                          <th>Club / Participants</th>
-                          <th style={{ width: 36 }} className="text-center">vs</th>
-                          <th>Club / Participants</th>
-                          <th>Score</th>
-                          <th>Time</th>
-                          <th>Status</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pagedMatches.map(match => {
-                          const ss = ssBadge(match.status);
-                          const scoreStr = match.walkover
-                            ? `W/O → ${match.walkoverWinner === "team1" ? match.team1.label : match.team2.label}`
-                            : match.games.every(g => g.p1 !== "" && g.p2 !== "")
-                              ? match.games.map(g => `${g.p1}–${g.p2}`).join(", ") : "—";
-                          return (
-                            <>
-                              <tr key={match.id}>
-                                <td>
-                                  <button onClick={() => setMatches(p => p.map(m => m.id === match.id ? { ...m, expanded: !m.expanded } : m))}
-                                    className="p-1 opacity-40 hover:opacity-100">
-                                    {match.expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                  </button>
-                                </td>
-                                <td className="font-mono text-xs">{match.id}</td>
-                                <td className="text-sm font-medium">R{match.round}</td>
-                                <td><TeamCell team={match.team1} isWinner={match.winner === "team1"} /></td>
-                                <td className="text-center opacity-30 font-bold text-sm">vs</td>
-                                <td><TeamCell team={match.team2} isWinner={match.winner === "team2"} /></td>
-                                <td className="font-mono text-xs whitespace-nowrap">{scoreStr}</td>
-                                <td className="text-xs opacity-70 whitespace-nowrap">
-                                  {match.startTime ? `${match.startTime}${match.endTime ? ` – ${match.endTime}` : ""}` : "—"}
-                                </td>
-                                <td>
-                                  <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
-                                    style={{ backgroundColor: ss.bg, color: ss.text }}>{match.status}</span>
-                                </td>
-                                <td>
-                                  <button onClick={() => openScore(match)}
-                                    disabled={match.status === "Completed" || match.status === "Walkover"}
-                                    className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed">
-                                    {match.status === "Completed" || match.status === "Walkover" ? "Done" : "Enter Score"}
-                                  </button>
-                                </td>
-                              </tr>
-                              {match.expanded && (
-                                <tr key={`${match.id}-x`}>
-                                  <td colSpan={10} className="p-0">
-                                    <div className="px-8 py-5 grid sm:grid-cols-3 gap-6"
-                                      style={{ backgroundColor: "var(--color-row-hover)", borderTop: "1px solid var(--color-table-border)" }}>
-                                      {/* Score breakdown */}
-                                      <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Score Breakdown</p>
-                                        {match.walkover ? (
-                                          <p className="text-sm font-medium">W/O → {match.walkoverWinner === "team1" ? match.team1.label : match.team2.label}</p>
-                                        ) : match.games.some(g => g.p1 !== "") ? (
-                                          <div className="space-y-1">
-                                            <div className="grid grid-cols-[48px_1fr_16px_1fr] gap-2 text-xs opacity-50 mb-2">
-                                              <span></span><span className="truncate">{match.team1.label}</span><span></span><span className="truncate">{match.team2.label}</span>
-                                            </div>
-                                            {match.games.map((g, i) => {
-                                              const p1w = g.p1 !== "" && g.p2 !== "" && +g.p1 > +g.p2;
-                                              const p2w = g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1;
-                                              return (
-                                                <div key={i} className="grid grid-cols-[48px_1fr_16px_1fr] gap-2 text-sm items-center">
-                                                  <span className="text-xs opacity-40">G{i+1}</span>
-                                                  <span className="font-bold" style={{ color: p1w ? "var(--color-primary)" : undefined }}>{g.p1 || "—"}</span>
-                                                  <span className="opacity-20 text-center">–</span>
-                                                  <span className="font-bold" style={{ color: p2w ? "var(--color-primary)" : undefined }}>{g.p2 || "—"}</span>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        ) : <p className="text-xs opacity-40">No scores yet.</p>}
-                                      </div>
-                                      {/* Participants */}
-                                      <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Participants</p>
-                                        {[match.team1, match.team2].map((team, ti) => (
-                                          <div key={ti} className="mb-3">
-                                            <p className="text-xs font-semibold mb-1">{team.label}</p>
-                                            {team.participants.map((p, pi) => (
-                                              <p key={pi} className="text-xs opacity-60">{pi + 1}. {p}</p>
-                                            ))}
-                                          </div>
-                                        ))}
-                                      </div>
-                                      {/* Officials */}
-                                      <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Officials</p>
-                                        {match.officials.length > 0
-                                          ? match.officials.map(o => (
-                                              <div key={o.id} className="flex gap-2 text-xs mb-1">
-                                                <span className="opacity-50 w-20 flex-shrink-0">{o.role}</span>
-                                                <span>{o.name}</span>
-                                              </div>
-                                            ))
-                                          : <p className="text-xs opacity-40">None assigned.</p>}
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+              {/* ── Pre-generation state ── */}
+              {!bracketState && (
+                <>
+                  {/* Pre-flight */}
+                  <div className="p-5 space-y-2"
+                    style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                    <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Requirements to Generate Bracket</p>
+                    <CheckRow ok={regClosed} label={regClosed
+                      ? "Registration is closed"
+                      : `Registration still open (closes ${selEventObj?.closeDate})`} />
+                    <CheckRow ok={minMet} label={minMet
+                      ? `Minimum participants met (${seeds.length} registered)`
+                      : `Need at least ${selProgramObj?.minParticipants ?? "?"} participants (${seeds.length} registered)`} />
                   </div>
-                  <Pagination page={page} totalPages={totalPages} perPage={perPage} total={matches.length}
-                    setPage={setPage} setPerPage={n => { setPerPage(n); setPage(1); }} />
-                </div>
+
+                  {/* Seeding */}
+                  {selProgram && (
+                    <SeedingTable seeds={seeds} isBadminton={isBadminton} onAutoAssign={autoAssignSeeding} onUpdateSeed={updateSeed} />
+                  )}
+
+                  {/* Generate button */}
+                  <button onClick={handleGenerate} disabled={!canGenerate}
+                    title={canGenerate ? "" : "Close registration and meet minimum participants first"}
+                    className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+                    Generate Bracket
+                  </button>
+                </>
+              )}
+
+              {/* ── Post-generation state ── */}
+              {bracketState && (
+                <>
+                  {/* View mode tabs + print/reset */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+                    <div className="flex gap-0" style={{ border: "1px solid var(--color-table-border)" }}>
+                      {(["table", "bracket"] as ViewMode[]).map(vm => (
+                        <button key={vm} onClick={() => setViewMode(vm)}
+                          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors"
+                          style={{
+                            backgroundColor: viewMode === vm ? "var(--color-primary)" : "transparent",
+                            color: viewMode === vm ? "var(--color-hero-text)" : "var(--color-body-text)",
+                            borderRight: vm === "table" ? "1px solid var(--color-table-border)" : undefined,
+                          }}>
+                          {vm === "table"   ? <LayoutList className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                          {vm === "table" ? "Table View" : "Bracket View"}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => window.print()}
+                        className="btn-outline flex items-center gap-1.5 px-4 py-2 text-sm font-medium">
+                        <Printer className="h-4 w-4" /> Print
+                      </button>
+                      {!locked && (
+                        <button onClick={handleReset}
+                          className="btn-outline flex items-center gap-1.5 px-4 py-2 text-sm font-medium"
+                          style={{ color: "var(--badge-closed-text)", borderColor: "var(--badge-closed-text)" }}>
+                          Reset Draw
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Phase tabs (groups / sections / knockout) ── */}
+                  {(allGroupIds.length > 0 || allSectionIds.length > 0) && (
+                    <div className="flex gap-0 overflow-x-auto print:hidden"
+                      style={{ borderBottom: "2px solid var(--color-table-border)" }}>
+                      {allGroupIds.map(id => (
+                        <TabBtn key={id} active={activeTab === id} onClick={() => setActiveTab(id)}>
+                          {bracketState.groups.find(g => g.id === id)?.name ?? id}
+                        </TabBtn>
+                      ))}
+                      {allSectionIds.map(id => (
+                        <TabBtn key={id} active={activeTab === id} onClick={() => setActiveTab(id)}>
+                          {bracketState.sections.find(s => s.id === id)?.name ?? id}
+                        </TabBtn>
+                      ))}
+                      {bracketState.matches.length > 0 && (
+                        <TabBtn active={activeTab === "knockout"} onClick={() => setActiveTab("knockout")}>
+                          {format === "heats_final" ? "Finals" : "Knockout Phase"}
+                        </TabBtn>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Group standings (only in group/RR/league tab, not knockout tab) ── */}
+                  {activeTab !== "knockout" && isGroupFormat && bracketState.groups.length > 0 && (
+                    <GroupStandingsTable
+                      group={bracketState.groups.find(g => g.id === activeTab) ?? bracketState.groups[0]}
+                      scoringRule={scoringRule}
+                    />
+                  )}
+
+                  {/* ── Advance phase buttons ── */}
+                  <div className="flex flex-wrap gap-3 items-center print:hidden">
+                    {/* Group → KO */}
+                    {isGroupFormat && bracketState.phase === "group" && phaseComplete && bracketState.matches.length === 0 && (
+                      <button onClick={handleGenerateKnockout}
+                        className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
+                        Generate Knockout Phase →
+                      </button>
+                    )}
+                    {/* Section → Cross-section */}
+                    {isSectional && bracketState.matches.length === 0 && allSectionIds.every(id => {
+                      const sec = bracketState.sections.find(s => s.id === id);
+                      return sec?.matches.every(m => m.status === "Completed" || m.status === "Walkover");
+                    }) && (
+                      <button onClick={handleGenerateCrossSection}
+                        className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
+                        Generate Cross-Section Draw →
+                      </button>
+                    )}
+                    {/* KO next round */}
+                    {(activeTab === "knockout" || format === "knockout") && canNextRound && (
+                      <button onClick={handleNextRound}
+                        className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
+                        Generate Next Round →
+                      </button>
+                    )}
+                    {/* Round progress info */}
+                    {(activeTab === "knockout" || format === "knockout") && maxKoRound > 0 && (
+                      <span className="text-xs opacity-50">
+                        Round {maxKoRound} ·{" "}
+                        {koRoundDone
+                          ? "All matches complete ✓"
+                          : `${currKoRound.filter(m => m.status === "Completed" || m.status === "Walkover").length} / ${currKoRound.length} done`}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* ── TABLE VIEW ── */}
+                  {viewMode === "table" && (
+                    <MatchTable
+                      matches={pagedMatches}
+                      page={page}
+                      totalPages={totalPages}
+                      perPage={perPage}
+                      total={tabMatches.length}
+                      onSetPage={setPage}
+                      onSetPerPage={n => { setPerPage(n); setPage(1); }}
+                      onOpenScore={openScore}
+                      onToggleExpand={toggleExpand}
+                    />
+                  )}
+
+                  {/* ── BRACKET VIEW ── */}
+                  {viewMode === "bracket" && (
+                    <BracketView
+                      matches={activeTab === "knockout" || format === "knockout"
+                        ? bracketState.matches
+                        : bracketState.groups.find(g => g.id === activeTab)?.matches
+                          ?? bracketState.sections.find(s => s.id === activeTab)?.matches
+                          ?? []}
+                    />
+                  )}
+
+                  {/* ── PRINT VIEW (always rendered, only visible on print) ── */}
+                  <PrintView
+                    eventName={selEventObj?.name ?? ""}
+                    programName={selProgramObj?.name ?? ""}
+                    bracketState={bracketState}
+                  />
+                </>
               )}
             </div>
           )}
@@ -542,7 +485,9 @@ export default function AdminFixtures() {
         <DialogContent className="max-w-xl max-h-[92vh] overflow-y-auto p-0"
           style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
           <DialogHeader className="p-8 pb-0">
-            <DialogTitle className="font-bold text-xl">Score Entry — {scoreModal?.id}</DialogTitle>
+            <DialogTitle className="font-bold text-xl">
+              {locked ? "Edit Score" : "Enter Score"} — {scoreModal?.id}
+            </DialogTitle>
           </DialogHeader>
           {draft && (
             <div className="p-8 pt-4 space-y-6">
@@ -579,10 +524,12 @@ export default function AdminFixtures() {
                   {/* Scores */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-bold uppercase tracking-wide opacity-50">Game Scores</p>
+                      <p className="text-xs font-bold uppercase tracking-wide opacity-50">
+                        {SCORING_RULES[scoringRule]?.setLabel ?? "Game"} Scores
+                      </p>
                       <button onClick={addGame} className="flex items-center gap-1 text-xs font-medium"
                         style={{ color: "var(--color-primary)" }}>
-                        <Plus className="h-3 w-3" /> Add Game
+                        <Plus className="h-3 w-3" /> Add {SCORING_RULES[scoringRule]?.setLabel ?? "Game"}
                       </button>
                     </div>
                     <div className="grid grid-cols-[72px_1fr_28px_1fr_32px] gap-2 mb-2 px-1">
@@ -597,7 +544,7 @@ export default function AdminFixtures() {
                       const p2w = g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1;
                       return (
                         <div key={idx} className="grid grid-cols-[72px_1fr_28px_1fr_32px] gap-2 mb-2 items-center">
-                          <span className="text-xs opacity-50">Game {idx + 1}</span>
+                          <span className="text-xs opacity-50">{SCORING_RULES[scoringRule]?.setLabel ?? "Game"} {idx + 1}</span>
                           <input type="number" min="0" className="field-input text-center font-bold"
                             style={{ color: p1w ? "var(--color-primary)" : undefined }}
                             value={g.p1} placeholder="0" onChange={e => updateGame(idx, "p1", e.target.value)} />
@@ -664,13 +611,12 @@ export default function AdminFixtures() {
                   </button>
                 </div>
                 {draft.officials.length === 0 && (
-                  <p className="text-xs opacity-40">No officials assigned yet. Type any role — suggestions provided.</p>
+                  <p className="text-xs opacity-40">No officials assigned yet.</p>
                 )}
                 {draft.officials.map((o, idx) => (
                   <div key={o.id} className="flex gap-2 mb-2 items-center">
                     <div className="w-40 flex-shrink-0">
-                      <input className="field-input" list={`roles-${idx}`}
-                        placeholder="Role (e.g. Referee)"
+                      <input className="field-input" list={`roles-${idx}`} placeholder="Role"
                         value={o.role} onChange={e => updateOfficial(idx, "role", e.target.value)} />
                       <datalist id={`roles-${idx}`}>
                         {ROLE_SUGGESTIONS.map(r => <option key={r} value={r} />)}
@@ -697,7 +643,407 @@ export default function AdminFixtures() {
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// SUB-COMPONENTS
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── Seeding table ─────────────────────────────────────────────────────────────
+function SeedingTable({ seeds, isBadminton, onAutoAssign, onUpdateSeed }: {
+  seeds: SeedEntry[];
+  isBadminton: boolean;
+  onAutoAssign: () => void;
+  onUpdateSeed: (id: string, val: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-base">Participant Seeding</h3>
+        <button onClick={onAutoAssign} disabled={!isBadminton}
+          title={isBadminton ? "Auto-assign from SBA rankings" : "SBA auto-assign only for Badminton"}
+          className="btn-outline flex items-center gap-2 px-4 py-2 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+          <CheckCircle className="h-3.5 w-3.5" /> Auto-Assign from SBA
+        </button>
+      </div>
+      <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
+        <table className="trs-table">
+          <thead>
+            <tr>
+              <th>Club / School / Company</th>
+              <th>Participants</th>
+              <th style={{ width: 100 }}>Seeding</th>
+            </tr>
+          </thead>
+          <tbody>
+            {seeds.map(s => (
+              <tr key={s.id}>
+                <td className="font-medium text-sm">{s.club}</td>
+                <td className="text-sm opacity-70">{s.participants.join(" / ")}</td>
+                <td>
+                  <input type="number" min="1" className="field-input w-16 py-1 text-sm text-center"
+                    value={s.seed ?? ""} placeholder="—"
+                    onChange={e => onUpdateSeed(s.id, e.target.value)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Group standings ───────────────────────────────────────────────────────────
+function GroupStandingsTable({ group, scoringRule }: { group: GroupEntry; scoringRule: string }) {
+  const standings = computeGroupStandings(group, scoringRule as never);
+  if (standings.every(s => s.played === 0)) return null;
+  return (
+    <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
+      <p className="text-xs font-bold uppercase tracking-wide opacity-50 px-4 py-3 border-b"
+        style={{ borderColor: "var(--color-table-border)" }}>
+        {group.name} — Standings
+      </p>
+      <table className="trs-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Team</th><th>P</th><th>W</th><th>L</th>
+            <th>GF</th><th>GA</th><th>PF</th><th>PA</th><th>Pts</th>
+          </tr>
+        </thead>
+        <tbody>
+          {standings.map(s => (
+            <tr key={s.team.id}>
+              <td className="text-sm font-bold" style={{ color: s.rank <= 2 ? "var(--color-primary)" : undefined }}>
+                {s.rank}
+              </td>
+              <td>
+                <p className="font-medium text-sm">{s.team.label}</p>
+                <p className="text-xs opacity-60">{s.team.participants.join(" / ")}</p>
+              </td>
+              <td className="text-sm">{s.played}</td>
+              <td className="text-sm font-semibold" style={{ color: "var(--badge-open-text)" }}>{s.wins}</td>
+              <td className="text-sm">{s.losses}</td>
+              <td className="text-sm">{s.gamesFor}</td>
+              <td className="text-sm">{s.gamesAgainst}</td>
+              <td className="text-sm">{s.pointsFor}</td>
+              <td className="text-sm">{s.pointsAgainst}</td>
+              <td className="text-sm font-bold">{s.points}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Match table ───────────────────────────────────────────────────────────────
+function MatchTable({ matches, page, totalPages, perPage, total, onSetPage, onSetPerPage, onOpenScore, onToggleExpand }: {
+  matches: MatchEntry[];
+  page: number; totalPages: number; perPage: number; total: number;
+  onSetPage: (n: number) => void;
+  onSetPerPage: (n: number) => void;
+  onOpenScore: (m: MatchEntry) => void;
+  onToggleExpand: (id: string) => void;
+}) {
+  const ssBadge = (s: MatchEntry["status"]) => {
+    if (s === "Completed" || s === "Walkover") return { bg: "var(--badge-open-bg)",   text: "var(--badge-open-text)" };
+    if (s === "In Progress")                   return { bg: "var(--badge-soon-bg)",   text: "var(--badge-soon-text)" };
+    return                                            { bg: "var(--badge-closed-bg)", text: "var(--badge-closed-text)" };
+  };
+
+  if (matches.length === 0) {
+    return <p className="text-sm opacity-40 py-8 text-center">No matches in this view yet.</p>;
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--color-table-border)" }}>
+      <div className="overflow-x-auto">
+        <table className="trs-table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}></th>
+              <th>Match</th>
+              <th>Round</th>
+              <th>Team 1</th>
+              <th style={{ width: 36 }} className="text-center">vs</th>
+              <th>Team 2</th>
+              <th>Score</th>
+              <th>Time</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matches.map(match => {
+              const ss = ssBadge(match.status);
+              const scoreStr = match.walkover
+                ? `W/O → ${match.walkoverWinner === "team1" ? match.team1.label : match.team2.label}`
+                : match.games.every(g => g.p1 !== "" && g.p2 !== "")
+                  ? match.games.map(g => `${g.p1}–${g.p2}`).join(", ")
+                  : "—";
+              const isDone = match.status === "Completed" || match.status === "Walkover";
+
+              return (
+                <>
+                  <tr key={match.id}>
+                    <td>
+                      <button onClick={() => onToggleExpand(match.id)} className="p-1 opacity-40 hover:opacity-100">
+                        {match.expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                    </td>
+                    <td>
+                      <div className="font-mono text-xs">{match.id}</div>
+                      <div className="text-xs opacity-50">{match.roundLabel}</div>
+                    </td>
+                    <td className="text-sm font-medium">
+                      {match.groupId ? `Grp ${match.groupId}` : match.sectionId ? `Sec ${match.sectionId}` : `R${match.round}`}
+                    </td>
+                    <td><TeamCell team={match.team1} isWinner={match.winner === "team1"} /></td>
+                    <td className="text-center opacity-30 font-bold text-sm">vs</td>
+                    <td><TeamCell team={match.team2} isWinner={match.winner === "team2"} /></td>
+                    <td className="font-mono text-xs whitespace-nowrap">{scoreStr}</td>
+                    <td className="text-xs opacity-70 whitespace-nowrap">
+                      {match.startTime ? `${match.startTime}${match.endTime ? ` – ${match.endTime}` : ""}` : "—"}
+                    </td>
+                    <td>
+                      <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: ss.bg, color: ss.text }}>{match.status}</span>
+                    </td>
+                    <td>
+                      <button onClick={() => onOpenScore(match)}
+                        className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
+                        {isDone ? "Edit Score" : "Enter Score"}
+                      </button>
+                    </td>
+                  </tr>
+                  {match.expanded && (
+                    <tr key={`${match.id}-x`}>
+                      <td colSpan={10} className="p-0">
+                        <div className="px-8 py-5 grid sm:grid-cols-3 gap-6"
+                          style={{ backgroundColor: "var(--color-row-hover)", borderTop: "1px solid var(--color-table-border)" }}>
+                          {/* Score breakdown */}
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Score Breakdown</p>
+                            {match.walkover ? (
+                              <p className="text-sm font-medium">W/O → {match.walkoverWinner === "team1" ? match.team1.label : match.team2.label}</p>
+                            ) : match.games.some(g => g.p1 !== "") ? (
+                              <div className="space-y-1">
+                                <div className="grid grid-cols-[48px_1fr_16px_1fr] gap-2 text-xs opacity-50 mb-2">
+                                  <span></span>
+                                  <span className="truncate">{match.team1.label}</span>
+                                  <span></span>
+                                  <span className="truncate">{match.team2.label}</span>
+                                </div>
+                                {match.games.map((g, i) => {
+                                  const p1w = g.p1 !== "" && g.p2 !== "" && +g.p1 > +g.p2;
+                                  const p2w = g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1;
+                                  return (
+                                    <div key={i} className="grid grid-cols-[48px_1fr_16px_1fr] gap-2 text-sm items-center">
+                                      <span className="text-xs opacity-40">G{i + 1}</span>
+                                      <span className="font-bold" style={{ color: p1w ? "var(--color-primary)" : undefined }}>{g.p1 || "—"}</span>
+                                      <span className="opacity-20 text-center">–</span>
+                                      <span className="font-bold" style={{ color: p2w ? "var(--color-primary)" : undefined }}>{g.p2 || "—"}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : <p className="text-xs opacity-40">No scores yet.</p>}
+                          </div>
+                          {/* Participants */}
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Participants</p>
+                            {[match.team1, match.team2].map((team, ti) => (
+                              <div key={ti} className="mb-3">
+                                <p className="text-xs font-semibold mb-1">{team.label}</p>
+                                {team.participants.map((p, pi) => (
+                                  <p key={pi} className="text-xs opacity-60">{pi + 1}. {p}</p>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                          {/* Officials */}
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide mb-3 opacity-50">Officials</p>
+                            {match.officials.length > 0
+                              ? match.officials.map(o => (
+                                  <div key={o.id} className="flex gap-2 text-xs mb-1">
+                                    <span className="opacity-50 w-20 flex-shrink-0">{o.role}</span>
+                                    <span>{o.name}</span>
+                                  </div>
+                                ))
+                              : <p className="text-xs opacity-40">None assigned.</p>}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={page} totalPages={totalPages} perPage={perPage} total={total}
+        setPage={onSetPage} setPerPage={onSetPerPage} />
+    </div>
+  );
+}
+
+// ── Bracket (visual tree) view ────────────────────────────────────────────────
+function BracketView({ matches }: { matches: MatchEntry[] }) {
+  const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b);
+  if (rounds.length === 0) {
+    return <p className="text-sm opacity-40 py-8 text-center">No knockout matches yet.</p>;
+  }
+  return (
+    <div className="overflow-x-auto pb-4">
+      <div className="flex gap-0 min-w-max">
+        {rounds.map((round, ri) => {
+          const roundMatches = matches.filter(m => m.round === round);
+          // Spacing: each round doubles the gap between matches
+          const spacerH = Math.pow(2, ri) * 20;
+          return (
+            <div key={round} className="flex flex-col" style={{ width: 220, marginRight: ri < rounds.length - 1 ? 0 : 0 }}>
+              <div className="text-xs font-bold uppercase tracking-wide opacity-50 px-3 py-2 text-center"
+                style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+                {roundMatches[0]?.roundLabel ?? `Round ${round}`}
+              </div>
+              <div className="flex flex-col" style={{ paddingTop: spacerH / 2 }}>
+                {roundMatches.map((match, mi) => {
+                  const isDone = match.status === "Completed" || match.status === "Walkover";
+                  return (
+                    <div key={match.id}
+                      className="mx-3 mb-0"
+                      style={{ marginBottom: mi < roundMatches.length - 1 ? spacerH : 0 }}>
+                      {/* Team 1 */}
+                      <BracketTeamSlot team={match.team1} isWinner={match.winner === "team1"} isDone={isDone} />
+                      {/* Divider */}
+                      <div style={{ height: 1, backgroundColor: "var(--color-table-border)" }} />
+                      {/* Team 2 */}
+                      <BracketTeamSlot team={match.team2} isWinner={match.winner === "team2"} isDone={isDone} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BracketTeamSlot({ team, isWinner, isDone }: { team: TeamEntry; isWinner: boolean; isDone: boolean }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2"
+      style={{
+        backgroundColor: isWinner ? "var(--color-primary)" : "var(--color-page-bg)",
+        border: "1px solid var(--color-table-border)",
+        borderBottom: "none",
+        minHeight: 44,
+      }}>
+      {team.seed !== undefined && (
+        <span className="text-xs font-bold flex-shrink-0 opacity-60"
+          style={{ color: isWinner ? "var(--color-hero-text)" : undefined }}>
+          #{team.seed}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-semibold truncate"
+          style={{ color: isWinner ? "var(--color-hero-text)" : "var(--color-body-text)" }}>
+          {team.label}
+        </div>
+        {team.participants.slice(0, 1).map((p, i) => (
+          <div key={i} className="text-xs truncate"
+            style={{ color: isWinner ? "var(--color-hero-text)" : "var(--color-body-text)", opacity: 0.7 }}>
+            {p}
+          </div>
+        ))}
+      </div>
+      {isWinner && isDone && (
+        <Trophy className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--color-hero-text)" }} />
+      )}
+    </div>
+  );
+}
+
+// ── Print view (hidden on screen, shows on @media print) ─────────────────────
+function PrintView({ eventName, programName, bracketState }: {
+  eventName: string;
+  programName: string;
+  bracketState: BracketState;
+}) {
+  const allMatches = [
+    ...bracketState.groups.flatMap(g => g.matches),
+    ...bracketState.sections.flatMap(s => s.matches),
+    ...bracketState.matches,
+  ];
+
+  return (
+    <div className="hidden print:block print:mt-0">
+      <div className="mb-6 border-b pb-4">
+        <h1 className="text-2xl font-bold">{eventName}</h1>
+        <h2 className="text-lg">{programName} — Fixture Schedule</h2>
+        <p className="text-sm opacity-60">Printed: {new Date().toLocaleString("en-SG")}</p>
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ backgroundColor: "#1E3A5F", color: "white" }}>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Match</th>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Round</th>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Team 1</th>
+            <th style={{ padding: "6px 8px", textAlign: "center" }}>Score</th>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Team 2</th>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Time</th>
+            <th style={{ padding: "6px 8px", textAlign: "left" }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {allMatches.map((match, i) => {
+            const scoreStr = match.walkover
+              ? `W/O`
+              : match.games.every(g => g.p1 !== "" && g.p2 !== "")
+                ? match.games.map(g => `${g.p1}–${g.p2}`).join(", ")
+                : "—";
+            return (
+              <tr key={match.id} style={{ backgroundColor: i % 2 === 0 ? "white" : "#F3F4F6" }}>
+                <td style={{ padding: "5px 8px", fontFamily: "monospace" }}>{match.id}</td>
+                <td style={{ padding: "5px 8px" }}>{match.roundLabel}</td>
+                <td style={{ padding: "5px 8px", fontWeight: match.winner === "team1" ? "bold" : undefined }}>
+                  {match.team1.label}
+                </td>
+                <td style={{ padding: "5px 8px", textAlign: "center", fontFamily: "monospace" }}>{scoreStr}</td>
+                <td style={{ padding: "5px 8px", fontWeight: match.winner === "team2" ? "bold" : undefined }}>
+                  {match.team2.label}
+                </td>
+                <td style={{ padding: "5px 8px" }}>
+                  {match.startTime ? `${match.startTime}${match.endTime ? ` – ${match.endTime}` : ""}` : "—"}
+                </td>
+                <td style={{ padding: "5px 8px" }}>{match.status}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick}
+      className="px-5 py-2.5 text-sm font-semibold whitespace-nowrap flex-shrink-0"
+      style={{
+        borderBottom: active ? "2px solid var(--color-primary)" : "2px solid transparent",
+        color: active ? "var(--color-primary)" : "var(--color-body-text)",
+        marginBottom: "-2px",
+      }}>
+      {children}
+    </button>
+  );
+}
+
 function StepCard({ n, title, description, children }: { n: number; title: string; description?: string; children: React.ReactNode }) {
   return (
     <div className="p-6" style={{ border: "1px solid var(--color-table-border)" }}>
@@ -727,7 +1073,6 @@ function CheckRow({ ok, label }: { ok: boolean; label: string }) {
 
 function TeamCell({ team, isWinner }: { team: TeamEntry; isWinner: boolean }) {
   const [open, setOpen] = useState(false);
-  const showToggle = team.participants.length > 2;
   const shown = open ? team.participants : team.participants.slice(0, 2);
   return (
     <div className="text-sm min-w-0">
@@ -742,7 +1087,7 @@ function TeamCell({ team, isWinner }: { team: TeamEntry; isWinner: boolean }) {
         {isWinner && <Trophy className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--color-primary)" }} />}
       </div>
       {shown.map((p, i) => <div key={i} className="text-xs opacity-60 truncate">{p}</div>)}
-      {showToggle && (
+      {team.participants.length > 2 && (
         <button onClick={() => setOpen(!open)} className="text-xs font-medium flex items-center gap-0.5 mt-0.5"
           style={{ color: "var(--color-primary)" }}>
           <Users className="h-3 w-3" />

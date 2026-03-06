@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown, ChevronsUpDown, Receipt, MoreVertical } from "lucide-react";
 import config from "@/data/config.json";
@@ -54,6 +54,18 @@ export default function AdminRegistrations() {
   const [regPage, setRegPage] = useState(1);
   const [regPerPage, setRegPerPage] = useState(10);
   const [openAction, setOpenAction] = useState<string | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
+
+  // Close action dropdown on outside click
+  useEffect(() => {
+    if (!openAction) return;
+    const handler = (e: MouseEvent) => {
+      if (actionRef.current && !actionRef.current.contains(e.target as Node))
+        setOpenAction(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openAction]);
 
   const programsForEvent = useMemo(() => {
     if (!filterEvent) return [];

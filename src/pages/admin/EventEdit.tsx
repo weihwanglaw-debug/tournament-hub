@@ -59,7 +59,7 @@ export default function EventEdit() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+ const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>  setForm(p => ({ ...p, [k]: v }));
 
   const isBadminton = form.isSports && form.sportType === "Badminton";
 

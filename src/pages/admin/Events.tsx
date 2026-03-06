@@ -18,7 +18,6 @@ export default function AdminEvents() {
 
   const filtered = useMemo(() => events.filter(ev => {
     if (filterStatus && getEventStatus(ev) !== filterStatus) return false;
-    if (filterRegStatus && getEventStatus(ev) !== filterRegStatus) return false;
     if (filterDateFrom) { const to = ev.eventEndDate || ev.eventStartDate; if (to < filterDateFrom) return false; }
     if (filterDateTo) { const from = ev.eventStartDate; if (from > filterDateTo) return false; }
     return true;

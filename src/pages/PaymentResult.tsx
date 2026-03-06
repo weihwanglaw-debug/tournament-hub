@@ -3,12 +3,14 @@ import { CheckCircle, XCircle } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 
 export default function PaymentResult() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const status = params.get("status");
   const isSuccess = status === "success";
+  const receiptNumber = useMemo(() => `TRS-${Date.now().toString(36).toUpperCase()}`, []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -24,7 +26,7 @@ export default function PaymentResult() {
               <CheckCircle className="h-16 w-16 mx-auto mb-5" style={{ color: "var(--color-primary)" }} />
               <h1 className="font-heading font-bold text-2xl mb-3">Registration Confirmed!</h1>
               <p className="text-sm opacity-70 mb-2">
-                Receipt Number: <span className="font-mono font-semibold">TRS-{Date.now().toString(36).toUpperCase()}</span>
+                Receipt Number: <span className="font-mono font-semibold">TRS-{receiptNumber}</span>
               </p>
               <p className="text-sm opacity-60 mb-8">
                 A confirmation email has been sent. You may download your receipt below.

@@ -495,17 +495,27 @@
   "admin": {
     "users": [
       {
+        "id": "u1",
         "email": "admin@trs.com",
         "password": "admin123",
         "role": "superadmin",
-        "name": "System Admin"
+        "name": "System Admin",
+        "lastLogin": "2026-03-04"
       },
       {
+        "id": "u2",
         "email": "manager@trs.com",
         "password": "manager123",
-        "role": "admin",
-        "name": "Event Manager"
+        "role": "eventadmin",
+        "name": "Event Manager",
+        "lastLogin": "2026-03-01"
       }
     ]
+  },
+  "mockStats": {
+    "totalRegistrations": 6,
+    "confirmed": 2,
+    "pending": 3,
+    "cancelled": 1
   }
 }

@@ -1,7 +1,43 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import type { Program } from "@/types/config";
+import type { Program, FixtureFormat, ScoringRuleId, FixtureFormatConfig, TiebreakCriteria } from "@/types/config";
+import { SCORING_RULES } from "@/lib/fixtureEngine";
+
+// ── Option lists ──────────────────────────────────────────────────────────────
+
+const FIELD_TYPES = [
+  { value: "text",   label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date",   label: "Date (Calendar)" },
+  { value: "select", label: "Dropdown (Options)" },
+];
+
+const FIXTURE_FORMATS: { value: FixtureFormat; label: string; description: string }[] = [
+  { value: "knockout",           label: "Knockout",             description: "Single-elimination bracket" },
+  { value: "sectional_knockout", label: "Sectional Knockout",   description: "Divide into sections, each runs KO, winners meet" },
+  { value: "group_knockout",     label: "Group + Knockout",     description: "Round-robin groups → top finishers in KO bracket" },
+  { value: "round_robin",        label: "Round Robin",          description: "Everyone plays everyone, standings only" },
+  { value: "league",             label: "League",               description: "Round-robin with home/away, full league table" },
+  { value: "heats_final",        label: "Heats + Final",        description: "Qualifying heats → A/B/C finals" },
+];
+
+const SCORING_OPTIONS = Object.values(SCORING_RULES).map(r => ({ value: r.id, label: r.label }));
+
+const TIEBREAK_OPTIONS: { value: TiebreakCriteria; label: string }[] = [
+  { value: "head_to_head",    label: "Head-to-Head Result" },
+  { value: "game_ratio",      label: "Game Ratio (won ÷ played)" },
+  { value: "point_ratio",     label: "Point Ratio (for ÷ against)" },
+  { value: "goal_difference", label: "Goal Difference" },
+  { value: "goals_scored",    label: "Total Goals Scored" },
+  { value: "fastest_time",    label: "Fastest Time (ascending)" },
+];
+
+// ── Custom field type ─────────────────────────────────────────────────────────
+
+type CF = { label: string; type: string; mandatory: boolean; options: string };
+
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   open: boolean;
@@ -11,47 +47,68 @@ interface Props {
   isBadminton?: boolean;
 }
 
-const FIELD_TYPES = [
-  { value: "text",   label: "Text"               },
-  { value: "number", label: "Number"              },
-  { value: "date",   label: "Date (Calendar)"     },
-  { value: "select", label: "Dropdown (Options)"  },
-];
+// ── Default format config per format ─────────────────────────────────────────
 
-type CF = { label: string; type: string; mandatory: boolean; options: string };
+const defaultFormatConfig = (format: FixtureFormat): FixtureFormatConfig => {
+  switch (format) {
+    case "knockout":           return { seedingMethod: "snake", byeHandling: "top_seed_gets_bye" };
+    case "sectional_knockout": return { numSections: 4, seedingMethod: "snake" };
+    case "group_knockout":     return { numGroups: 4, advancePerGroup: 2, crossGroupPairing: "bwf" };
+    case "round_robin":        return { pointsForWin: 2, pointsForDraw: 0, tiebreakOrder: ["head_to_head", "game_ratio", "point_ratio"] };
+    case "league":             return { pointsForWin: 3, pointsForDraw: 1, homeAndAway: false, tiebreakOrder: ["goal_difference", "goals_scored", "head_to_head"] };
+    case "heats_final":        return { numHeats: 4, qualifyPerHeat: 2, numFinalsGroups: 2 };
+    default:                   return {};
+  }
+};
+
+const defaultScoringRule = (format: FixtureFormat): ScoringRuleId => {
+  switch (format) {
+    case "league": return "football_90";
+    default:       return "badminton_21";
+  }
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 
 export default function ProgramModal({ open, onClose, onSave, program, isBadminton = false }: Props) {
   const isEdit = !!program;
 
+  // ── Core form state ───────────────────────────────────────────────────────
   const [form, setForm] = useState({
     name:            "",
-    type:            "Knockout",
+    gender:          "Mixed",
     minAge:          18,
     maxAge:          45,
-    gender:          "Mixed",
     fee:             "0.00",
     paymentRequired: true,
     minPlayers:      1,
     maxPlayers:      1,
     minParticipants: 4,
     maxParticipants: 32,
-    // Optional fields
     enableSbaId:          false,
     enableDocumentUpload: false,
     enableGuardianInfo:   false,
     enableRemark:         false,
-    customFields: [] as CF[],
+    customFields:         [] as CF[],
   });
 
+  // ── Fixture format state (kept separate for cleaner conditional rendering) ─
+  const [fixtureFormat,  setFixtureFormat]  = useState<FixtureFormat>("knockout");
+  const [scoringRule,    setScoringRule]     = useState<ScoringRuleId>("badminton_21");
+  const [formatConfig,   setFormatConfig]   = useState<FixtureFormatConfig>(defaultFormatConfig("knockout"));
+  const [formErrors,     setFormErrors]     = useState<Record<string, string>>({});
+
+  // ── Populate on open ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     if (program) {
       setForm({
         name:            program.name,
-        type:            program.type,
+        gender:          program.gender,
         minAge:          program.minAge,
         maxAge:          program.maxAge,
-        gender:          program.gender,
         fee:             program.fee.toFixed(2),
         paymentRequired: program.paymentRequired ?? true,
         minPlayers:      program.minPlayers,
@@ -66,66 +123,104 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
           label: cf.label, type: cf.type, mandatory: cf.required, options: cf.options || "",
         })),
       });
+      setFixtureFormat(program.fixtureFormat ?? "knockout");
+      setScoringRule(program.scoringRule ?? "badminton_21");
+      setFormatConfig(program.formatConfig ?? defaultFormatConfig(program.fixtureFormat ?? "knockout"));
     } else {
       setForm({
-        name: "", type: "Knockout", minAge: 18, maxAge: 45, gender: "Mixed",
+        name: "", gender: "Mixed", minAge: 18, maxAge: 45,
         fee: "0.00", paymentRequired: true, minPlayers: 1, maxPlayers: 1,
         minParticipants: 4, maxParticipants: 32,
         enableSbaId: false, enableDocumentUpload: false,
         enableGuardianInfo: false, enableRemark: false, customFields: [],
       });
+      setFixtureFormat("knockout");
+      setScoringRule("badminton_21");
+      setFormatConfig(defaultFormatConfig("knockout"));
     }
+    setFormErrors({});
   }, [program, open]);
 
-  const s = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const s = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }));
+  const fc = (patch: Partial<FixtureFormatConfig>) => setFormatConfig(p => ({ ...p, ...patch }));
 
-  const addCF = () =>
-    s("customFields", [...form.customFields, { label: "", type: "text", mandatory: false, options: "" }]);
+  const handleFormatChange = (fmt: FixtureFormat) => {
+    setFixtureFormat(fmt);
+    setFormatConfig(defaultFormatConfig(fmt));
+    setScoringRule(defaultScoringRule(fmt));
+  };
 
-  const updateCF = (i: number, k: string, v: any) =>
+  // Custom fields
+  const addCF    = () => s("customFields", [...form.customFields, { label: "", type: "text", mandatory: false, options: "" }]);
+  const updateCF = (i: number, k: string, v: unknown) =>
     s("customFields", form.customFields.map((cf, idx) => idx === i ? { ...cf, [k]: v } : cf));
-
   const removeCF = (i: number) =>
     s("customFields", form.customFields.filter((_, idx) => idx !== i));
 
+  // Tiebreak ordering toggle
+  const toggleTiebreak = (criterion: TiebreakCriteria) => {
+    const current = formatConfig.tiebreakOrder ?? [];
+    if (current.includes(criterion)) {
+      fc({ tiebreakOrder: current.filter(c => c !== criterion) });
+    } else {
+      fc({ tiebreakOrder: [...current, criterion] });
+    }
+  };
+
+  // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = () => {
-    if (!form.name.trim()) return;
+    const errs: Record<string, string> = {};
+    if (!form.name.trim())                           errs.name       = "Program name is required";
+    if (form.minAge > form.maxAge)                   errs.ageRange   = "Min age must be ≤ max age";
+    if (form.minPlayers > form.maxPlayers)           errs.players    = "Min players must be ≤ max players";
+    if (form.minParticipants > form.maxParticipants) errs.parts      = "Min participants must be ≤ max";
+    if (parseFloat(form.fee) < 0)                    errs.fee        = "Fee cannot be negative";
+    setFormErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    // Derive a display-friendly type label for backward compatibility
+    const typeLabel = FIXTURE_FORMATS.find(f => f.value === fixtureFormat)?.label ?? "Knockout";
+
     const savedProgram: Program = {
-      id: program?.id || "",          // ID assigned by parent on create
+      id:   program?.id || "",
       name: form.name,
-      type: form.type,
-      minAge: form.minAge,
-      maxAge: form.maxAge,
-      gender: form.gender,
-      fee: parseFloat(form.fee) || 0,
-      paymentRequired: form.paymentRequired,
-      minPlayers: form.minPlayers,
-      maxPlayers: form.maxPlayers,
-      minParticipants: form.minParticipants,
-      maxParticipants: form.maxParticipants,
+      type: typeLabel,
+      fixtureFormat,
+      formatConfig,
+      scoringRule,
+      gender:             form.gender,
+      minAge:             form.minAge,
+      maxAge:             form.maxAge,
+      fee:                parseFloat(form.fee) || 0,
+      paymentRequired:    form.paymentRequired,
+      minPlayers:         form.minPlayers,
+      maxPlayers:         form.maxPlayers,
+      minParticipants:    form.minParticipants,
+      maxParticipants:    form.maxParticipants,
       currentParticipants: program?.currentParticipants ?? 0,
-      status: program?.status ?? "open",
-      sbaRequired: form.enableSbaId,
+      status:             program?.status ?? "open",
+      sbaRequired:        form.enableSbaId,
       fields: {
         enableSbaId:          form.enableSbaId,
         enableDocumentUpload: form.enableDocumentUpload,
         enableGuardianInfo:   form.enableGuardianInfo,
         enableRemark:         form.enableRemark,
         customFields: form.customFields.map(cf => ({
-          label:    cf.label,
-          type:     cf.type,
-          required: cf.mandatory,
-          options:  cf.options || undefined,
+          label: cf.label, type: cf.type, required: cf.mandatory, options: cf.options || undefined,
         })),
       },
     };
     onSave(savedProgram);
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0"
-        style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto p-0"
+        style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}
+      >
         <DialogHeader className="p-8 pb-4">
           <DialogTitle className="font-bold text-xl">
             {isEdit ? "Edit Program" : "Create Program"}
@@ -134,21 +229,13 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
 
         <div className="px-8 pb-8 space-y-7">
 
-          {/* ── Basic ── */}
+          {/* ── Basic info ── */}
           <Sec title="Basic Info">
             <div className="grid sm:grid-cols-2 gap-5">
               <div className="sm:col-span-2">
                 <Lbl>Program Name *</Lbl>
                 <input className="field-input" value={form.name} onChange={e => s("name", e.target.value)} />
-              </div>
-              <div>
-                <Lbl>Format / Type</Lbl>
-                <select className="field-input" value={form.type} onChange={e => s("type", e.target.value)}>
-                  <option value="Knockout">Knockout</option>
-                  <option value="Group Stage + Knockout">Group Stage + Knockout</option>
-                  <option value="Round Robin">Round Robin</option>
-                  <option value="League">League</option>
-                </select>
+                {formErrors.name && <Err>{formErrors.name}</Err>}
               </div>
               <div>
                 <Lbl>Gender</Lbl>
@@ -162,7 +249,195 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
             </div>
           </Sec>
 
-          {/* ── Eligibility ── */}
+          {/* ── Fixture format ── */}
+          <Sec title="Fixture Format">
+            <div className="grid sm:grid-cols-2 gap-5 mb-5">
+              <div>
+                <Lbl>Format</Lbl>
+                <select
+                  className="field-input"
+                  value={fixtureFormat}
+                  onChange={e => handleFormatChange(e.target.value as FixtureFormat)}
+                >
+                  {FIXTURE_FORMATS.map(f => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs mt-1.5 opacity-50">
+                  {FIXTURE_FORMATS.find(f => f.value === fixtureFormat)?.description}
+                </p>
+              </div>
+              <div>
+                <Lbl>Scoring Rule</Lbl>
+                <select
+                  className="field-input"
+                  value={scoringRule}
+                  onChange={e => setScoringRule(e.target.value as ScoringRuleId)}
+                >
+                  {SCORING_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* ── Conditional config by format ── */}
+
+            {/* knockout */}
+            {fixtureFormat === "knockout" && (
+              <div className="grid sm:grid-cols-2 gap-5 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div>
+                  <Lbl>Seeding Method</Lbl>
+                  <select className="field-input" value={formatConfig.seedingMethod ?? "snake"}
+                    onChange={e => fc({ seedingMethod: e.target.value as "snake" | "random" | "manual" })}>
+                    <option value="snake">Snake (top seeds separated)</option>
+                    <option value="random">Random Draw</option>
+                    <option value="manual">Manual Assignment</option>
+                  </select>
+                </div>
+                <div>
+                  <Lbl>Bye Handling</Lbl>
+                  <select className="field-input" value={formatConfig.byeHandling ?? "top_seed_gets_bye"}
+                    onChange={e => fc({ byeHandling: e.target.value as "top_seed_gets_bye" | "random" })}>
+                    <option value="top_seed_gets_bye">Top seed gets bye</option>
+                    <option value="random">Random</option>
+                  </select>
+                  <p className="text-xs mt-1 opacity-50">Applies when participant count is not a power of 2</p>
+                </div>
+              </div>
+            )}
+
+            {/* sectional_knockout */}
+            {fixtureFormat === "sectional_knockout" && (
+              <div className="grid sm:grid-cols-2 gap-5 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div>
+                  <Lbl>Number of Sections</Lbl>
+                  <select className="field-input" value={formatConfig.numSections ?? 4}
+                    onChange={e => fc({ numSections: +e.target.value as 2 | 4 | 8 })}>
+                    <option value={2}>2 Sections</option>
+                    <option value={4}>4 Sections</option>
+                    <option value={8}>8 Sections</option>
+                  </select>
+                  <p className="text-xs mt-1 opacity-50">Snake seeding distributes top seeds across sections</p>
+                </div>
+                <div>
+                  <Lbl>Seeding Method</Lbl>
+                  <select className="field-input" value={formatConfig.seedingMethod ?? "snake"}
+                    onChange={e => fc({ seedingMethod: e.target.value as "snake" | "random" | "manual" })}>
+                    <option value="snake">Snake</option>
+                    <option value="random">Random</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* group_knockout */}
+            {fixtureFormat === "group_knockout" && (
+              <div className="grid sm:grid-cols-3 gap-5 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div>
+                  <Lbl>Number of Groups</Lbl>
+                  <select className="field-input" value={formatConfig.numGroups ?? 4}
+                    onChange={e => fc({ numGroups: +e.target.value as 2 | 4 | 8 })}>
+                    <option value={2}>2 Groups</option>
+                    <option value={4}>4 Groups</option>
+                    <option value={8}>8 Groups</option>
+                  </select>
+                </div>
+                <div>
+                  <Lbl>Advance Per Group</Lbl>
+                  <select className="field-input" value={formatConfig.advancePerGroup ?? 2}
+                    onChange={e => fc({ advancePerGroup: +e.target.value as 1 | 2 })}>
+                    <option value={1}>Top 1</option>
+                    <option value={2}>Top 2</option>
+                  </select>
+                </div>
+                <div>
+                  <Lbl>KO Pairing Style</Lbl>
+                  <select className="field-input" value={formatConfig.crossGroupPairing ?? "bwf"}
+                    onChange={e => fc({ crossGroupPairing: e.target.value as "bwf" | "standard" | "fifa" })}>
+                    <option value="bwf">BWF (A1 vs B2, prevents rematch)</option>
+                    <option value="standard">Standard (rank order)</option>
+                    <option value="fifa">FIFA (World Cup style)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* round_robin */}
+            {fixtureFormat === "round_robin" && (
+              <div className="space-y-4 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div className="grid grid-cols-2 gap-5">
+                  <div>
+                    <Lbl>Points for Win</Lbl>
+                    <input type="number" min={0} className="field-input" value={formatConfig.pointsForWin ?? 2}
+                      onChange={e => fc({ pointsForWin: +e.target.value })} />
+                  </div>
+                  <div>
+                    <Lbl>Points for Draw</Lbl>
+                    <input type="number" min={0} className="field-input" value={formatConfig.pointsForDraw ?? 0}
+                      onChange={e => fc({ pointsForDraw: +e.target.value })} />
+                  </div>
+                </div>
+                <TiebreakSelector
+                  selected={formatConfig.tiebreakOrder ?? []}
+                  onToggle={toggleTiebreak}
+                />
+              </div>
+            )}
+
+            {/* league */}
+            {fixtureFormat === "league" && (
+              <div className="space-y-4 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div className="grid grid-cols-2 gap-5">
+                  <div>
+                    <Lbl>Points for Win</Lbl>
+                    <input type="number" min={0} className="field-input" value={formatConfig.pointsForWin ?? 3}
+                      onChange={e => fc({ pointsForWin: +e.target.value })} />
+                  </div>
+                  <div>
+                    <Lbl>Points for Draw</Lbl>
+                    <input type="number" min={0} className="field-input" value={formatConfig.pointsForDraw ?? 1}
+                      onChange={e => fc({ pointsForDraw: +e.target.value })} />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={formatConfig.homeAndAway ?? false}
+                    onChange={e => fc({ homeAndAway: e.target.checked })} />
+                  Home &amp; Away (each pair plays twice)
+                </label>
+                <TiebreakSelector
+                  selected={formatConfig.tiebreakOrder ?? []}
+                  onToggle={toggleTiebreak}
+                />
+              </div>
+            )}
+
+            {/* heats_final */}
+            {fixtureFormat === "heats_final" && (
+              <div className="grid sm:grid-cols-3 gap-5 p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div>
+                  <Lbl>Number of Heats</Lbl>
+                  <input type="number" min={1} className="field-input" value={formatConfig.numHeats ?? 4}
+                    onChange={e => fc({ numHeats: +e.target.value })} />
+                </div>
+                <div>
+                  <Lbl>Qualify Per Heat</Lbl>
+                  <input type="number" min={1} className="field-input" value={formatConfig.qualifyPerHeat ?? 2}
+                    onChange={e => fc({ qualifyPerHeat: +e.target.value })} />
+                  <p className="text-xs mt-1 opacity-50">Top N from each heat advance</p>
+                </div>
+                <div>
+                  <Lbl>Number of Finals</Lbl>
+                  <input type="number" min={1} className="field-input" value={formatConfig.numFinalsGroups ?? 1}
+                    onChange={e => fc({ numFinalsGroups: +e.target.value })} />
+                  <p className="text-xs mt-1 opacity-50">1 = A Final only · 2 = A + B Finals</p>
+                </div>
+              </div>
+            )}
+          </Sec>
+
+          {/* ── Age eligibility ── */}
           <Sec title="Age Eligibility">
             <div className="grid grid-cols-2 gap-5">
               <div>
@@ -176,6 +451,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                   onChange={e => s("maxAge", +e.target.value)} />
               </div>
             </div>
+            {formErrors.ageRange && <Err>{formErrors.ageRange}</Err>}
           </Sec>
 
           {/* ── Capacity ── */}
@@ -192,16 +468,18 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                   onChange={e => s("maxParticipants", +e.target.value)} />
               </div>
               <div>
-                <Lbl>Min Participants / Entry</Lbl>
+                <Lbl>Min Players / Entry</Lbl>
                 <input type="number" className="field-input" value={form.minPlayers}
                   onChange={e => s("minPlayers", +e.target.value)} />
               </div>
               <div>
-                <Lbl>Max Participants / Entry</Lbl>
+                <Lbl>Max Players / Entry</Lbl>
                 <input type="number" className="field-input" value={form.maxPlayers}
                   onChange={e => s("maxPlayers", +e.target.value)} />
               </div>
             </div>
+            {formErrors.players && <Err>{formErrors.players}</Err>}
+            {formErrors.parts   && <Err>{formErrors.parts}</Err>}
           </Sec>
 
           {/* ── Fee ── */}
@@ -212,22 +490,22 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                 <div className="flex">
                   <span className="px-3 flex items-center text-sm font-semibold opacity-60"
                     style={{ border: "1px solid var(--color-table-border)", borderRight: "none" }}>$</span>
-                  <input type="number" step="0.01" min="0"
+                  <input
+                    type="number" step="0.01" min="0"
                     className="field-input w-36"
                     style={{ borderLeft: "none" }}
                     value={form.fee}
                     disabled={!form.paymentRequired}
                     onChange={e => s("fee", e.target.value)}
-                    onBlur={e => s("fee", parseFloat(e.target.value || "0").toFixed(2))} />
+                    onBlur={e => s("fee", parseFloat(e.target.value || "0").toFixed(2))}
+                  />
                 </div>
+                {formErrors.fee && <Err>{formErrors.fee}</Err>}
               </div>
               <div className="pb-1">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" checked={form.paymentRequired}
-                    onChange={e => {
-                      s("paymentRequired", e.target.checked);
-                      if (!e.target.checked) s("fee", "0.00");
-                    }} />
+                    onChange={e => { s("paymentRequired", e.target.checked); if (!e.target.checked) s("fee", "0.00"); }} />
                   Payment Required
                 </label>
                 {!form.paymentRequired && (
@@ -237,14 +515,13 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
             </div>
           </Sec>
 
-          {/* ── Optional Fields ── */}
+          {/* ── Optional fields ── */}
           <Sec title="Optional Fields">
             <div className="grid sm:grid-cols-2 gap-3">
               {[
-                { key: "enableDocumentUpload", label: "Document Upload"  },
-                { key: "enableGuardianInfo",   label: "Guardian Info"    },
-                { key: "enableRemark",         label: "Remark Field"     },
-                // SBA ID lookup only meaningful for Badminton
+                { key: "enableDocumentUpload", label: "Document Upload" },
+                { key: "enableGuardianInfo",   label: "Guardian Info" },
+                { key: "enableRemark",         label: "Remark Field" },
                 ...(isBadminton ? [{ key: "enableSbaId", label: "SBA ID Lookup" }] : []),
               ].map(opt => (
                 <label key={opt.key}
@@ -258,7 +535,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
             </div>
           </Sec>
 
-          {/* ── Custom Fields ── */}
+          {/* ── Custom fields ── */}
           <Sec title="Custom Fields">
             <div className="space-y-3">
               {form.customFields.map((cf, idx) => (
@@ -290,7 +567,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                   </div>
                   {cf.type === "select" && (
                     <div>
-                      <Lbl>Options <span className="font-normal opacity-50">(comma-separated e.g. XS, S, M, L, XL, XXL)</span></Lbl>
+                      <Lbl>Options <span className="font-normal opacity-50">(comma-separated)</span></Lbl>
                       <input className="field-input" placeholder="XS, S, M, L, XL, XXL"
                         value={cf.options} onChange={e => updateCF(idx, "options", e.target.value)} />
                       {cf.options && (
@@ -308,13 +585,21 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                 </div>
               ))}
             </div>
-            <button onClick={addCF}
-              className="flex items-center gap-1.5 text-sm font-medium mt-3"
+            <button onClick={addCF} className="flex items-center gap-1.5 text-sm font-medium mt-3"
               style={{ color: "var(--color-primary)" }}>
               <Plus className="h-4 w-4" /> Add Custom Field
             </button>
           </Sec>
         </div>
+
+        {/* ── Errors ── */}
+        {Object.keys(formErrors).length > 0 && (
+          <div className="px-8 pb-2 space-y-1">
+            {Object.values(formErrors).map((e, i) => (
+              <p key={i} className="text-xs" style={{ color: "var(--badge-open-text)" }}>• {e}</p>
+            ))}
+          </div>
+        )}
 
         <DialogFooter className="p-8 pt-0">
           <button onClick={onClose} className="btn-outline px-5 py-2.5 text-sm font-medium">Cancel</button>
@@ -327,6 +612,47 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
   );
 }
 
+// ── Tiebreak selector subcomponent ────────────────────────────────────────────
+
+function TiebreakSelector({ selected, onToggle }: {
+  selected: TiebreakCriteria[];
+  onToggle: (c: TiebreakCriteria) => void;
+}) {
+  return (
+    <div>
+      <Lbl>Tiebreak Order <span className="font-normal opacity-50">(select in priority order)</span></Lbl>
+      <div className="flex flex-wrap gap-2 mt-1">
+        {TIEBREAK_OPTIONS.map((opt, i) => {
+          const idx = selected.indexOf(opt.value);
+          const active = idx !== -1;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => onToggle(opt.value)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-opacity"
+              style={{
+                border: `1px solid ${active ? "var(--color-primary)" : "var(--color-table-border)"}`,
+                backgroundColor: active ? "var(--color-primary)" : "transparent",
+                color: active ? "var(--color-hero-text)" : "var(--color-body-text)",
+              }}
+            >
+              {active && <span className="font-bold">{idx + 1}.</span>}
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      {selected.length > 0 && (
+        <p className="text-xs mt-2 opacity-50">
+          Order: {selected.map((c, i) => `${i + 1}. ${TIEBREAK_OPTIONS.find(o => o.value === c)?.label}`).join(" → ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
+
 function Sec({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
@@ -338,6 +664,11 @@ function Sec({ title, children }: { title: string; children: React.ReactNode }) 
     </div>
   );
 }
+
 function Lbl({ children }: { children: React.ReactNode }) {
   return <label className="block text-xs font-semibold mb-2 opacity-70">{children}</label>;
+}
+
+function Err({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{children}</p>;
 }
