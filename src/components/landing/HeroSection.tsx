@@ -1,39 +1,41 @@
 import { motion } from "framer-motion";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
+import { ChevronDown } from "lucide-react";
 import defaultHeroBg from "@/assets/hero-bg.jpg";
 
 export default function HeroSection() {
   const { cfg } = useLiveConfig();
   const bgImage = cfg.heroImageUrl || defaultHeroBg;
 
+  const scrollToEvents = () => {
+    const el = document.getElementById("events-section");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <section
-      className="relative flex items-center justify-center text-center px-8 overflow-hidden"
-      style={{
-        minHeight: "520px",
-        paddingTop: "6rem",
-        paddingBottom: "5rem",
-      }}
+      className="relative flex items-end overflow-hidden"
+      style={{ minHeight: "600px", paddingTop: "6rem" }}
     >
-      {/* Background image with parallax-like effect */}
-      <div
+      {/* Background image */}
+      <motion.div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `url(${bgImage})`,
-          transform: "scale(1.05)",
-          transition: "transform 8s ease-out",
-        }}
+        style={{ backgroundImage: `url(${bgImage})` }}
+        initial={{ scale: 1.1 }}
+        animate={{ scale: 1 }}
+        transition={{ duration: 12, ease: "easeOut" }}
       />
 
       {/* Dark overlay with gradient */}
       <div
         className="absolute inset-0"
         style={{
-          background: "linear-gradient(180deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.75) 100%)",
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.85) 100%)",
         }}
       />
 
-      {/* Animated accent line */}
+      {/* Animated accent line at bottom */}
       <motion.div
         className="absolute bottom-0 left-0 h-1"
         style={{ backgroundColor: "var(--color-primary)" }}
@@ -42,48 +44,64 @@ export default function HeroSection() {
         transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
       />
 
-      {/* Content */}
-      <div className="max-w-3xl mx-auto relative z-10">
-        <motion.h1
-          className="font-heading font-bold text-4xl md:text-5xl lg:text-6xl leading-tight mb-6"
-          style={{ color: "#ffffff" }}
-          initial={{ opacity: 0, y: 24 }}
+      {/* Content — bottom-left aligned like the advertise section */}
+      <div className="relative z-10 max-w-6xl w-full mx-auto px-8 pb-16">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.7 }}
         >
-          {cfg.heroTitle}
-        </motion.h1>
-        <motion.p
-          className="text-lg md:text-xl max-w-2xl mx-auto"
-          style={{ color: "rgba(255,255,255,0.8)" }}
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.15 }}
-        >
-          {cfg.heroSubtitle}
-        </motion.p>
+          <p
+            className="text-xs font-bold uppercase tracking-widest mb-4"
+            style={{ color: "var(--color-primary)" }}
+          >
+            Tournament Registration
+          </p>
+          <h1
+            className="font-heading font-bold text-4xl md:text-5xl lg:text-6xl leading-tight mb-5"
+            style={{ color: "#ffffff", maxWidth: "700px" }}
+          >
+            {cfg.heroTitle}
+          </h1>
+          <p
+            className="text-base md:text-lg mb-8"
+            style={{ color: "rgba(255,255,255,0.75)", maxWidth: "520px" }}
+          >
+            {cfg.heroSubtitle}
+          </p>
+          <button
+            onClick={scrollToEvents}
+            className="inline-flex items-center gap-2 px-7 py-3 text-sm font-semibold transition-all duration-300 hover:gap-3"
+            style={{
+              backgroundColor: "var(--color-primary)",
+              color: "var(--color-hero-text)",
+            }}
+          >
+            View Events <ChevronDown className="h-4 w-4" />
+          </button>
+        </motion.div>
 
         {/* Decorative floating particles */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {[...Array(5)].map((_, i) => (
+        <div className="absolute right-8 bottom-16 pointer-events-none hidden lg:block">
+          {[...Array(6)].map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-1 h-1 rounded-full"
+              className="absolute w-1.5 h-1.5"
               style={{
                 backgroundColor: "var(--color-primary)",
-                opacity: 0.4,
-                left: `${20 + i * 15}%`,
-                top: `${30 + (i % 3) * 20}%`,
+                opacity: 0.3,
+                right: `${i * 40}px`,
+                bottom: `${(i % 3) * 60}px`,
               }}
               animate={{
-                y: [0, -20, 0],
-                opacity: [0.2, 0.6, 0.2],
+                y: [0, -15, 0],
+                opacity: [0.15, 0.5, 0.15],
               }}
               transition={{
-                duration: 3 + i * 0.5,
+                duration: 3 + i * 0.4,
                 repeat: Infinity,
                 ease: "easeInOut",
-                delay: i * 0.4,
+                delay: i * 0.3,
               }}
             />
           ))}
