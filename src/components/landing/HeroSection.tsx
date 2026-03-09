@@ -14,26 +14,16 @@ export default function HeroSection() {
 
   return (
     <section
-<<<<<<< HEAD
       className="relative flex items-end overflow-hidden group cursor-default"
       style={{ minHeight: "600px", paddingTop: "6rem" }}
     >
       {/* Background image — scales on hover like AdvertiseSection */}
       <motion.div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-700 group-hover:scale-105"
-=======
-      className="relative flex items-end overflow-hidden"
-      style={{ minHeight: "600px", paddingTop: "6rem" }}
-    >
-      {/* Background image */}
-      <motion.div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
->>>>>>> 3e4ad132e0f160adbb7ad1f6eb40b9d33be721d4
         style={{ backgroundImage: `url(${bgImage})` }}
         initial={{ scale: 1.1 }}
         animate={{ scale: 1 }}
         transition={{ duration: 12, ease: "easeOut" }}
-<<<<<<< HEAD
       />
 
       {/* Dark overlay */}
@@ -45,19 +35,6 @@ export default function HeroSection() {
         }}
       />
 
-=======
-      />
-
-      {/* Dark overlay with gradient */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.85) 100%)",
-        }}
-      />
-
->>>>>>> 3e4ad132e0f160adbb7ad1f6eb40b9d33be721d4
       {/* Animated accent line at bottom */}
       <motion.div
         className="absolute bottom-0 left-0 h-1"
@@ -67,11 +44,7 @@ export default function HeroSection() {
         transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
       />
 
-<<<<<<< HEAD
       {/* Content */}
-=======
-      {/* Content — bottom-left aligned like the advertise section */}
->>>>>>> 3e4ad132e0f160adbb7ad1f6eb40b9d33be721d4
       <div className="relative z-10 max-w-6xl w-full mx-auto px-8 pb-16">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
