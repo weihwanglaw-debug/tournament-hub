@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Download, Upload, Plus, Trash2, ChevronDown, ChevronUp,
   Trophy, AlertTriangle, Users, CheckCircle, Lock, Printer,
@@ -79,7 +79,6 @@ export default function AdminFixtures() {
   const scoringRule   = selProgramObj?.scoringRule ?? "badminton_21";
   const regClosed     = selEventObj ? new Date() > new Date(selEventObj.closeDate) : false;
   const minMet        = seeds.length >= (selProgramObj?.minParticipants ?? 0);
-
   const locked        = bracketState ? isBracketLocked(bracketState) : false;
   const phaseComplete = bracketState ? isPhaseComplete(bracketState) : false;
 
@@ -88,8 +87,6 @@ export default function AdminFixtures() {
   const allSectionIds  = bracketState?.sections.map(s => s.id) ?? [];
   const isGroupFormat  = ["group_knockout", "round_robin", "league", "heats_final"].includes(format);
   const isSectional    = format === "sectional_knockout";
-
-  
 
   // ── Seeding ───────────────────────────────────────────────────────────────
   const autoAssignSeeding = () => {
@@ -242,6 +239,7 @@ export default function AdminFixtures() {
     (!filterSport || e.sportType === filterSport) &&
     (!filterMode  || e.fixtureMode === filterMode)
   );
+  const hasFilter = !!(filterSport || filterMode);
 
   // Seed validation
   const maxSeeds     = selProgramObj?.maxSeeds ?? 0;
@@ -264,19 +262,30 @@ export default function AdminFixtures() {
       {/* ── Event Table ── */}
       {!selEvent && (
         <div className="print:hidden">
-          {/* Filters */}
-          <div className="flex flex-wrap gap-3 mb-4">
-            <select className="field-input w-48" value={filterSport} onChange={e => setFilterSport(e.target.value)}>
-              <option value="">All Sports</option>
-              {sportTypes.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select className="field-input w-44" value={filterMode} onChange={e => setFilterMode(e.target.value)}>
-              <option value="">All Modes</option>
-              <option value="internal">Internal Bracket</option>
-              <option value="external">External</option>
-            </select>
+          {/* Filter bar — same pattern as Events/Registrations */}
+          <div className="p-5 mb-6" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+            <div className="grid grid-cols-2 md:flex md:flex-wrap items-end gap-4">
+              <FG label="Sport">
+                <select className="field-input w-full md:w-40" value={filterSport} onChange={e => setFilterSport(e.target.value)}>
+                  <option value="">All Sports</option>
+                  {sportTypes.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </FG>
+              <FG label="Fixture Mode">
+                <select className="field-input w-full md:w-44" value={filterMode} onChange={e => setFilterMode(e.target.value)}>
+                  <option value="">All Modes</option>
+                  <option value="internal">Internal Bracket</option>
+                  <option value="external">External</option>
+                </select>
+              </FG>
+              {hasFilter && (
+                <button onClick={() => { setFilterSport(""); setFilterMode(""); }}
+                  className="btn-outline px-4 py-2 text-xs font-medium col-span-2 md:col-span-1">Clear</button>
+              )}
+            </div>
+            {hasFilter && <p className="text-xs mt-3 opacity-50">Showing {filteredEvents.length} of {events.length} events</p>}
           </div>
-          <div style={{ border: "1px solid var(--color-table-border)" }}>
+          <div className="hidden md:block overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
             <table className="trs-table">
               <thead>
                 <tr>
@@ -308,7 +317,7 @@ export default function AdminFixtures() {
                       <td className="text-sm">{ev.programs.length}</td>
                       <td className="text-sm opacity-70">{ev.eventStartDate}</td>
                       <td>
-                        <span className="text-xs" style={{ color: closed ? "var(--badge-open-text)" : "var(--badge-closed-text)" }}>
+                        <span className="text-xs font-semibold" style={{ color: closed ? "var(--badge-open-text)" : "var(--badge-closed-text)" }}>
                           {closed ? "✓ Closed" : ev.closeDate}
                         </span>
                       </td>
@@ -325,55 +334,84 @@ export default function AdminFixtures() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-3">
+            {filteredEvents.map(ev => {
+              const closed = new Date() > new Date(ev.closeDate);
+              return (
+                <div key={ev.id} className="p-4" style={{ border: "1px solid var(--color-table-border)" }}>
+                  <p className="font-semibold text-sm mb-1">{ev.name}</p>
+                  <p className="text-xs opacity-60 mb-3">{ev.sportType} · Closes {ev.closeDate}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs px-2 py-1 font-semibold"
+                      style={{ backgroundColor: closed ? "var(--badge-open-bg)" : "var(--badge-closed-bg)", color: closed ? "var(--badge-open-text)" : "var(--badge-closed-text)" }}>
+                      {closed ? "Reg. Closed" : "Reg. Open"}
+                    </span>
+                    <button onClick={() => { setSelEvent(ev.id); setSelProgram(""); setBracketState(null); setSeeds([]); }}
+                      className="btn-primary px-4 py-1.5 text-xs font-semibold">Manage</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
+      {/* ── Event detail view ── */}
       {selEvent && (
         <>
-          {/* ── Back + Event header ── */}
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-6 print:hidden">
-            <div>
-              <button onClick={() => { setSelEvent(""); setSelProgram(""); setBracketState(null); setSeeds([]); }}
-                className="btn-back flex items-center gap-1.5 text-xs px-3 py-1.5 mb-3">
-                ← Back to Events
-              </button>
-              <h2 className="font-bold text-lg">{selEventObj?.name}</h2>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs px-2 py-1 font-semibold"
-                  style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
-                  {mode === "internal" ? "Internal Bracket" : "External (TournamentSoftware)"}
-                </span>
-                <span className="text-xs opacity-50">{selEventObj?.sportType}</span>
-              </div>
-            </div>
+          {/* Back button */}
+          <button onClick={() => { setSelEvent(""); setSelProgram(""); setBracketState(null); setSeeds([]); }}
+            className="btn-back flex items-center gap-1.5 text-xs px-3 py-1.5 mb-5 print:hidden">
+            ← Back to Events
+          </button>
 
-            {/* Program selector */}
-            <div>
-              <label className="block text-xs font-semibold mb-2 opacity-70">Program</label>
-              <select className="field-input w-52" value={selProgram}
-                onChange={e => {
-                  const pid = e.target.value;
-                  setSelProgram(pid);
-                  setBracketState(null);
-                  setActiveTab("");
-                  // Load participants from config
-                  const prog = selEventObj?.programs.find(p => p.id === pid);
-                  setSeeds((prog as any)?.participantSeeds ?? []);
-                }}>
-                <option value="">Select program…</option>
-                {selEventObj?.programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              {selProgram && (
-                <span className="block text-xs mt-1.5 px-2 py-1 font-semibold w-fit"
-                  style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
-                  {SCORING_RULES[scoringRule]?.label ?? scoringRule}
-                </span>
-              )}
+          {/* Event info + program selector in one box */}
+          <div className="p-5 mb-6 print:hidden" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+            <div className="flex flex-wrap items-start gap-6">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-1">Selected Event</p>
+                <h2 className="font-bold text-base mb-2">{selEventObj?.name}</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs px-2 py-1 font-semibold"
+                    style={{ backgroundColor: mode === "external" ? "var(--badge-soon-bg)" : "var(--badge-open-bg)", color: mode === "external" ? "var(--badge-soon-text)" : "var(--badge-open-text)" }}>
+                    {mode === "internal" ? "Internal Bracket" : "External (TournamentSoftware)"}
+                  </span>
+                  <span className="text-xs opacity-60">{selEventObj?.sportType}</span>
+                  <span className="text-xs opacity-40">·</span>
+                  <span className="text-xs opacity-60">Reg. closes {selEventObj?.closeDate}</span>
+                </div>
+              </div>
+              <div className="flex-shrink-0 w-56">
+                <FG label="Select Program">
+                  <select className="field-input w-full" value={selProgram}
+                    onChange={e => {
+                      const pid = e.target.value;
+                      setSelProgram(pid);
+                      setBracketState(null);
+                      setActiveTab("");
+                      const prog = selEventObj?.programs.find(p => p.id === pid);
+                      setSeeds((prog as any)?.participantSeeds ?? []);
+                    }}>
+                    <option value="">— Choose a program —</option>
+                    {selEventObj?.programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </FG>
+                {selProgram && (
+                  <span className="block text-xs mt-2 px-2 py-1 font-semibold w-fit"
+                    style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                    {SCORING_RULES[scoringRule]?.label ?? scoringRule} · {format}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           {!selProgram && (
-            <div className="text-center py-16 opacity-40 text-sm">Select a program to manage fixtures.</div>
+            <div className="text-center py-16 opacity-40 text-sm print:hidden">
+              ↑ Select a program above to manage its fixtures.
+            </div>
           )}
 
           {selProgram && (
@@ -501,8 +539,8 @@ export default function AdminFixtures() {
                         </div>
                       </div>
 
-                      {/* ── Phase tabs (groups / sections / knockout) ── */}
-                      {(allGroupIds.length > 0 || allSectionIds.length > 0) && (
+                      {/* ── Phase tabs — only shown in table view ── */}
+                      {viewMode === "table" && (allGroupIds.length > 0 || allSectionIds.length > 0) && (
                         <div className="flex gap-0 overflow-x-auto print:hidden"
                           style={{ borderBottom: "2px solid var(--color-table-border)" }}>
                           {allGroupIds.map(id => (
@@ -578,13 +616,7 @@ export default function AdminFixtures() {
                       )}
 
                       {viewMode === "bracket" && (
-                        <BracketView
-                          matches={activeTab === "knockout" || format === "knockout"
-                            ? bracketState.matches
-                            : bracketState.groups.find(g => g.id === activeTab)?.matches
-                              ?? bracketState.sections.find(s => s.id === activeTab)?.matches
-                              ?? []}
-                        />
+                        <BracketView bracketState={bracketState} format={format} />
                       )}
 
                       <PrintView
@@ -766,6 +798,10 @@ export default function AdminFixtures() {
 // SUB-COMPONENTS
 // ═════════════════════════════════════════════════════════════════════════════
 
+function FG({ label, children }: { label: string; children: React.ReactNode }) {
+  return (<div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>);
+}
+
 // ── Seeding table ─────────────────────────────────────────────────────────────
 function SeedingTable({ seeds, maxSeeds, showAutoAssign, seedError, onAutoAssign, onUpdateSeed, onClearSeed }: {
   seeds: SeedEntry[];
@@ -822,16 +858,17 @@ function SeedingTable({ seeds, maxSeeds, showAutoAssign, seedError, onAutoAssign
                   <td className="font-medium text-sm">{s.club}</td>
                   <td className="text-sm opacity-70">{s.participants.join(" / ")}</td>
                   <td>
-                    <div className="flex items-center gap-1.5">
-                      <input type="number" min="1" className="field-input w-16 py-1 text-sm text-center"
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="1" className="field-input py-1 text-sm text-center"
+                        style={isDup ? { borderColor: "var(--badge-closed-text)", width: "4.5rem" } : { width: "4.5rem" }}
                         value={s.seed ?? ""} placeholder="—"
-                        style={isDup ? { borderColor: "var(--badge-closed-text)" } : undefined}
                         onChange={e => onUpdateSeed(s.id, e.target.value)} />
                       {s.seed !== null && (
                         <button onClick={() => onClearSeed(s.id)}
-                          className="p-1 opacity-40 hover:opacity-100 transition-opacity"
+                          className="flex items-center gap-1 text-xs font-medium px-2 py-1 transition-opacity hover:opacity-80"
+                          style={{ color: "var(--badge-closed-text)", border: "1px solid var(--badge-closed-text)" }}
                           title="Remove seeding">
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3 w-3" /> Clear
                         </button>
                       )}
                     </div>
@@ -1042,42 +1079,222 @@ function MatchTable({ matches, page, totalPages, perPage, total, onSetPage, onSe
   );
 }
 
-// ── Bracket (visual tree) view ────────────────────────────────────────────────
-function BracketView({ matches }: { matches: MatchEntry[] }) {
-  const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b);
-  if (rounds.length === 0) {
-    return <p className="text-sm opacity-40 py-8 text-center">No knockout matches yet.</p>;
+// ══════════════════════════════════════════════════════════════════════════════
+// BRACKET VIEW — world-cup-poster layout
+// All groups side-by-side, flowing right into all KO rounds including
+// projected empty TBD rounds, all in one scrollable view.
+//
+// Key insight: connectors only work when each column has a FIXED pixel height.
+// We compute totalH from the first-round match count and reuse it for every
+// subsequent column (which has fewer matches, so they naturally space out).
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CARD_W  = 180;   // px width of one match card
+const CARD_H  = 72;    // px height of one match card (two 34px slots + 4px divider)
+const STUB_W  = 20;    // px of horizontal connector arm on each side
+const COL_W   = CARD_W + STUB_W * 2;
+const HDR_H   = 32;    // px height of round header
+const GAP_MIN = 8;     // minimum gap between cards in first round
+
+// Total column body height for N first-round matches
+function bracketBodyH(n: number) {
+  return n * CARD_H + Math.max(0, n - 1) * GAP_MIN;
+}
+
+// Y-center of the i-th match card in a column that has `count` cards
+// distributed evenly within a fixed height `totalH`
+function cardCenterY(i: number, count: number, totalH: number): number {
+  const spacing = totalH / count;
+  return spacing * i + spacing / 2;
+}
+
+// Card top-left Y for the i-th match
+function cardTopY(i: number, count: number, totalH: number): number {
+  return cardCenterY(i, count, totalH) - CARD_H / 2;
+}
+
+// Labels for projected KO rounds
+function koRoundLabel(matchCount: number): string {
+  if (matchCount === 1) return "Final";
+  if (matchCount === 2) return "Semi-Final";
+  if (matchCount === 4) return "Quarter-Final";
+  return `Round of ${matchCount * 2}`;
+}
+
+// Build full list of KO round specs (real + projected empty)
+function buildKoRoundSpecs(
+  koMatches: MatchEntry[],
+  advancingCount: number
+): { round: number; label: string; count: number; matches: MatchEntry[] }[] {
+  const existing = [...new Set(koMatches.map(m => m.round))].sort((a, b) => a - b);
+  const specs: { round: number; label: string; count: number; matches: MatchEntry[] }[] = [];
+
+  if (existing.length > 0) {
+    // Real rounds
+    for (const r of existing) {
+      const rMatches = koMatches.filter(m => m.round === r);
+      specs.push({ round: r, label: rMatches[0].roundLabel, count: rMatches.length, matches: rMatches });
+    }
+    // Project empty rounds beyond the last real round
+    let remaining = koMatches.filter(m => m.round === Math.max(...existing)).length;
+    let nextRound = Math.max(...existing) + 1;
+    while (remaining > 1) {
+      remaining = Math.floor(remaining / 2);
+      specs.push({ round: nextRound, label: koRoundLabel(remaining), count: remaining, matches: [] });
+      nextRound++;
+    }
+  } else {
+    // No KO started yet — project all from advancing count
+    let n = advancingCount;
+    let r = 1;
+    while (n > 1) {
+      const matchCount = Math.floor(n / 2);
+      specs.push({ round: r, label: koRoundLabel(matchCount), count: matchCount, matches: [] });
+      n = matchCount;
+      r++;
+    }
   }
+  return specs;
+}
+
+// ── Single match card ──────────────────────────────────────────────────────────
+function BracketCard({ match }: { match?: MatchEntry }) {
+  const isDone = match ? (match.status === "Completed" || match.status === "Walkover") : false;
+  const scoreStr = match && isDone && !match.walkover
+    ? match.games.filter(g => g.p1 !== "").map(g => `${g.p1}–${g.p2}`).join(" ")
+    : match?.walkover ? "W/O" : "";
+
+  const slot = (team: TeamEntry | undefined, isWinner: boolean) => (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 5,
+      height: 34, padding: "0 8px", overflow: "hidden",
+      background: isWinner ? "var(--color-primary)" : "transparent",
+      flexShrink: 0,
+    }}>
+      {team?.seed != null && (
+        <span style={{
+          fontSize: 9, fontWeight: 800, flexShrink: 0, minWidth: 14,
+          color: isWinner ? "var(--color-hero-text)" : "var(--color-primary)", opacity: 0.8,
+        }}>#{team.seed}</span>
+      )}
+      <span style={{
+        fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        color: isWinner ? "var(--color-hero-text)"
+          : team?.label ? "var(--color-body-text)" : "var(--color-body-text)",
+        opacity: team?.label ? 1 : 0.3,
+        fontStyle: team?.label ? "normal" : "italic",
+      }}>{team?.label || "TBD"}</span>
+      {isWinner && isDone && <Trophy style={{ width: 10, height: 10, flexShrink: 0, color: "var(--color-hero-text)" }} />}
+    </div>
+  );
+
+  if (!match) {
+    return (
+      <div style={{
+        width: CARD_W, height: CARD_H, overflow: "hidden",
+        border: "1px dashed var(--color-table-border)", opacity: 0.35,
+      }}>
+        {slot(undefined, false)}
+        <div style={{ height: 4, background: "var(--color-table-border)", opacity: 0.4 }} />
+        {slot(undefined, false)}
+      </div>
+    );
+  }
+
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-0 min-w-max">
-        {rounds.map((round, ri) => {
-          const roundMatches = matches.filter(m => m.round === round);
-          // Spacing: each round doubles the gap between matches
-          const spacerH = Math.pow(2, ri) * 20;
+    <div style={{ width: CARD_W, height: CARD_H, overflow: "hidden", border: "1px solid var(--color-table-border)", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+      {slot(match.team1, match.winner === "team1")}
+      <div style={{ position: "relative", height: 4, background: "var(--color-table-border)", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 6 }}>
+        {scoreStr && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--color-body-text)", opacity: 0.6, lineHeight: 1, background: "var(--color-page-bg)", padding: "1px 3px" }}>{scoreStr}</span>}
+      </div>
+      {slot(match.team2, match.winner === "team2")}
+    </div>
+  );
+}
+
+// ── One bracket column (SVG for connectors + absolute-positioned cards) ────────
+function BracketCol({
+  label, matches, emptyCount, totalH, showLeftEntry, isLast, labelBg,
+}: {
+  label: string;
+  matches: MatchEntry[];
+  emptyCount?: number;
+  totalH: number;
+  showLeftEntry?: boolean;
+  isLast?: boolean;
+  labelBg?: string;
+}) {
+  const count = matches.length + (emptyCount ?? 0);
+  const allMatches: (MatchEntry | undefined)[] = [
+    ...matches,
+    ...Array(emptyCount ?? 0).fill(undefined),
+  ];
+
+  return (
+    <div style={{ flexShrink: 0, width: COL_W, display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{
+        height: HDR_H, display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em",
+        background: labelBg ?? "transparent",
+        color: labelBg ? "var(--color-hero-text)" : "var(--color-body-text)",
+        opacity: labelBg ? 1 : 0.55,
+        borderBottom: labelBg ? "none" : "2px solid var(--color-primary)",
+        flexShrink: 0,
+      }}>{label}</div>
+
+      {/* Body — position:relative so cards + SVG overlay line up */}
+      <div style={{ position: "relative", height: totalH, flexShrink: 0 }}>
+        {/* SVG connectors */}
+        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
+          {allMatches.map((match, i) => {
+            const cy = cardCenterY(i, count, totalH);
+            const top = cardTopY(i, count, totalH);
+            const won = match?.winner != null;
+            const C = won ? "var(--color-primary)" : "var(--color-table-border)";
+            const sw = won ? 2 : 1.5;
+
+            // Left entry stub
+            const leftEntry = showLeftEntry ? (
+              <line key={`le-${i}`} x1={0} y1={cy} x2={STUB_W} y2={cy} stroke={C} strokeWidth={sw} />
+            ) : null;
+
+            // Right bracket arm — pair top card gets ┐, bottom card gets ┘
+            let rightArm = null;
+            if (!isLast) {
+              const isTopOfPair = i % 2 === 0;
+              if (isTopOfPair) {
+                // ┐ from card-centre right to midpoint between this and next card
+                const partnerCy = cardCenterY(i + 1, count, totalH);
+                const midY = (cy + partnerCy) / 2;
+                rightArm = (
+                  <path key={`ra-${i}`}
+                    d={`M ${COL_W - STUB_W} ${cy} H ${COL_W} V ${midY}`}
+                    fill="none" stroke={C} strokeWidth={sw} strokeLinecap="round" />
+                );
+              } else {
+                // └ from card-centre right up to midpoint
+                const partnerCy = cardCenterY(i - 1, count, totalH);
+                const midY = (cy + partnerCy) / 2;
+                rightArm = (
+                  <path key={`ra-${i}`}
+                    d={`M ${COL_W - STUB_W} ${cy} H ${COL_W} V ${midY}`}
+                    fill="none" stroke={C} strokeWidth={sw} strokeLinecap="round" />
+                );
+              }
+            }
+
+            return <React.Fragment key={i}>{leftEntry}{rightArm}</React.Fragment>;
+          })}
+        </svg>
+
+        {/* Match cards — absolutely positioned */}
+        {allMatches.map((match, i) => {
+          const top = cardTopY(i, count, totalH);
           return (
-            <div key={round} className="flex flex-col" style={{ width: 220, marginRight: ri < rounds.length - 1 ? 0 : 0 }}>
-              <div className="text-xs font-bold uppercase tracking-wide opacity-50 px-3 py-2 text-center"
-                style={{ borderBottom: "1px solid var(--color-table-border)" }}>
-                {roundMatches[0]?.roundLabel ?? `Round ${round}`}
-              </div>
-              <div className="flex flex-col" style={{ paddingTop: spacerH / 2 }}>
-                {roundMatches.map((match, mi) => {
-                  const isDone = match.status === "Completed" || match.status === "Walkover";
-                  return (
-                    <div key={match.id}
-                      className="mx-3 mb-0"
-                      style={{ marginBottom: mi < roundMatches.length - 1 ? spacerH : 0 }}>
-                      {/* Team 1 */}
-                      <BracketTeamSlot team={match.team1} isWinner={match.winner === "team1"} isDone={isDone} />
-                      {/* Divider */}
-                      <div style={{ height: 1, backgroundColor: "var(--color-table-border)" }} />
-                      {/* Team 2 */}
-                      <BracketTeamSlot team={match.team2} isWinner={match.winner === "team2"} isDone={isDone} />
-                    </div>
-                  );
-                })}
-              </div>
+            <div key={i} style={{ position: "absolute", left: STUB_W, top }}>
+              <BracketCard match={match} />
             </div>
           );
         })}
@@ -1086,36 +1303,142 @@ function BracketView({ matches }: { matches: MatchEntry[] }) {
   );
 }
 
-function BracketTeamSlot({ team, isWinner, isDone }: { team: TeamEntry; isWinner: boolean; isDone: boolean }) {
+// ── Thin vertical divider between group section and KO section ─────────────────
+function BracketSectionDivider({ label, totalH }: { label: string; totalH: number }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2"
-      style={{
-        backgroundColor: isWinner ? "var(--color-primary)" : "var(--color-page-bg)",
-        border: "1px solid var(--color-table-border)",
-        borderBottom: "none",
-        minHeight: 44,
-      }}>
-      {team.seed !== undefined && (
-        <span className="text-xs font-bold flex-shrink-0 opacity-60"
-          style={{ color: isWinner ? "var(--color-hero-text)" : undefined }}>
-          #{team.seed}
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-semibold truncate"
-          style={{ color: isWinner ? "var(--color-hero-text)" : "var(--color-body-text)" }}>
-          {team.label}
+    <div style={{ width: 24, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ height: HDR_H, flexShrink: 0 }} />
+      <div style={{ flex: 1, height: totalH, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ flex: 1, width: 1, background: "var(--color-table-border)", opacity: 0.3 }} />
+        <span style={{
+          writingMode: "vertical-rl", fontSize: 8, fontWeight: 800,
+          textTransform: "uppercase", letterSpacing: "0.15em",
+          opacity: 0.3, padding: "6px 0",
+          color: "var(--color-body-text)",
+        }}>{label}</span>
+        <div style={{ flex: 1, width: 1, background: "var(--color-table-border)", opacity: 0.3 }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main BracketView ───────────────────────────────────────────────────────────
+function BracketView({ bracketState, format }: { bracketState: BracketState; format: FixtureFormat }) {
+  const { groups, sections, matches: koMatches } = bracketState;
+  const groupSources = groups.length > 0 ? groups : sections;
+  const isPureKo = groupSources.length === 0;
+
+  // ── Work out how many first-round matches there are (drives total height) ──
+  let firstRoundCount: number;
+  if (isPureKo) {
+    const minRound = koMatches.length > 0 ? Math.min(...koMatches.map(m => m.round)) : 1;
+    firstRoundCount = koMatches.filter(m => m.round === minRound).length || 4;
+  } else {
+    // Each group's match count (same for all groups in a round-robin sense)
+    // Use the largest group match count as the row count driver
+    firstRoundCount = Math.max(...groupSources.map(g => g.matches.length), 1);
+  }
+
+  const totalH = bracketBodyH(firstRoundCount);
+
+  // ── Pure KO (no groups) ───────────────────────────────────────────────────
+  if (isPureKo) {
+    if (koMatches.length === 0) {
+      return <p className="text-sm opacity-40 py-8 text-center">No matches generated yet.</p>;
+    }
+    const advancing = koMatches.filter(m => m.round === Math.min(...koMatches.map(x => x.round))).length * 2;
+    const koSpecs = buildKoRoundSpecs(koMatches, advancing);
+    return (
+      <div style={{ overflowX: "auto", paddingBottom: 24 }}>
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start" }}>
+          {koSpecs.map((spec, si) => (
+            <BracketCol
+              key={spec.round}
+              label={spec.label}
+              matches={spec.matches}
+              emptyCount={spec.matches.length === 0 ? spec.count : 0}
+              totalH={totalH}
+              showLeftEntry={si > 0}
+              isLast={si === koSpecs.length - 1}
+            />
+          ))}
         </div>
-        {team.participants.slice(0, 1).map((p, i) => (
-          <div key={i} className="text-xs truncate"
-            style={{ color: isWinner ? "var(--color-hero-text)" : "var(--color-body-text)", opacity: 0.7 }}>
-            {p}
-          </div>
+      </div>
+    );
+  }
+
+  // ── Group/Section + KO ────────────────────────────────────────────────────
+  const isSection = sections.length > 0 && groups.length === 0;
+  const advancingCount = groupSources.reduce((sum, g) => {
+    return sum + ((bracketState.config as any)?.advancePerGroup ?? 2);
+  }, 0);
+  const koSpecs = buildKoRoundSpecs(koMatches, advancingCount);
+
+  return (
+    <div style={{ overflowX: "auto", paddingBottom: 24 }}>
+      <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start" }}>
+
+        {/* ── One section per group, each with its own round columns ── */}
+        {groupSources.map((grp, gi) => {
+          const grpRounds = [...new Set(grp.matches.map(m => m.round))].sort((a, b) => a - b);
+          const grpFirstRound = grpRounds[0] ?? 1;
+          const grpMatchCount = grp.matches.filter(m => m.round === grpFirstRound).length || grp.matches.length;
+
+          return (
+            <React.Fragment key={grp.id}>
+              {/* Thin separator between groups (not before first) */}
+              {gi > 0 && (
+                <div style={{ width: 1, flexShrink: 0, marginTop: HDR_H, height: totalH, background: "var(--color-table-border)", opacity: 0.2 }} />
+              )}
+              <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+                {/* Group name spanning all round columns */}
+                <div style={{
+                  height: HDR_H, display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "var(--color-primary)", color: "var(--color-hero-text)",
+                  fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em",
+                  width: COL_W * Math.max(grpRounds.length, 1),
+                  opacity: 0.85, flexShrink: 0,
+                }}>{grp.name}</div>
+                <div style={{ display: "flex", flexDirection: "row" }}>
+                  {grpRounds.map((round, ri) => {
+                    const rMatches = grp.matches.filter(m => m.round === round);
+                    return (
+                      <BracketCol
+                        key={round}
+                        label={rMatches[0]?.roundLabel ?? `R${round}`}
+                        matches={rMatches}
+                        totalH={totalH}
+                        showLeftEntry={ri > 0}
+                        isLast={ri === grpRounds.length - 1}
+                      />
+                    );
+                  })}
+                  {/* If no rounds yet (shouldn't happen but safety) */}
+                  {grpRounds.length === 0 && (
+                    <BracketCol label="Round 1" matches={[]} emptyCount={grpMatchCount} totalH={totalH} isLast />
+                  )}
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        {/* ── Divider ── */}
+        <BracketSectionDivider label={isSection ? "Cross" : "KO"} totalH={totalH} />
+
+        {/* ── KO columns ── */}
+        {koSpecs.map((spec, si) => (
+          <BracketCol
+            key={`ko-${spec.round}`}
+            label={spec.label}
+            matches={spec.matches}
+            emptyCount={spec.matches.length === 0 ? spec.count : 0}
+            totalH={totalH}
+            showLeftEntry={true}
+            isLast={si === koSpecs.length - 1}
+          />
         ))}
       </div>
-      {isWinner && isDone && (
-        <Trophy className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--color-hero-text)" }} />
-      )}
     </div>
   );
 }
