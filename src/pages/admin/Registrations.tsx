@@ -163,11 +163,7 @@ export default function AdminRegistrations() {
   return (
     <div>
       <div className="sticky-header">
-<<<<<<< HEAD
         <div className="admin-page-title"><h1>Registrations &amp; Payments</h1></div>
-=======
-        <h1 className="font-bold text-2xl mb-6">Registrations & Payments</h1>
->>>>>>> 3e4ad132e0f160adbb7ad1f6eb40b9d33be721d4
 
         {/* Tabs */}
         <div className="tab-bar mb-6">
