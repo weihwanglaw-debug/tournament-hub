@@ -1,76 +1,53 @@
 /**
  * fixtureEngine.ts
- * Pure bracket-generation functions — no React, no state, no side effects.
- * All functions take plain objects and return plain objects.
- * Safe to call from any context (component, hook, test, API route).
+ * Pure bracket-generation and standings functions.
+ * No React, no side effects.
+ *
+ * Formats: knockout | group_knockout | round_robin | heats
  */
 
 import type {
-  FixtureFormat,
-  FixtureFormatConfig,
-  ScoringRuleId,
-  TiebreakCriteria,
-  SeedEntry,
-  TeamEntry,
-  MatchEntry,
-  MatchPhase,
-  GameScore,
-  GroupEntry,
-  GroupStanding,
-  SectionEntry,
-  BracketState,
+  FixtureFormat, FixtureFormatConfig, TiebreakCriteria,
+  SeedEntry, TeamEntry, MatchEntry, MatchPhase,
+  GroupEntry, GroupStanding, BracketState,
+  HeatRound, HeatParticipantResult,
 } from "@/types/config";
 
-// ── ID generation (deterministic, no crypto dependency) ───────────────────────
+// ── ID generation ─────────────────────────────────────────────────────────────
 
-let _seq = 0;
-function nextId(prefix: string): string {
-  _seq++;
-  return `${prefix}-${String(_seq).padStart(4, "0")}`;
+function makeIdGen(startAt = 0) {
+  let seq = startAt;
+  return (prefix: string) => `${prefix}-${String(++seq).padStart(4, "0")}`;
 }
-export function resetIdSequence() { _seq = 0; }
-
-// ── Team helpers ──────────────────────────────────────────────────────────────
-
-function seedToTeam(s: SeedEntry): TeamEntry {
-  return { id: s.id, label: s.club, participants: s.participants, seed: s.seed ?? undefined };
+function parseSeq(id: string): number {
+  const n = parseInt(id.split("-").pop() ?? "0", 10);
+  return isNaN(n) ? 0 : n;
 }
+function maxSeqFrom(matches: MatchEntry[]): number {
+  return matches.reduce((max, m) => Math.max(max, parseSeq(m.id)), 0);
+}
+
+// ── Blank match factory ───────────────────────────────────────────────────────
 
 function blankMatch(
-  team1: TeamEntry,
-  team2: TeamEntry,
-  round: number,
-  phase: MatchPhase,
+  nextId: ReturnType<typeof makeIdGen>,
+  team1: TeamEntry, team2: TeamEntry,
+  round: number, phase: MatchPhase,
   extras: Partial<MatchEntry> = {}
 ): MatchEntry {
   return {
-    id: nextId("M"),
-    phase,
-    round,
-    roundLabel: "",   // caller fills this in after all matches known
-    team1,
-    team2,
+    id: nextId("M"), phase, round, roundLabel: "",
+    team1, team2,
     games: [{ p1: "", p2: "" }],
-    winner: null,
-    walkover: false,
-    walkoverWinner: "",
-    startTime: "",
-    endTime: "",
-    officials: [],
-    status: "Scheduled",
-    expanded: false,
+    winner: null, walkover: false, walkoverWinner: "",
+    matchDate: "", startTime: "", endTime: "", courtNo: "",
+    officials: [], status: "Scheduled", expanded: false,
     ...extras,
   };
 }
 
-// ── Round label helper ────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Returns a human-readable round label.
- * matchesInRound = total matches in that round.
- * e.g. 1 → "Final", 2 → "Semi-Final", 4 → "Quarter-Final",
- *      8 → "Round of 16", 16 → "Round of 32"
- */
 export function getRoundLabel(matchesInRound: number): string {
   switch (matchesInRound) {
     case 1:  return "Final";
@@ -80,158 +57,165 @@ export function getRoundLabel(matchesInRound: number): string {
   }
 }
 
-/** Applies roundLabel to every match based on how many matches share that round. */
 function applyRoundLabels(matches: MatchEntry[]): MatchEntry[] {
-  const roundCounts: Record<number, number> = {};
-  for (const m of matches) roundCounts[m.round] = (roundCounts[m.round] ?? 0) + 1;
-  return matches.map(m => ({ ...m, roundLabel: getRoundLabel(roundCounts[m.round]) }));
+  const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b);
+  const lastRound = rounds[rounds.length - 1];
+  return matches.map(m => {
+    if (m.phase !== "knockout") return m;
+    const inRound = matches.filter(x => x.round === m.round && x.phase === "knockout").length;
+    return {
+      ...m,
+      roundLabel: m.round === lastRound && inRound === 1
+        ? "Final"
+        : getRoundLabel(inRound),
+    };
+  });
 }
 
-// ── Seeding distribution ──────────────────────────────────────────────────────
+function pts(v: string): number { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
-/** Returns seeded entries first (sorted), then unseeded in original order. */
+function seedToTeam(s: SeedEntry): TeamEntry {
+  return { id: s.id, label: s.club, participants: s.participants, seed: s.seed ?? undefined };
+}
+
 function sortedSeeds(seeds: SeedEntry[]): SeedEntry[] {
-  const seeded   = seeds.filter(s => s.seed != null).sort((a, b) => a.seed! - b.seed!);
-  const unseeded = seeds.filter(s => s.seed == null);
+  const seeded   = seeds.filter(s => s.seed !== null).sort((a, b) => (a.seed as number) - (b.seed as number));
+  const unseeded = seeds.filter(s => s.seed === null).sort(() => Math.random() - 0.5);
   return [...seeded, ...unseeded];
 }
 
-/**
- * Classic bracket positioning: seed 1 vs seed N, seed 2 vs seed N-1, …
- * Returns pairs of [top, bottom] in bracket order.
- */
-function bracketPairs(teams: TeamEntry[]): [TeamEntry, TeamEntry][] {
-  const n = nextPowerOf2(teams.length);
-  // Pad with "BYE" if not a power of 2
-  const padded = [...teams];
-  while (padded.length < n) {
-    padded.push({ id: `bye-${padded.length}`, label: "BYE", participants: ["BYE"] });
-  }
-  const pairs: [TeamEntry, TeamEntry][] = [];
-  for (let i = 0; i < n / 2; i++) {
-    pairs.push([padded[i], padded[n - 1 - i]]);
-  }
-  return pairs;
+// ── Knockout bracket ──────────────────────────────────────────────────────────
+
+function nextPow2(n: number): number {
+  let p = 1; while (p < n) p *= 2; return p;
 }
 
-function nextPowerOf2(n: number): number {
-  let p = 1;
-  while (p < n) p *= 2;
-  return p;
-}
+function generateKnockoutMatches(
+  nextId: ReturnType<typeof makeIdGen>,
+  teams: TeamEntry[]
+): MatchEntry[] {
+  const n   = teams.length;
+  const pow = nextPow2(n);
+  const byes = pow - n;
+  const byeTeam = (): TeamEntry => ({ id: `bye-${Math.random().toString(36).slice(2)}`, label: "BYE", participants: [] });
 
-/**
- * Snake seeding across K buckets.
- * Distributes seeds so the top seeds land in different sections/groups.
- * Returns teams[][] — one array per bucket.
- */
-function snakeDistribute(teams: TeamEntry[], numBuckets: number): TeamEntry[][] {
-  const buckets: TeamEntry[][] = Array.from({ length: numBuckets }, () => []);
-  let direction = 1;
-  let bucketIdx = 0;
-  for (const team of teams) {
-    buckets[bucketIdx].push(team);
-    bucketIdx += direction;
-    if (bucketIdx >= numBuckets || bucketIdx < 0) {
-      direction *= -1;
-      bucketIdx += direction;
+  // Snake seeding: seed 1 top-left, seed 2 bottom-right, seed 3 bottom-left, seed 4 top-right...
+  const slots: (TeamEntry | null)[] = Array(pow).fill(null);
+  const seedOrder = [0, pow - 1, pow / 2 - 1, pow / 2];
+  teams.forEach((t, i) => {
+    const pos = i < seedOrder.length ? seedOrder[i] : -1;
+    if (pos !== -1 && slots[pos] === null) slots[pos] = t;
+    else {
+      const empty = slots.findIndex((s, idx) => s === null && !seedOrder.slice(0, i).includes(idx));
+      slots[empty === -1 ? slots.findIndex(s => s === null) : empty] = t;
     }
+  });
+
+  // Pair slots for round 1
+  const matches: MatchEntry[] = [];
+  for (let i = 0; i < pow; i += 2) {
+    const t1 = slots[i] ?? byeTeam();
+    const t2 = slots[i + 1] ?? byeTeam();
+    matches.push(blankMatch(nextId, t1, t2, 1, "knockout"));
   }
-  return buckets;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// KNOCKOUT
-// ═════════════════════════════════════════════════════════════════════════════
-
-function generateKnockoutMatches(teams: TeamEntry[], startRound = 1): MatchEntry[] {
-  const pairs = bracketPairs(teams);
-  const matches: MatchEntry[] = pairs
-    .filter(([t1, t2]) => t1.label !== "BYE" && t2.label !== "BYE")
-    .map(([t1, t2]) => blankMatch(t1, t2, startRound, "knockout"));
   return applyRoundLabels(matches);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SECTIONAL KNOCKOUT
-// ═════════════════════════════════════════════════════════════════════════════
+// ── Group draw ────────────────────────────────────────────────────────────────
 
-function generateSectionalDraw(seeds: SeedEntry[], config: FixtureFormatConfig): SectionEntry[] {
-  const numSections = config.numSections ?? 2;
-  const teams = sortedSeeds(seeds).map(seedToTeam);
-  const buckets = snakeDistribute(teams, numSections);
-  const sectionLabels = ["A", "B", "C", "D", "E", "F", "G", "H"];
+function generateGroupDraw(
+  nextId: ReturnType<typeof makeIdGen>,
+  seeds: SeedEntry[],
+  numGroups: number
+): GroupEntry[] {
+  const sorted = sortedSeeds(seeds);
+  const groups: GroupEntry[] = Array.from({ length: numGroups }, (_, i) => ({
+    id: `G${i + 1}`, name: `Group ${String.fromCharCode(65 + i)}`, teams: [], matches: [],
+  }));
 
-  return buckets.map((bucket, i) => {
-    const id = sectionLabels[i];
-    const matches = generateKnockoutMatches(bucket).map(m => ({ ...m, sectionId: id, phase: "section" as MatchPhase }));
-    return { id, name: `Section ${id}`, teams: bucket, matches };
+  // Snake distribution
+  sorted.forEach((s, i) => {
+    const gi = i % (numGroups * 2) < numGroups ? i % numGroups : numGroups - 1 - (i % numGroups);
+    groups[gi].teams.push(seedToTeam(s));
   });
-}
 
-/** After all section matches are done, pair section winners into cross-section KO. */
-export function generateCrossSectionMatches(sections: SectionEntry[]): MatchEntry[] {
-  const winners: TeamEntry[] = sections.map(sec => {
-    const finalMatch = sec.matches.reduce((max, m) => m.round > max.round ? m : max, sec.matches[0]);
-    return finalMatch.winner === "team1" ? finalMatch.team1 : finalMatch.team2;
-  });
-  const matches = generateKnockoutMatches(winners, 1).map(m => ({ ...m, sectionId: undefined }));
-  return matches;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// GROUP + KNOCKOUT
-// ═════════════════════════════════════════════════════════════════════════════
-
-/** Generates all round-robin pairings within a single group. */
-function generateRoundRobinPairs(teams: TeamEntry[], groupId: string): MatchEntry[] {
-  const matches: MatchEntry[] = [];
-  let round = 1;
-  for (let i = 0; i < teams.length; i++) {
-    for (let j = i + 1; j < teams.length; j++) {
-      matches.push(blankMatch(teams[i], teams[j], round, "group", { groupId, roundLabel: `Group ${groupId} — Match ${matches.length + 1}` }));
-      round++;
+  // Round-robin matches within each group
+  for (const g of groups) {
+    const ts = g.teams;
+    for (let a = 0; a < ts.length - 1; a++) {
+      for (let b = a + 1; b < ts.length; b++) {
+        g.matches.push(blankMatch(nextId, ts[a], ts[b], 1, "group", { groupId: g.id }));
+      }
     }
   }
-  return matches;
+  return groups;
 }
 
-function generateGroupDraw(seeds: SeedEntry[], config: FixtureFormatConfig): GroupEntry[] {
-  const numGroups = config.numGroups ?? 2;
-  const teams = sortedSeeds(seeds).map(seedToTeam);
-  const buckets = snakeDistribute(teams, numGroups);
-  const groupLabels = ["A", "B", "C", "D", "E", "F", "G", "H"];
+// ── Knockout from groups ──────────────────────────────────────────────────────
 
-  return buckets.map((bucket, i) => {
-    const id = groupLabels[i];
-    const matches = generateRoundRobinPairs(bucket, id);
-    return { id, name: `Group ${id}`, teams: bucket, matches };
+export function generateKnockoutFromGroups(
+  groups: GroupEntry[], config: FixtureFormatConfig
+): MatchEntry[] {
+  const advance = config.advancePerGroup ?? 2;
+  const nextId  = makeIdGen(
+    maxSeqFrom(groups.flatMap(g => g.matches))
+  );
+
+  const advancers: TeamEntry[][] = groups.map(g => {
+    const standings = computeGroupStandings(g);
+    return standings.slice(0, advance).map(s => s.team);
   });
+
+  const paired: [TeamEntry, TeamEntry][] = [];
+  const pairing = config.crossGroupPairing ?? "standard";
+
+  if (pairing === "bwf" && groups.length === 2) {
+    const [a, b] = advancers;
+    for (let i = 0; i < advance; i++) paired.push([a[i], b[advance - 1 - i]]);
+  } else {
+    // Standard: A1 vs B1, A2 vs B2 ...
+    for (let i = 0; i < advance; i++) {
+      for (let j = 0; j < groups.length - 1; j++) {
+        const t1 = advancers[j]?.[i], t2 = advancers[j + 1]?.[i];
+        if (t1 && t2) paired.push([t1, t2]);
+      }
+    }
+  }
+
+  const matches = paired.map(([t1, t2]) => blankMatch(nextId, t1, t2, 1, "knockout"));
+  return applyRoundLabels(matches);
+}
+
+// ── Next KO round ─────────────────────────────────────────────────────────────
+
+export function generateNextKnockoutRound(koMatches: MatchEntry[]): MatchEntry[] {
+  const maxRound = Math.max(...koMatches.map(m => m.round));
+  const last     = koMatches.filter(m => m.round === maxRound);
+  const nextId   = makeIdGen(maxSeqFrom(koMatches));
+
+  const winners: TeamEntry[] = last.map(m =>
+    m.winner === "team1" ? m.team1 : m.winner === "team2" ? m.team2 : m.team1
+  );
+
+  const newMatches: MatchEntry[] = [];
+  for (let i = 0; i < winners.length - 1; i += 2) {
+    newMatches.push(blankMatch(nextId, winners[i], winners[i + 1], maxRound + 1, "knockout"));
+  }
+  return applyRoundLabels([...koMatches, ...newMatches]).filter(m => m.round > maxRound);
 }
 
 // ── Group standings ───────────────────────────────────────────────────────────
 
-/** Parses a score string like "21" to a number, returns 0 if blank/invalid. */
-function pts(s: string): number {
-  const n = parseInt(s, 10);
-  return isNaN(n) ? 0 : n;
-}
-
 export function computeGroupStandings(
   group: GroupEntry,
-  scoringRule: ScoringRuleId = "badminton_21",
-  tiebreakOrder: TiebreakCriteria[] = ["head_to_head", "game_ratio", "point_ratio"]
+  tiebreakOrder: TiebreakCriteria[] = ["head_to_head", "game_ratio", "point_ratio"],
+  pointsConfig = { win: 2, draw: 1, loss: 0 }
 ): GroupStanding[] {
-  const pointsForWin  = 2;
-  const pointsForDraw = 0;
-
   const map: Record<string, GroupStanding> = {};
   for (const team of group.teams) {
     map[team.id] = {
-      team,
-      played: 0, wins: 0, losses: 0, draws: 0,
-      gamesFor: 0, gamesAgainst: 0,
-      pointsFor: 0, pointsAgainst: 0,
+      team, played: 0, wins: 0, losses: 0, draws: 0,
+      gamesFor: 0, gamesAgainst: 0, pointsFor: 0, pointsAgainst: 0,
       points: 0, rank: 0,
     };
   }
@@ -241,371 +225,243 @@ export function computeGroupStandings(
     const s1 = map[match.team1.id];
     const s2 = map[match.team2.id];
     if (!s1 || !s2) continue;
-
-    s1.played++;
-    s2.played++;
-
+    s1.played++; s2.played++;
     for (const g of match.games) {
       if (g.p1 === "" || g.p2 === "") continue;
       const a = pts(g.p1), b = pts(g.p2);
-      s1.pointsFor     += a; s1.pointsAgainst += b;
-      s2.pointsFor     += b; s2.pointsAgainst += a;
+      s1.pointsFor += a; s1.pointsAgainst += b;
+      s2.pointsFor += b; s2.pointsAgainst += a;
       if (a > b) { s1.gamesFor++; s2.gamesAgainst++; }
       else if (b > a) { s2.gamesFor++; s1.gamesAgainst++; }
     }
-
-    if (match.winner === "team1") {
-      s1.wins++; s1.points += pointsForWin;
-      s2.losses++;
-    } else if (match.winner === "team2") {
-      s2.wins++; s2.points += pointsForWin;
-      s1.losses++;
-    } else {
-      s1.draws++; s1.points += pointsForDraw;
-      s2.draws++; s2.points += pointsForDraw;
-    }
+    if (match.winner === "team1")      { s1.wins++; s1.points += pointsConfig.win;  s2.losses++; s2.points += pointsConfig.loss; }
+    else if (match.winner === "team2") { s2.wins++; s2.points += pointsConfig.win;  s1.losses++; s1.points += pointsConfig.loss; }
+    else { s1.draws++; s1.points += pointsConfig.draw; s2.draws++; s2.points += pointsConfig.draw; }
   }
 
   const standings = Object.values(map);
-
-  // Head-to-head lookup: teamAId → teamBId → winner ("A" | "B" | "draw")
   const h2h: Record<string, Record<string, "A" | "B" | "draw">> = {};
-  for (const match of group.matches) {
-    if (match.status !== "Completed") continue;
-    const aId = match.team1.id, bId = match.team2.id;
-    if (!h2h[aId]) h2h[aId] = {};
-    if (!h2h[bId]) h2h[bId] = {};
-    if (match.winner === "team1")  { h2h[aId][bId] = "A"; h2h[bId][aId] = "B"; }
-    else if (match.winner === "team2") { h2h[aId][bId] = "B"; h2h[bId][aId] = "A"; }
-    else { h2h[aId][bId] = "draw"; h2h[bId][aId] = "draw"; }
+  for (const m of group.matches) {
+    if (m.status !== "Completed") continue;
+    const a = m.team1.id, b = m.team2.id;
+    if (!h2h[a]) h2h[a] = {}; if (!h2h[b]) h2h[b] = {};
+    if (m.winner === "team1")      { h2h[a][b] = "A"; h2h[b][a] = "B"; }
+    else if (m.winner === "team2") { h2h[a][b] = "B"; h2h[b][a] = "A"; }
+    else { h2h[a][b] = "draw"; h2h[b][a] = "draw"; }
   }
 
   standings.sort((a, b) => {
-    // 1. Points
     if (b.points !== a.points) return b.points - a.points;
-
-    // 2. Tiebreak criteria in declared order
-    for (const criterion of tiebreakOrder) {
+    for (const c of tiebreakOrder) {
       let diff = 0;
-      switch (criterion) {
+      switch (c) {
         case "head_to_head": {
-          const result = h2h[a.team.id]?.[b.team.id];
-          if (result === "A") return -1;
-          if (result === "B") return 1;
-          break;
+          const r = h2h[a.team.id]?.[b.team.id];
+          if (r === "A") return -1; if (r === "B") return 1; break;
         }
-        case "game_ratio":
-          diff = (b.gamesFor / (b.played || 1)) - (a.gamesFor / (a.played || 1));
-          break;
-        case "point_ratio":
-          diff = (b.pointsFor / (b.pointsAgainst || 1)) - (a.pointsFor / (a.pointsAgainst || 1));
-          break;
-        case "goal_difference":
-          diff = (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst);
-          break;
-        case "goals_scored":
-          diff = b.pointsFor - a.pointsFor;
-          break;
+        case "game_ratio":    diff = (b.gamesFor/(b.played||1)) - (a.gamesFor/(a.played||1)); break;
+        case "point_ratio":   diff = (b.pointsFor/(b.pointsAgainst||1)) - (a.pointsFor/(a.pointsAgainst||1)); break;
+        case "goal_difference": diff = (b.pointsFor-b.pointsAgainst) - (a.pointsFor-a.pointsAgainst); break;
+        case "goals_scored":  diff = b.pointsFor - a.pointsFor; break;
       }
       if (diff !== 0) return diff > 0 ? 1 : -1;
     }
-
-    // 5. Coin toss (random in mock — deterministic sort by team id for stability)
     return a.team.id.localeCompare(b.team.id);
   });
-
   standings.forEach((s, i) => { s.rank = i + 1; });
   return standings;
 }
 
-// ── Cross-group knockout (after all groups complete) ──────────────────────────
+// ── Heats generation ──────────────────────────────────────────────────────────
 
-/**
- * Generates the knockout phase after groups finish.
- * Supports BWF, standard, and FIFA pairing styles.
- * advancePerGroup: how many teams advance from each group (1 or 2).
- */
-export function generateKnockoutFromGroups(
-  groups: GroupEntry[],
-  config: FixtureFormatConfig,
-  scoringRule: ScoringRuleId = "badminton_21",
-  tiebreakOrder: TiebreakCriteria[] = ["head_to_head", "game_ratio", "point_ratio"]
-): MatchEntry[] {
-  const advance = config.advancePerGroup ?? 2;
-  const pairing = config.crossGroupPairing ?? "bwf";
+export function generateHeatsDraw(seeds: SeedEntry[], config: FixtureFormatConfig): BracketState {
+  const hc = config.heatsConfig ?? { numRounds: 2, advancePerRound: 4, resultLabel: "Result", placesAwarded: 3 };
 
-  // Get ranked finishers per group
-  const ranked: TeamEntry[][] = groups.map(g => {
-    const standings = computeGroupStandings(g, scoringRule, tiebreakOrder);
-    return standings.slice(0, advance).map(s => s.team);
+  const heatRounds: HeatRound[] = Array.from({ length: hc.numRounds }, (_, i) => {
+    const isFirst = i === 0;
+    const isFinal = i === hc.numRounds - 1;
+    const label   = isFinal ? "Final" : hc.numRounds === 2 ? "Heat" : i === 0 ? "Heat" : `Round ${i + 1}`;
+    // Round 1 has all participants; later rounds will be populated as admin advances
+    const results: HeatParticipantResult[] = isFirst
+      ? seeds.map(s => ({ teamId: s.id, result: "", advanced: false }))
+      : [];
+    return { id: `HR-${i + 1}`, roundNumber: i + 1, label, isFinal, results, isComplete: false };
   });
 
-  // Build advanced list: ranked[n][position] → 1st from each group, then 2nd from each group
-  const advancedByPosition: TeamEntry[][] = Array.from({ length: advance }, (_, pos) =>
-    groups.map((_, gi) => ranked[gi][pos]).filter(Boolean)
-  );
-
-  const ko1sts = advancedByPosition[0] ?? [];  // group winners
-  const ko2nds = advancedByPosition[1] ?? [];  // group runners-up
-
-  let pairs: [TeamEntry, TeamEntry][] = [];
-
-  if (pairing === "bwf" && groups.length === 4 && advance === 2) {
-    // BWF: A1 vs B2, B1 vs A2, C1 vs D2, D1 vs C2
-    pairs = [
-      [ko1sts[0], ko2nds[1]], // A1 vs B2
-      [ko1sts[1], ko2nds[0]], // B1 vs A2
-      [ko1sts[2], ko2nds[3]], // C1 vs D2
-      [ko1sts[3], ko2nds[2]], // D1 vs C2
-    ];
-  } else if (pairing === "fifa" && groups.length === 4 && advance === 2) {
-    // FIFA World Cup: A1 vs B2, C1 vs D2, B1 vs A2, D1 vs C2
-    pairs = [
-      [ko1sts[0], ko2nds[1]],
-      [ko1sts[2], ko2nds[3]],
-      [ko1sts[1], ko2nds[0]],
-      [ko1sts[3], ko2nds[2]],
-    ];
-  } else {
-    // Standard: 1st plays 2nd in rank order across groups
-    const allAdvanced = [...ko1sts, ...ko2nds];
-    const matchPairs = bracketPairs(allAdvanced);
-    pairs = matchPairs;
-  }
-
-  const matches: MatchEntry[] = pairs.map(([t1, t2]) =>
-    blankMatch(t1, t2, 1, "knockout")
-  );
-  return applyRoundLabels(matches);
+  return {
+    format: "heats", config,
+    locked: false, phase: "knockout",
+    groups: [], matches: [], seeds,
+    heatRounds,
+  };
 }
 
-// ── Advance knockout round ────────────────────────────────────────────────────
+// ── Heats: advance participants to next round ─────────────────────────────────
 
-/**
- * Given completed KO matches from the current max round,
- * generates the next round's matches.
- * Returns [] if no completed matches or only 1 match (Final already played).
- */
-export function generateNextKnockoutRound(knockoutMatches: MatchEntry[]): MatchEntry[] {
-  if (knockoutMatches.length === 0) return [];
-
-  const maxRound = Math.max(...knockoutMatches.map(m => m.round));
-  const currentRound = knockoutMatches.filter(m => m.round === maxRound);
-
-  const allDone = currentRound.every(m => m.status === "Completed" || m.status === "Walkover");
-  if (!allDone || currentRound.length <= 1) return [];
-
-  const winners: TeamEntry[] = currentRound.map(m =>
-    m.winner === "team1" ? m.team1 : m.winner === "team2" ? m.team2 : m.team1 // fallback
-  );
-
-  const nextMatches = generateKnockoutMatches(winners, maxRound + 1);
-  return nextMatches;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// MAIN ENTRY POINT
-// ═════════════════════════════════════════════════════════════════════════════
-
-/**
- * Generates the initial BracketState from a seeded participant list.
- * This is the single function Fixtures.tsx calls when admin clicks "Generate Bracket".
- */
-export function generateDraw(
-  seeds: SeedEntry[],
-  format: FixtureFormat,
-  config: FixtureFormatConfig,
-  scoringRule: ScoringRuleId = "badminton_21"
+export function advanceHeatsRound(
+  state: BracketState,
+  fromRound: number,
+  advancingIds: string[]
 ): BracketState {
-  resetIdSequence();
+  const rounds = (state.heatRounds ?? []).map(r => {
+    if (r.roundNumber === fromRound) {
+      return {
+        ...r,
+        isComplete: true,
+        results: r.results.map(res => ({
+          ...res,
+          advanced: advancingIds.includes(res.teamId),
+        })),
+      };
+    }
+    if (r.roundNumber === fromRound + 1) {
+      return {
+        ...r,
+        results: advancingIds.map(id => ({ teamId: id, result: "", advanced: false })),
+      };
+    }
+    return r;
+  });
+  return { ...state, heatRounds: rounds };
+}
+
+// ── Heats: save result for a round participant ────────────────────────────────
+
+export function saveHeatResult(
+  state: BracketState,
+  roundNumber: number,
+  teamId: string,
+  result: string
+): BracketState {
+  const rounds = (state.heatRounds ?? []).map(r => {
+    if (r.roundNumber !== roundNumber) return r;
+    return {
+      ...r,
+      results: r.results.map(res =>
+        res.teamId === teamId ? { ...res, result } : res
+      ),
+    };
+  });
+  return { ...state, heatRounds: rounds };
+}
+
+// ── Heats: assign final places ────────────────────────────────────────────────
+
+export function assignHeatPlaces(
+  state: BracketState,
+  places: Record<string, number>   // teamId → place number
+): BracketState {
+  const rounds = (state.heatRounds ?? []).map(r => {
+    if (!r.isFinal) return r;
+    return {
+      ...r,
+      isComplete: true,
+      results: r.results.map(res => ({
+        ...res,
+        place: places[res.teamId],
+        advanced: true,
+      })),
+    };
+  });
+  return { ...state, heatRounds: rounds };
+}
+
+// ── Main draw generation ──────────────────────────────────────────────────────
+
+export function generateDraw(seeds: SeedEntry[], config: FixtureFormatConfig): BracketState {
+  const nextId = makeIdGen(0);
+  const { format } = config;
+
+  if (format === "heats") return generateHeatsDraw(seeds, config);
 
   const base: BracketState = {
-    format,
-    config,
-    scoringRule,
-    locked: false,
-    phase: "knockout",
-    groups: [],
-    sections: [],
-    matches: [],
-    seeds,
+    format, config,
+    locked: false, phase: "knockout",
+    groups: [], matches: [], seeds,
   };
 
   switch (format) {
-    case "knockout": {
-      const teams = sortedSeeds(seeds).map(seedToTeam);
-      return {
-        ...base,
-        phase: "knockout",
-        matches: generateKnockoutMatches(teams),
-      };
-    }
-
-    case "sectional_knockout": {
-      const sections = generateSectionalDraw(seeds, config);
-      return {
-        ...base,
-        phase: "knockout", // sections share the knockout phase label
-        sections,
-        matches: [],       // cross-section matches generated after sections complete
-      };
-    }
-
-    case "group_knockout": {
-      const groups = generateGroupDraw(seeds, config);
-      return {
-        ...base,
-        phase: "group",
-        groups,
-        matches: [],       // KO phase generated after groups complete
-      };
-    }
-
-    case "round_robin": {
-      // All matches in groups, no KO phase
-      const groups = generateGroupDraw(seeds, { ...config, numGroups: 1 });
-      return {
-        ...base,
-        phase: "group",
-        groups,
-        matches: [],
-      };
-    }
-
-    case "league": {
-      // Same as round_robin but homeAndAway doubles the matches
-      const groups = generateGroupDraw(seeds, { ...config, numGroups: 1 });
-      if (config.homeAndAway) {
-        // Duplicate each match with teams swapped
-        const homeAway: GroupEntry[] = groups.map(g => ({
-          ...g,
-          matches: [
-            ...g.matches,
-            ...g.matches.map(m => ({ ...m, id: nextId("M"), team1: m.team2, team2: m.team1 })),
-          ],
-        }));
-        return { ...base, phase: "group", groups: homeAway, matches: [] };
-      }
-      return { ...base, phase: "group", groups, matches: [] };
-    }
-
-    case "heats_final": {
-      // Heats are treated as groups, finals are the KO phase
-      const numHeats = config.numHeats ?? 2;
-      const groups = generateGroupDraw(seeds, { ...config, numGroups: numHeats });
-      return { ...base, phase: "group", groups, matches: [] };
-    }
-
+    case "knockout":
+      return { ...base, matches: generateKnockoutMatches(nextId, sortedSeeds(seeds).map(seedToTeam)) };
+    case "group_knockout":
+      return { ...base, phase: "group", groups: generateGroupDraw(nextId, seeds, config.numGroups ?? 2) };
+    case "round_robin":
+      return { ...base, phase: "group", groups: generateGroupDraw(nextId, seeds, 1) };
     default:
       return base;
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SCORING RULE DEFINITIONS (for display and validation)
-// ═════════════════════════════════════════════════════════════════════════════
+// ── Swap teams ────────────────────────────────────────────────────────────────
 
-export interface ScoringRule {
-  id: ScoringRuleId;
-  label: string;
-  setLabel: string;
-  pointLabel: string;
-  setsToWin?: number;
-  pointsToWin?: number;
-  mustWinBy?: number;
-  maxPoints?: number;
-  winCondition: "best_of_sets" | "time_based" | "fastest_time";
-  allowDraw?: boolean;
-  sortOrder?: "asc" | "desc";
+export function swapTeams(state: BracketState, idA: string, idB: string): BracketState {
+  function swapInList(matches: MatchEntry[]): MatchEntry[] {
+    return matches.map(m => {
+      const t1A = m.team1.id === idA, t1B = m.team1.id === idB;
+      const t2A = m.team2.id === idA, t2B = m.team2.id === idB;
+      if (!t1A && !t1B && !t2A && !t2B) return m;
+      return {
+        ...m,
+        team1: t1A ? m.team2 : t1B ? m.team1 : m.team1,
+        team2: t2B ? m.team1 : t2A ? m.team2 : m.team2,
+      };
+    });
+  }
+  const newSeeds = state.seeds.map(s => {
+    if (s.id === idA) { const o = state.seeds.find(x => x.id === idB); return { ...s, seed: o?.seed ?? null }; }
+    if (s.id === idB) { const o = state.seeds.find(x => x.id === idA); return { ...s, seed: o?.seed ?? null }; }
+    return s;
+  });
+  // Swap in heats too
+  const heatRounds = (state.heatRounds ?? []).map(r => ({
+    ...r,
+    results: r.results.map(res =>
+      res.teamId === idA ? { ...res, teamId: idB }
+      : res.teamId === idB ? { ...res, teamId: idA }
+      : res
+    ),
+  }));
+  return {
+    ...state, seeds: newSeeds,
+    matches: swapInList(state.matches),
+    groups: state.groups.map(g => ({ ...g, matches: swapInList(g.matches) })),
+    heatRounds,
+  };
 }
 
-export const SCORING_RULES: Record<ScoringRuleId, ScoringRule> = {
-  badminton_21: {
-    id: "badminton_21",
-    label: "Badminton — 21pts",
-    setLabel: "Game",
-    pointLabel: "Points",
-    setsToWin: 2,
-    pointsToWin: 21,
-    mustWinBy: 2,
-    maxPoints: 30,
-    winCondition: "best_of_sets",
-  },
-  badminton_30: {
-    id: "badminton_30",
-    label: "Badminton — 30pts",
-    setLabel: "Game",
-    pointLabel: "Points",
-    setsToWin: 2,
-    pointsToWin: 30,
-    mustWinBy: 1,
-    winCondition: "best_of_sets",
-  },
-  football_90: {
-    id: "football_90",
-    label: "Football — 90min",
-    setLabel: "Half",
-    pointLabel: "Goals",
-    winCondition: "time_based",
-    allowDraw: true,
-  },
-  tennis_sets: {
-    id: "tennis_sets",
-    label: "Tennis — Sets",
-    setLabel: "Set",
-    pointLabel: "Games",
-    setsToWin: 2,
-    winCondition: "best_of_sets",
-  },
-  swimming_time: {
-    id: "swimming_time",
-    label: "Swimming — Time",
-    setLabel: "Heat",
-    pointLabel: "Time (s)",
-    winCondition: "fastest_time",
-    sortOrder: "asc",
-  },
-  sets_3: {
-    id: "sets_3",
-    label: "Best of 3 Sets",
-    setLabel: "Set",
-    pointLabel: "Points",
-    setsToWin: 2,
-    winCondition: "best_of_sets",
-  },
-  sets_5: {
-    id: "sets_5",
-    label: "Best of 5 Sets",
-    setLabel: "Set",
-    pointLabel: "Points",
-    setsToWin: 3,
-    winCondition: "best_of_sets",
-  },
-};
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
-// ═════════════════════════════════════════════════════════════════════════════
-// UTILITY: is bracket locked?
-// ═════════════════════════════════════════════════════════════════════════════
-
-/** Returns true if any match in any phase has a score entered (not just Scheduled). */
 export function isBracketLocked(state: BracketState): boolean {
-  const allMatches = [
-    ...state.matches,
-    ...state.groups.flatMap(g => g.matches),
-    ...state.sections.flatMap(s => s.matches),
-  ];
-  return allMatches.some(m => m.status !== "Scheduled");
+  if (state.format === "heats") {
+    return (state.heatRounds ?? []).some(r => r.isComplete);
+  }
+  return [...state.matches, ...state.groups.flatMap(g => g.matches)]
+    .some(m => m.status !== "Scheduled");
 }
 
-/** Returns true if all matches in the current active phase are complete. */
 export function isPhaseComplete(state: BracketState): boolean {
-  if (state.phase === "group") {
-    return state.groups.every(g =>
-      g.matches.every(m => m.status === "Completed" || m.status === "Walkover")
-    );
+  if (state.format === "heats") {
+    const rounds = state.heatRounds ?? [];
+    const current = rounds.filter(r => !r.isComplete);
+    return current.length === 0;
   }
-  if (state.phase === "knockout") {
-    return state.matches.every(m => m.status === "Completed" || m.status === "Walkover");
-  }
-  return false;
+  if (state.phase === "group")
+    return state.groups.every(g => g.matches.every(m => m.status === "Completed" || m.status === "Walkover"));
+  return state.matches.every(m => m.status === "Completed" || m.status === "Walkover");
+}
+
+export function getAllMatches(state: BracketState): MatchEntry[] {
+  return [...state.groups.flatMap(g => g.matches), ...state.matches];
+}
+
+// ── Heats utilities ───────────────────────────────────────────────────────────
+
+export function getCurrentHeatRound(state: BracketState): HeatRound | null {
+  if (state.format !== "heats") return null;
+  return (state.heatRounds ?? []).find(r => !r.isComplete) ?? null;
+}
+
+export function getHeatsTeamLabel(state: BracketState, teamId: string): string {
+  const seed = state.seeds.find(s => s.id === teamId);
+  return seed ? seed.club : teamId;
 }

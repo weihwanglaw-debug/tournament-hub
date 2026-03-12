@@ -2,9 +2,9 @@
 
 export interface CustomField {
   label: string;
-  type: string;         // text | number | date | select
+  type: string;
   required: boolean;
-  options?: string;     // comma-separated for select type
+  options?: string;
 }
 
 export interface ProgramFields {
@@ -18,54 +18,61 @@ export interface ProgramFields {
 // ── Fixture types ─────────────────────────────────────────────────────────────
 
 export type FixtureFormat =
-  | "knockout"           // straight single-elimination
-  | "sectional_knockout" // N sections each run KO → winners play final KO
-  | "group_knockout"     // group stage (round-robin) → top N advance to KO
-  | "round_robin"        // everyone plays everyone, standings only
-  | "league"             // round-robin with home/away
-  | "heats_final";       // qualifying heats → A/B/C finals
+  | "knockout"       // single elimination bracket
+  | "group_knockout" // round-robin groups → top N advance to KO
+  | "round_robin"    // everyone vs everyone, standings only
+  | "heats";         // individual/non-vs: rounds of individual results → advancement → final
 
-export type ScoringRuleId =
-  | "badminton_21"   // best of 3, 21pts, win by 2, deuce to 30
-  | "badminton_30"   // best of 3, 30pts, sudden death at 29-all
-  | "football_90"    // 90 min, extra time 30 min, goals
-  | "tennis_sets"    // best of 3 or 5 sets
-  | "swimming_time"  // fastest time wins
-  | "sets_3"         // generic best-of-3 sets
-  | "sets_5";        // generic best-of-5 sets
+export type FixtureMode = "internal" | "external" | "not_required";
 
 export type TiebreakCriteria =
   | "head_to_head"
   | "game_ratio"
   | "point_ratio"
   | "goal_difference"
-  | "goals_scored"
-  | "fastest_time";
+  | "goals_scored";
 
-export interface FixtureFormatConfig {
+// ── Round Robin standing points ───────────────────────────────────────────────
 
-  // knockout
-  seedingMethod?:     "snake" | "random" | "manual";
-  byeHandling?:       "top_seed_gets_bye" | "random";
+export interface StandingPoints {
+  win:  number;   // default 2
+  draw: number;   // default 1
+  loss: number;   // default 0
+}
 
-  // sectional_knockout
-  numSections?:       number;
+// ── Heats format config ───────────────────────────────────────────────────────
 
+export interface HeatsConfig {
+  numRounds:      number;   // total rounds including final (min 2)
+  advancePerRound: number;  // how many advance from each round (except final)
+  resultLabel:    string;   // display label for result column e.g. "Time", "Score", "Distance"
+  placesAwarded:  number;   // how many places to assign in final (1=winner only, 3=podium)
+}
+
+// Wizard-produced config — stored inside BracketState
+export interface WizardConfig {
+  format:          FixtureFormat;
+  numSeeds:        number;
   // group_knockout
-  numGroups?:         number;
-  advancePerGroup?:   number;
-  crossGroupPairing?: "bwf" | "standard" | "fifa";
+  numGroups?:      number;
+  advancePerGroup?: number;
+  crossGroupPairing?: "standard" | "bwf";
+  // round_robin standing points
+  standingPoints?: StandingPoints;
+  // heats
+  heatsConfig?:    HeatsConfig;
+}
 
-  // round_robin / league
-  pointsForWin?:      number;
-  pointsForDraw?:     number;
-  homeAndAway?:       boolean;
-  tiebreakOrder?:     TiebreakCriteria[];
+export type FixtureFormatConfig = WizardConfig;
 
-  // heats_final
-  numHeats?:          number;
-  qualifyPerHeat?:    number;
-  numFinalsGroups?:   number;
+// ── SBA ranking ───────────────────────────────────────────────────────────────
+
+export interface SbaRanking {
+  sbaId: string;
+  name: string;
+  club: string;
+  accumulatedScore: number;
+  ranking: number;
 }
 
 // ── Program ───────────────────────────────────────────────────────────────────
@@ -73,7 +80,6 @@ export interface FixtureFormatConfig {
 export interface Program {
   id: string;
   name: string;
-  /** @deprecated use fixtureFormat + scoringRule instead. Kept for display label. */
   type: string;
   minAge: number;
   maxAge: number;
@@ -88,13 +94,7 @@ export interface Program {
   currentParticipants: number;
   status: string;
   fields: ProgramFields;
-
-  // Fixture configuration — set at program creation time
-  fixtureFormat?: FixtureFormat;       // defaults to "knockout" if absent
-  formatConfig?:  FixtureFormatConfig; // format-specific settings
-  scoringRule?:   ScoringRuleId;       // defaults to "badminton_21" if absent
-  maxSeeds?:      number;              // max number of seeded participants (0 = no seeding)
-  participantSeeds?: SeedEntry[];      // pre-loaded from registrations
+  participantSeeds?: SeedEntry[];
 }
 
 // ── Event ─────────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export interface TournamentEvent {
   consentStatement: string;
   isSports: boolean;
   sportType: string;
-  fixtureMode: "internal" | "external";
+  fixtureMode: FixtureMode;
   programs: Program[];
 }
 
@@ -126,7 +126,7 @@ export interface TournamentEvent {
 export interface AdminUser {
   id: string;
   email: string;
-  password: string;       // plaintext for mock; backend will hash
+  password: string;
   role: "superadmin" | "eventadmin";
   name: string;
   lastLogin?: string;
@@ -159,6 +159,111 @@ export interface Config {
 export type EventStatus   = "open" | "upcoming" | "closed";
 export type ProgramStatus = "open" | "upcoming" | "closed" | "full" | "nearly_full";
 
+// ── Match / bracket types ─────────────────────────────────────────────────────
+
+export interface GameScore {
+  p1: string;
+  p2: string;
+}
+
+export interface Official {
+  id: string;
+  role: string;
+  name: string;
+}
+
+export interface TeamEntry {
+  id: string;
+  label: string;
+  participants: string[];
+  seed?: number;
+}
+
+export type MatchStatus = "Scheduled" | "In Progress" | "Completed" | "Walkover";
+export type MatchPhase  = "group" | "knockout";
+
+export interface MatchEntry {
+  id: string;
+  phase: MatchPhase;
+  round: number;
+  roundLabel: string;
+  groupId?: string;
+  team1: TeamEntry;
+  team2: TeamEntry;
+  games: GameScore[];
+  winner: "team1" | "team2" | null;
+  walkover: boolean;
+  walkoverWinner: "team1" | "team2" | "";
+  matchDate: string;
+  startTime: string;
+  endTime: string;
+  courtNo: string;
+  officials: Official[];
+  status: MatchStatus;
+  expanded: boolean;
+}
+
+export interface SeedEntry {
+  id: string;
+  club: string;
+  participants: string[];
+  seed: number | null;
+  sbaId?: string;
+}
+
+export interface GroupStanding {
+  team: TeamEntry;
+  played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  gamesFor: number;
+  gamesAgainst: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  points: number;
+  rank: number;
+}
+
+export interface GroupEntry {
+  id: string;
+  name: string;
+  teams: TeamEntry[];
+  matches: MatchEntry[];
+}
+
+// ── Heats bracket types ───────────────────────────────────────────────────────
+
+export interface HeatParticipantResult {
+  teamId:   string;
+  result:   string;   // free text: "12.4s", "847", "222,223,225"
+  advanced: boolean;  // did they advance to next round?
+  place?:   number;   // final round: 1st, 2nd, 3rd...
+}
+
+export interface HeatRound {
+  id:           string;
+  roundNumber:  number;
+  label:        string;      // "Heat 1", "Semi-Final", "Final"
+  isFinal:      boolean;
+  results:      HeatParticipantResult[];
+  isComplete:   boolean;
+}
+
+// ── BracketState ─────────────────────────────────────────────────────────────
+
+export interface BracketState {
+  format: FixtureFormat;
+  config: FixtureFormatConfig;
+  locked: boolean;
+  phase:  "group" | "knockout";
+  groups: GroupEntry[];
+  matches: MatchEntry[];
+  seeds:  SeedEntry[];
+  // heats format only
+  heatRounds?: HeatRound[];
+}
+
 // ── Registration / participant types ─────────────────────────────────────────
 
 export interface Participant {
@@ -188,8 +293,6 @@ export interface CartEntry {
   participants: Participant[];
 }
 
-// ── Payment types ─────────────────────────────────────────────────────────────
-
 export type PaymentMethod = "Credit Card" | "PayNow" | "Cash" | "Bank Transfer" | "Others";
 export type PaymentStatus = "Pending" | "Paid" | "Refunded" | "Partially Refunded";
 export type RefundStatus  = "None" | "Full" | "Partial";
@@ -198,111 +301,27 @@ export interface PaymentLineItem {
   id: string;
   label: string;
   amount: number;
-  refundedAmount: number;
-  refundStatus: RefundStatus;
-  refundDate?: string;
-  refundReason?: string;
 }
+
+// ── PaymentRecord (legacy shape used by Registrations.tsx, kept for compatibility) ──
 
 export interface PaymentRecord {
-  id: string;
+  id:             string;
   registrationId: string;
-  event: string;
-  program: string;
-  participants: string;
-  method: PaymentMethod;
-  paidDate: string;
-  receiptNumber: string;
-  lineItems: PaymentLineItem[];
-  paymentStatus: PaymentStatus;
-}
-
-// ── Fixture engine types ──────────────────────────────────────────────────────
-
-export type MatchStatus = "Scheduled" | "In Progress" | "Completed" | "Walkover";
-export type MatchPhase  = "section" | "group" | "knockout";
-
-export interface GameScore {
-  p1: string;
-  p2: string;
-}
-
-export interface Official {
-  id: string;
-  role: string;
-  name: string;
-}
-
-export interface TeamEntry {
-  id: string;
-  label: string;          // club / school / company
-  participants: string[]; // player display names
-  seed?: number;
-}
-
-export interface MatchEntry {
-  id: string;
-  phase: MatchPhase;
-  round: number;
-  roundLabel: string;     // "Round 1" | "Quarter-Final" | "Semi-Final" | "Final"
-  groupId?: string;       // "A" | "B" | "C" | "D" — group phase only
-  sectionId?: string;     // "A" | "B" | "C" | "D" — sectional KO only
-  team1: TeamEntry;
-  team2: TeamEntry;
-  games: GameScore[];
-  winner: "team1" | "team2" | null;
-  walkover: boolean;
-  walkoverWinner: "team1" | "team2" | "";
-  startTime: string;
-  endTime: string;
-  officials: Official[];
-  status: MatchStatus;
-  expanded: boolean;
-}
-
-export interface SeedEntry {
-  id: string;
-  club: string;
-  participants: string[];
-  seed: number | null;
-}
-
-export interface GroupStanding {
-  team: TeamEntry;
-  played: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  gamesFor: number;
-  gamesAgainst: number;
-  pointsFor: number;
-  pointsAgainst: number;
-  points: number;
-  rank: number;
-}
-
-export interface GroupEntry {
-  id: string;   // "A" | "B" | "C" | "D"
-  name: string; // "Group A"
-  teams: TeamEntry[];
-  matches: MatchEntry[];
-}
-
-export interface SectionEntry {
-  id: string;   // "A" | "B" | "C" | "D"
-  name: string; // "Section A"
-  teams: TeamEntry[];
-  matches: MatchEntry[];
-}
-
-export interface BracketState {
-  format: FixtureFormat;
-  config: FixtureFormatConfig;
-  scoringRule: ScoringRuleId;
-  locked: boolean;           // true = first score saved, draw is frozen
-  phase: "seeding" | "group" | "knockout" | "complete";
-  groups: GroupEntry[];      // group_knockout | round_robin | league
-  sections: SectionEntry[];  // sectional_knockout
-  matches: MatchEntry[];     // all KO phase matches
-  seeds: SeedEntry[];
+  event:          string;
+  program:        string;
+  participants:   string;
+  method:         PaymentMethod;
+  paidDate:       string;
+  receiptNumber:  string;
+  paymentStatus:  PaymentStatus;
+  lineItems: {
+    id: string;
+    label: string;
+    amount: number;
+    refundedAmount: number;
+    refundStatus: RefundStatus;
+    refundDate?: string;
+    refundReason?: string;
+  }[];
 }

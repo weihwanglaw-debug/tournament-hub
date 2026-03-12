@@ -286,44 +286,42 @@
   margin-bottom: 1.5rem;
 }
 
-/* Tab bar styles — modern pill/segment style, mobile-friendly */
+/* Tab bar — underline style, consistent across all admin modules */
 .tab-bar {
   display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  background-color: var(--color-row-hover);
-  border: 1px solid var(--color-table-border);
+  gap: 0;
+  border-bottom: 2px solid var(--color-table-border);
   overflow-x: auto;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  overflow-y: visible;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   flex-wrap: nowrap;
+  margin-bottom: 0;
+  position: relative;
 }
-.tab-bar::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
-}
+.tab-bar::-webkit-scrollbar { display: none; }
 .tab-btn {
-  padding: 0.5rem 1.125rem;
+  padding: 0.625rem 1.375rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  transition: all 0.18s ease;
   white-space: nowrap;
   flex-shrink: 0;
   color: var(--color-body-text);
   background: none;
   cursor: pointer;
-  border: 1px solid transparent;
-  opacity: 0.65;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  opacity: 0.5;
+  transition: color 0.15s, opacity 0.15s, border-color 0.15s;
+  position: relative;
 }
-.tab-btn:hover {
-  color: var(--color-primary);
-  opacity: 0.9;
-}
+.tab-btn:hover { color: var(--color-primary); opacity: 0.85; }
 .tab-btn.active {
   color: var(--color-primary);
-  background-color: var(--color-page-bg);
-  border-color: var(--color-table-border);
+  border-bottom: 2px solid var(--color-primary);
   opacity: 1;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  font-weight: 700;
 }
 
 /* Actions column should not expand */

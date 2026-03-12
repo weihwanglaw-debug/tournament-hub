@@ -48,7 +48,7 @@ export default function EventEdit() {
     prospectusUrl: existing?.prospectusUrl || "",
     isSports: existing?.isSports ?? true,
     sportType: existing?.sportType || "Badminton",
-    fixtureMode: existing?.fixtureMode || "internal" as "internal" | "external",
+    fixtureMode: existing?.fixtureMode || "internal" as "internal" | "external" | "not_required",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -216,21 +216,25 @@ export default function EventEdit() {
               <FF label="Fixture Management Mode">
                 {editing ? (
                   <div className="flex gap-0">
-                    {(["internal", "external"] as const).map(m => (
-                      <button key={m} type="button" onClick={() => set("fixtureMode", m)}
+                    {([
+                      { value: "internal",     label: "Internal (Built-in)" },
+                      { value: "external",     label: "External System" },
+                      { value: "not_required", label: "Not Required" },
+                    ] as const).map(opt => (
+                      <button key={opt.value} type="button" onClick={() => set("fixtureMode", opt.value)}
                         className="px-4 py-2.5 text-sm font-semibold transition-colors"
                         style={{
-                          backgroundColor: form.fixtureMode === m ? "var(--color-primary)" : "transparent",
-                          color: form.fixtureMode === m ? "var(--color-hero-text)" : "var(--color-body-text)",
-                          border: `1px solid ${form.fixtureMode === m ? "var(--color-primary)" : "var(--color-table-border)"}`,
+                          backgroundColor: form.fixtureMode === opt.value ? "var(--color-primary)" : "transparent",
+                          color:  form.fixtureMode === opt.value ? "var(--color-hero-text)" : "var(--color-body-text)",
+                          border: `1px solid ${form.fixtureMode === opt.value ? "var(--color-primary)" : "var(--color-table-border)"}`,
                         }}>
-                        {m === "internal" ? "Internal (Built-in)" : "External (TournamentSoftware)"}
+                        {opt.label}
                       </button>
                     ))}
                   </div>
                 ) : (
                   <p className="text-sm font-medium capitalize">
-                    {form.fixtureMode === "internal" ? "Internal (Built-in)" : "External (TournamentSoftware)"}
+                    {form.fixtureMode === "internal" ? "Internal (Built-in)" : form.fixtureMode === "external" ? "External System" : "Not Required"}
                   </p>
                 )}
               </FF>

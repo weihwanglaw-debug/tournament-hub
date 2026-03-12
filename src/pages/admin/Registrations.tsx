@@ -1,33 +1,36 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+/**
+ * Registrations.tsx — Registration & Payment Management
+ *
+ * Primary unit: Registration (one row = one form submission).
+ * Each registration can cover multiple programs (multiple ParticipantGroups).
+ * One payment receipt per registration covers all programs in that submission.
+ *
+ * Tabs:
+ *   Registration List  — expandable rows showing groups + participants
+ *   Payment Log        — per-payment-record view with receipt/refund actions
+ */
+
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown, ChevronsUpDown, Receipt, MoreVertical } from "lucide-react";
+import {
+  CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown,
+  ChevronsUpDown, Receipt, MoreVertical, ChevronRight, Users
+} from "lucide-react";
 import config from "@/data/config.json";
-import type { TournamentEvent, PaymentRecord, PaymentLineItem, PaymentMethod } from "@/types/config";
+import type { TournamentEvent, PaymentMethod } from "@/types/config";
+import type { Registration, ParticipantGroup, Payment } from "@/types/registration";
+import { totalFee, totalRefunded } from "@/types/registration";
+import { MOCK_REGISTRATIONS } from "@/data/mock-registrations";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/TableControls";
 import { Switch } from "@/components/ui/switch";
 
-// ── Sample data ──
-const INIT_REGS = [
-  { id: "R001", club: "Pasir Ris BC", name: "Lee Wei Jie", event: "evt-1", eventName: "Singapore Open 2026", program: "prog-1", programName: "Men's Singles", paymentStatus: "Pending", regStatus: "Pending", amount: 80 },
-  { id: "R002", club: "Tampines BC", name: "Tan Mei Ling", event: "evt-1", eventName: "Singapore Open 2026", program: "prog-2", programName: "Women's Singles", paymentStatus: "Pending", regStatus: "Pending", amount: 80 },
-  { id: "R003", club: "Jurong BC", name: "Ravi Kumar / Wong Xiu", event: "evt-1", eventName: "Singapore Open 2026", program: "prog-3", programName: "Mixed Doubles", paymentStatus: "Paid", regStatus: "Confirmed", amount: 120 },
-  { id: "R004", club: "Bishan SC", name: "Michael Ng", event: "evt-2", eventName: "Junior Tournament", program: "prog-5", programName: "Boys U15 Singles", paymentStatus: "Paid", regStatus: "Confirmed", amount: 40 },
-  { id: "R005", club: "Serangoon BC", name: "Rachel Tan", event: "evt-2", eventName: "Junior Tournament", program: "prog-6", programName: "Girls U15 Singles", paymentStatus: "Refunded", regStatus: "Cancelled", amount: 40 },
-  { id: "R006", club: "Yishun United", name: "Wei Hao", event: "evt-3", eventName: "Inter-Club League", program: "prog-8", programName: "Team Event", paymentStatus: "Pending", regStatus: "Pending", amount: 200 },
-];
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const INIT_PAYMENTS: PaymentRecord[] = [
-  { id: "TXN-001", registrationId: "R003", event: "Singapore Open 2026", program: "Mixed Doubles", participants: "Ravi Kumar / Wong Xiu", method: "Credit Card", paidDate: "2026-02-12", receiptNumber: "RCP-0001", paymentStatus: "Paid", lineItems: [{ id: "li1", label: "Registration Fee — Mixed Doubles", amount: 120, refundedAmount: 0, refundStatus: "None" }] },
-  { id: "TXN-002", registrationId: "R004", event: "Junior Tournament", program: "Boys U15 Singles", participants: "Michael Ng", method: "PayNow", paidDate: "2026-02-15", receiptNumber: "RCP-0002", paymentStatus: "Paid", lineItems: [{ id: "li2", label: "Registration Fee — Boys U15 Singles", amount: 40, refundedAmount: 0, refundStatus: "None" }] },
-  { id: "TXN-003", registrationId: "R005", event: "Junior Tournament", program: "Girls U15 Singles", participants: "Rachel Tan", method: "Credit Card", paidDate: "2026-02-10", receiptNumber: "RCP-0003", paymentStatus: "Refunded", lineItems: [{ id: "li3", label: "Registration Fee — Girls U15 Singles", amount: 40, refundedAmount: 40, refundStatus: "Full", refundDate: "2026-02-18", refundReason: "Participant withdrew due to injury" }] },
-  { id: "TXN-004", registrationId: "R001", event: "Singapore Open 2026", program: "Men's Singles", participants: "Lee Wei Jie", method: "Others", paidDate: "", receiptNumber: "", paymentStatus: "Pending", lineItems: [{ id: "li4", label: "Registration Fee — Men's Singles", amount: 80, refundedAmount: 0, refundStatus: "None" }] },
-  { id: "TXN-005", registrationId: "R006", event: "Inter-Club League", program: "Team Event", participants: "Wei Hao", method: "Others", paidDate: "", receiptNumber: "", paymentStatus: "Pending", lineItems: [{ id: "li5", label: "Registration Fee — Team Event", amount: 200, refundedAmount: 0, refundStatus: "None" }] },
-];
+type RegStatus = "Pending" | "Confirmed" | "Cancelled" | "Waitlisted";
+type PayStatus = "Pending" | "Paid" | "Refunded" | "Partially Refunded";
 
-type Reg = typeof INIT_REGS[0];
 type SortState<T> = { key: keyof T | null; dir: "asc" | "desc" };
-
 function useSort<T>(data: T[]) {
   const [sort, setSort] = useState<SortState<T>>({ key: null, dir: "asc" });
   const toggle = (key: keyof T) =>
@@ -42,381 +45,589 @@ function useSort<T>(data: T[]) {
   return { sort, toggle, sorted };
 }
 
+// ── Badges ────────────────────────────────────────────────────────────────────
+
+function PayBadge({ status }: { status: string }) {
+  const m: Record<string, [string, string]> = {
+    "Paid":               ["var(--badge-open-bg)",   "var(--badge-open-text)"],
+    "Pending":            ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
+    "Refunded":           ["var(--badge-closed-bg)", "var(--badge-closed-text)"],
+    "Partially Refunded": ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
+  };
+  const [bg, text] = m[status] ?? m["Pending"];
+  return <span className="inline-flex px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: bg, color: text }}>{status}</span>;
+}
+
+function RegBadge({ status }: { status: string }) {
+  const m: Record<string, [string, string]> = {
+    "Confirmed":  ["var(--badge-open-bg)",   "var(--badge-open-text)"],
+    "Pending":    ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
+    "Cancelled":  ["var(--badge-closed-bg)", "var(--badge-closed-text)"],
+    "Waitlisted": ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
+  };
+  const [bg, text] = m[status] ?? m["Pending"];
+  return <span className="inline-flex px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: bg, color: text }}>{status}</span>;
+}
+
+function MethodIcon({ method }: { method: string }) {
+  if (method === "Credit Card") return <CreditCard className="h-3.5 w-3.5 opacity-60" />;
+  if (method === "PayNow") return <span className="text-xs font-bold px-1" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>PN</span>;
+  return null;
+}
+
+function FG({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>;
+}
+
+// ── Expanded row — shows groups + participants ─────────────────────────────────
+
+function ExpandedRow({ reg }: { reg: Registration }) {
+  return (
+    <tr>
+      <td colSpan={8} style={{ padding: 0, backgroundColor: "var(--color-row-hover)" }}>
+        <div className="px-6 py-4 space-y-4">
+          {reg.groups.map(group => (
+            <div key={group.id} style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-page-bg)" }}>
+              {/* Group header */}
+              <div className="flex items-center justify-between px-4 py-2.5"
+                style={{ borderBottom: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold opacity-30 font-mono">{group.id}</span>
+                  <span className="font-semibold text-sm">{group.programName}</span>
+                  <RegBadge status={group.groupStatus} />
+                </div>
+                <span className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>
+                  ${group.fee.toFixed(2)}
+                </span>
+              </div>
+              {/* Participants */}
+              <table className="trs-table">
+                <thead>
+                  <tr>
+                    <th>Participant</th>
+                    <th>DOB</th>
+                    <th>Gender</th>
+                    <th>Club / School</th>
+                    <th>SBA ID</th>
+                    <th>Contact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.participants.map(p => (
+                    <tr key={p.id}>
+                      <td className="font-medium text-sm">{p.fullName}</td>
+                      <td className="text-xs opacity-60">{p.dob || "—"}</td>
+                      <td className="text-xs opacity-60">{p.gender}</td>
+                      <td className="text-xs opacity-70">{p.clubSchoolCompany}</td>
+                      <td className="font-mono text-xs">{p.sbaId || <span className="opacity-25">—</span>}</td>
+                      <td className="text-xs opacity-60">{p.contactNumber || p.email || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+
+          {/* Payment summary */}
+          <div className="flex items-center gap-4 text-xs opacity-60 pt-1">
+            <span>Receipt: <strong className="font-mono">{reg.payment.receiptNo || "—"}</strong></span>
+            <span>·</span>
+            <span>Method: {reg.payment.method}</span>
+            <span>·</span>
+            <span>Paid: {reg.payment.paidDate || "—"}</span>
+            <span>·</span>
+            <span>Total: <strong style={{ color: "var(--color-primary)" }}>${totalFee(reg).toFixed(2)}</strong></span>
+            {totalRefunded(reg) > 0 && (
+              <><span>·</span><span style={{ color: "var(--badge-open-text)" }}>Refunded: ${totalRefunded(reg).toFixed(2)}</span></>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Main page
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export default function AdminRegistrations() {
   const [urlParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"registrations" | "payments">("registrations");
   const events = config.events as TournamentEvent[];
 
-  const [regData, setRegData] = useState(INIT_REGS);
-  const [filterEvent, setFilterEvent] = useState(urlParams.get("event") || "");
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [regs, setRegs] = useState<Registration[]>(MOCK_REGISTRATIONS);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [filterEvent,   setFilterEvent]   = useState(urlParams.get("event") || "");
   const [filterProgram, setFilterProgram] = useState(urlParams.get("program") || "");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterPay, setFilterPay] = useState("");
-  const [regPage, setRegPage] = useState(1);
-  const [regPerPage, setRegPerPage] = useState(10);
+  const [filterReg,     setFilterReg]     = useState("");
+  const [filterPay,     setFilterPay]     = useState("");
+  const [filterSearch,  setFilterSearch]  = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  const programsForEvent = useMemo(() =>
+    events.find(e => e.id === filterEvent)?.programs ?? [], [events, filterEvent]);
+
+  const filtered = useMemo(() => regs.filter(r => {
+    if (filterEvent && r.eventId !== filterEvent) return false;
+    if (filterProgram && !r.groups.some(g => g.programId === filterProgram)) return false;
+    if (filterReg && r.regStatus !== filterReg) return false;
+    if (filterPay && r.payment.paymentStatus !== filterPay) return false;
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      const hit = r.contactName.toLowerCase().includes(q)
+        || r.id.toLowerCase().includes(q)
+        || r.groups.some(g => g.namesDisplay.toLowerCase().includes(q) || g.clubDisplay.toLowerCase().includes(q));
+      if (!hit) return false;
+    }
+    return true;
+  }), [regs, filterEvent, filterProgram, filterReg, filterPay, filterSearch]);
+
+  // Sort by submittedAt desc by default
+  const sorted   = useMemo(() => [...filtered].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [filtered]);
+  const total    = sorted.length;
+  const totalPgs = Math.max(1, Math.ceil(total / perPage));
+  const paged    = sorted.slice((page - 1) * perPage, page * perPage);
+
+  // ── Action dropdown ───────────────────────────────────────────────────────
   const [openAction, setOpenAction] = useState<string | null>(null);
   const actionRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
     if (!openAction) return;
-    const handler = (e: MouseEvent) => {
-      if (actionRef.current && !actionRef.current.contains(e.target as Node))
-        setOpenAction(null);
+    const h = (e: MouseEvent) => {
+      if (actionRef.current && !actionRef.current.contains(e.target as Node)) setOpenAction(null);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, [openAction]);
 
-  const programsForEvent = useMemo(() => {
-    if (!filterEvent) return [];
-    return events.find(e => e.id === filterEvent)?.programs || [];
-  }, [events, filterEvent]);
-
-  const filteredRegs = useMemo(() => regData.filter(r => {
-    if (filterEvent && r.event !== filterEvent) return false;
-    if (filterProgram && r.program !== filterProgram) return false;
-    if (filterStatus && r.regStatus !== filterStatus) return false;
-    if (filterPay && r.paymentStatus !== filterPay) return false;
-    return true;
-  }), [regData, filterEvent, filterProgram, filterStatus, filterPay]);
-
-  const regSort = useSort(filteredRegs);
-  const regTotalPages = Math.max(1, Math.ceil(regSort.sorted.length / regPerPage));
-  const pagedRegs = regSort.sorted.slice((regPage - 1) * regPerPage, regPage * regPerPage);
-
-  const [payments, setPayments] = useState(INIT_PAYMENTS);
-  const [txnFilterEvent, setTxnFilterEvent] = useState("");
-  const [txnFilterStatus, setTxnFilterStatus] = useState("");
-  const [txnFilterMethod, setTxnFilterMethod] = useState("");
-  const [txnPage, setTxnPage] = useState(1);
-  const [txnPerPage, setTxnPerPage] = useState(10);
-
-  const filteredTxns = useMemo(() => payments.filter(t => {
-    if (txnFilterEvent && !t.event.toLowerCase().includes(txnFilterEvent.toLowerCase())) return false;
-    if (txnFilterStatus && t.paymentStatus !== txnFilterStatus) return false;
-    if (txnFilterMethod && t.method !== txnFilterMethod) return false;
-    return true;
-  }), [payments, txnFilterEvent, txnFilterStatus, txnFilterMethod]);
-
-  const txnSort = useSort(filteredTxns);
-  const txnTotalPages = Math.max(1, Math.ceil(txnSort.sorted.length / txnPerPage));
-  const pagedTxns = txnSort.sorted.slice((txnPage - 1) * txnPerPage, txnPage * txnPerPage);
-
-  const [markPaidModal, setMarkPaidModal] = useState<string | null>(null);
-  const [cancelModal, setCancelModal] = useState<string | null>(null);
-  const [refundModal, setRefundModal] = useState<PaymentRecord | null>(null);
-  const [receiptModal, setReceiptModal] = useState<PaymentRecord | null>(null);
+  // ── Modals ────────────────────────────────────────────────────────────────
+  const [markPaidModal,  setMarkPaidModal]  = useState<Registration | null>(null);
+  const [cancelModal,    setCancelModal]    = useState<Registration | null>(null);
+  const [refundModal,    setRefundModal]    = useState<Registration | null>(null);
+  const [receiptModal,   setReceiptModal]   = useState<Registration | null>(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState<PaymentMethod>("PayNow");
   const [markPaidRemark, setMarkPaidRemark] = useState("");
-  const [markPaidMethod, setMarkPaidMethod] = useState<PaymentMethod>("Credit Card");
-  const [cancelReason, setCancelReason] = useState("");
-  const [refundSelections, setRefundSelections] = useState<Record<string, { selected: boolean; reason: string }>>({});
+  const [cancelReason,   setCancelReason]   = useState("");
+  const [refundSel,      setRefundSel]      = useState<Record<string, { checked: boolean; reason: string }>>({});
+
+  // ── Mutation helpers ──────────────────────────────────────────────────────
+  const updateReg = (id: string, fn: (r: Registration) => Registration) =>
+    setRegs(prev => prev.map(r => r.id === id ? fn(r) : r));
 
   const handleMarkPaid = () => {
-    if (!markPaidRemark.trim()) return;
-    setRegData(prev => prev.map(r => r.id === markPaidModal ? { ...r, paymentStatus: "Paid", regStatus: "Confirmed" } : r));
-    setPayments(prev => prev.map(p => p.registrationId === markPaidModal
-      ? { ...p, method: markPaidMethod, paidDate: new Date().toISOString().slice(0, 10), receiptNumber: `RCP-${Date.now().toString().slice(-4)}`, paymentStatus: "Paid" } : p));
-    setMarkPaidModal(null); setMarkPaidRemark(""); setMarkPaidMethod("Credit Card");
+    if (!markPaidModal || !markPaidRemark.trim()) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const rcpt  = `RCP-${String(Date.now()).slice(-4)}`;
+    updateReg(markPaidModal.id, r => ({
+      ...r,
+      regStatus: "Confirmed" as RegStatus,
+      groups: r.groups.map(g => ({ ...g, groupStatus: "Confirmed" as RegStatus })),
+      payment: {
+        ...r.payment,
+        paymentStatus: "Paid",
+        paidDate: today,
+        receiptNo: rcpt,
+        method: markPaidMethod,
+        remarks: markPaidRemark,
+      }
+    }));
+    setMarkPaidModal(null); setMarkPaidRemark(""); setMarkPaidMethod("PayNow");
   };
 
-  const handleCancelAndRefund = () => {
-    if (!cancelReason.trim()) return;
-    const reg = regData.find(r => r.id === cancelModal);
-    const wasPaid = reg?.paymentStatus === "Paid";
-    setRegData(prev => prev.map(r => r.id === cancelModal ? { ...r, regStatus: "Cancelled", paymentStatus: wasPaid ? "Refunded" : r.paymentStatus } : r));
-    if (wasPaid) {
-      const today = new Date().toISOString().slice(0, 10);
-      setPayments(prev => prev.map(p => {
-        if (p.registrationId !== cancelModal) return p;
-        return { ...p, lineItems: p.lineItems.map(li => ({ ...li, refundedAmount: li.amount, refundStatus: "Full" as const, refundDate: today, refundReason: `Cancelled: ${cancelReason}` })), paymentStatus: "Refunded" };
-      }));
-    }
+  const handleCancel = () => {
+    if (!cancelModal || !cancelReason.trim()) return;
+    const today  = new Date().toISOString().slice(0, 10);
+    const wasPaid = cancelModal.payment.paymentStatus === "Paid";
+    updateReg(cancelModal.id, r => ({
+      ...r,
+      regStatus: "Cancelled",
+      groups: r.groups.map(g => ({ ...g, groupStatus: "Cancelled" as RegStatus })),
+      payment: wasPaid
+        ? {
+            ...r.payment,
+            paymentStatus: "Refunded",
+            lineItems: r.payment.lineItems.map(li => ({
+              ...li,
+              refundedAmount: li.amount,
+              refundStatus: "Full" as const,
+              refundDate: today,
+              refundReason: `Cancelled: ${cancelReason}`,
+            })),
+          }
+        : r.payment,
+    }));
     setCancelModal(null); setCancelReason("");
   };
 
   const handleRefund = () => {
     if (!refundModal) return;
     const today = new Date().toISOString().slice(0, 10);
-    setPayments(prev => prev.map(p => {
-      if (p.id !== refundModal.id) return p;
-      const updatedItems = p.lineItems.map(li => {
-        const sel = refundSelections[li.id];
-        if (!sel?.selected || !sel.reason.trim()) return li;
+    updateReg(refundModal.id, r => {
+      const lineItems = r.payment.lineItems.map(li => {
+        const sel = refundSel[li.id];
+        if (!sel?.checked || !sel.reason.trim()) return li;
         return { ...li, refundedAmount: li.amount, refundStatus: "Full" as const, refundDate: today, refundReason: sel.reason };
       });
-      const allRefunded = updatedItems.every(li => li.refundStatus === "Full");
-      const someRefunded = updatedItems.some(li => li.refundStatus === "Full");
-      return { ...p, lineItems: updatedItems, paymentStatus: allRefunded ? "Refunded" : someRefunded ? "Partially Refunded" : p.paymentStatus };
-    }));
-    setRefundModal(null); setRefundSelections({});
+      const allRefunded  = lineItems.every(li => li.refundStatus === "Full");
+      const someRefunded = lineItems.some(li => li.refundStatus === "Full");
+      return {
+        ...r,
+        payment: {
+          ...r.payment,
+          lineItems,
+          paymentStatus: (allRefunded ? "Refunded" : someRefunded ? "Partially Refunded" : r.payment.paymentStatus) as any,
+        }
+      };
+    });
+    setRefundModal(null); setRefundSel({});
   };
 
-  function SortBtn<T>({ col, ctrl }: { col: keyof T; ctrl: ReturnType<typeof useSort<T>> }) {
-    const active = ctrl.sort.key === col;
-    return (
-      <button onClick={() => ctrl.toggle(col)} className="ml-1 inline-flex align-middle opacity-50 hover:opacity-100">
-        {!active ? <ChevronsUpDown className="h-3 w-3" /> : ctrl.sort.dir === "asc" ? <ChevronUp className="h-3 w-3" style={{ color: "var(--color-primary)" }} /> : <ChevronDown className="h-3 w-3" style={{ color: "var(--color-primary)" }} />}
-      </button>
-    );
-  }
+  const toggleExpand = (id: string) =>
+    setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
+  // ── Payment tab data ──────────────────────────────────────────────────────
+  const [txnFilterEvent,  setTxnFilterEvent]  = useState("");
+  const [txnFilterStatus, setTxnFilterStatus] = useState("");
+  const [txnFilterMethod, setTxnFilterMethod] = useState("");
+  const [txnPage, setTxnPage] = useState(1);
+  const [txnPerPage, setTxnPerPage] = useState(10);
+
+  const filteredTxns = useMemo(() => regs.filter(r => {
+    if (txnFilterEvent && !r.eventName.toLowerCase().includes(txnFilterEvent.toLowerCase())) return false;
+    if (txnFilterStatus && r.payment.paymentStatus !== txnFilterStatus) return false;
+    if (txnFilterMethod && r.payment.method !== txnFilterMethod) return false;
+    return true;
+  }), [regs, txnFilterEvent, txnFilterStatus, txnFilterMethod]);
+
+  const txnTotal = filteredTxns.length;
+  const txnTotalPgs = Math.max(1, Math.ceil(txnTotal / txnPerPage));
+  const pagedTxns = filteredTxns.slice((txnPage - 1) * txnPerPage, txnPage * txnPerPage);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div>
       <div className="sticky-header">
         <div className="admin-page-title"><h1>Registrations &amp; Payments</h1></div>
-
-        {/* Tabs */}
         <div className="tab-bar mb-6">
           {(["registrations", "payments"] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`tab-btn ${activeTab === tab ? "active" : ""}`}>
-              {tab === "registrations" ? "Registration List" : "Payment Transaction Log"}
+              {tab === "registrations" ? `Registration List (${filtered.length})` : "Payment Log"}
             </button>
           ))}
         </div>
       </div>
 
-      {/* ═══ REGISTRATIONS TAB ═══ */}
+      {/* ══════════ REGISTRATIONS TAB ══════════ */}
       {activeTab === "registrations" && (
         <>
-          <div className="p-5 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-            <div className="grid grid-cols-2 md:flex md:flex-wrap items-end gap-4">
-              <FG label="Event *">
-                <select className="field-input w-full md:w-56" value={filterEvent}
-                  onChange={e => { setFilterEvent(e.target.value); setFilterProgram(""); setRegPage(1); }}>
-                  <option value="">— Select an event —</option>
+          {/* Filters */}
+          <div className="p-4 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+            <div className="flex flex-wrap items-end gap-3">
+              <FG label="Search">
+                <input className="field-input w-52" placeholder="Name, ID, club…"
+                  value={filterSearch} onChange={e => { setFilterSearch(e.target.value); setPage(1); }} />
+              </FG>
+              <FG label="Event">
+                <select className="field-input w-56" value={filterEvent}
+                  onChange={e => { setFilterEvent(e.target.value); setFilterProgram(""); setPage(1); }}>
+                  <option value="">All Events</option>
                   {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
                 </select>
               </FG>
               <FG label="Program">
-                <select className="field-input w-full md:w-48" value={filterProgram} disabled={!filterEvent}
-                  onChange={e => { setFilterProgram(e.target.value); setRegPage(1); }}>
+                <select className="field-input w-44" value={filterProgram} disabled={!filterEvent}
+                  onChange={e => { setFilterProgram(e.target.value); setPage(1); }}>
                   <option value="">All Programs</option>
                   {programsForEvent.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </FG>
               <FG label="Reg. Status">
-                <select className="field-input w-full md:w-36" value={filterStatus}
-                  onChange={e => { setFilterStatus(e.target.value); setRegPage(1); }}>
-                  <option value="">All</option><option value="Confirmed">Confirmed</option>
-                  <option value="Pending">Pending</option><option value="Cancelled">Cancelled</option>
+                <select className="field-input w-36" value={filterReg}
+                  onChange={e => { setFilterReg(e.target.value); setPage(1); }}>
+                  <option value="">All</option>
+                  <option value="Confirmed">Confirmed</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
               </FG>
               <FG label="Payment">
-                <select className="field-input w-full md:w-36" value={filterPay}
-                  onChange={e => { setFilterPay(e.target.value); setRegPage(1); }}>
-                  <option value="">All</option><option value="Paid">Paid</option>
-                  <option value="Pending">Pending</option><option value="Refunded">Refunded</option>
+                <select className="field-input w-36" value={filterPay}
+                  onChange={e => { setFilterPay(e.target.value); setPage(1); }}>
+                  <option value="">All</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Refunded">Refunded</option>
+                  <option value="Partially Refunded">Partially Refunded</option>
                 </select>
               </FG>
             </div>
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden md:block" style={{ border: "1px solid var(--color-table-border)" }}>
-            <div className="overflow-x-auto">
-              <table className="trs-table">
-                <thead>
-                  <tr>
-                    <th>ID <SortBtn<Reg> col="id" ctrl={regSort} /></th>
-                    <th>Club / Participant <SortBtn<Reg> col="club" ctrl={regSort} /></th>
-                    <th>Program <SortBtn<Reg> col="programName" ctrl={regSort} /></th>
-                    <th>Payment <SortBtn<Reg> col="paymentStatus" ctrl={regSort} /></th>
-                    <th>Reg. Status <SortBtn<Reg> col="regStatus" ctrl={regSort} /></th>
-                    <th>Amount <SortBtn<Reg> col="amount" ctrl={regSort} /></th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedRegs.map(reg => {
-                    const canMarkPaid = reg.paymentStatus === "Pending" && reg.regStatus !== "Cancelled";
-                    const canRefund = reg.paymentStatus === "Paid" && reg.regStatus !== "Cancelled";
-                    const canCancel = reg.regStatus !== "Cancelled";
-                    const payment = payments.find(p => p.registrationId === reg.id);
-                    return (
-                      <tr key={reg.id}>
+          {/* Table */}
+          <div style={{ border: "1px solid var(--color-table-border)" }}>
+            <table className="trs-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}></th>
+                  <th>Reg ID</th>
+                  <th>Contact</th>
+                  <th>Event</th>
+                  <th>Programs</th>
+                  <th>Reg. Status</th>
+                  <th>Payment</th>
+                  <th>Total</th>
+                  <th>Submitted</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.length === 0 && (
+                  <tr><td colSpan={10} className="text-center py-10 opacity-40">No registrations found.</td></tr>
+                )}
+                {paged.map(reg => {
+                  const isExpanded = expanded.has(reg.id);
+                  const canPay     = reg.payment.paymentStatus === "Pending" && reg.regStatus !== "Cancelled";
+                  const canRefund  = reg.payment.paymentStatus === "Paid" && reg.regStatus !== "Cancelled";
+                  const canCancel  = reg.regStatus !== "Cancelled";
+                  const programCount = reg.groups.length;
+
+                  return (
+                    <React.Fragment key={reg.id}>
+                      <tr style={reg.regStatus === "Pending" || reg.payment.paymentStatus === "Pending"
+                        ? { borderLeft: "3px solid var(--badge-soon-text)" } : undefined}>
+                        {/* Expand toggle */}
+                        <td>
+                          <button onClick={() => toggleExpand(reg.id)}
+                            className="p-1 opacity-40 hover:opacity-80">
+                            {isExpanded
+                              ? <ChevronUp className="h-4 w-4" />
+                              : <ChevronRight className="h-4 w-4" />}
+                          </button>
+                        </td>
                         <td className="font-mono text-xs">{reg.id}</td>
-                        <td><p className="font-semibold text-sm">{reg.club}</p><p className="text-xs opacity-60 mt-0.5">{reg.name}</p></td>
-                        <td className="text-sm">{reg.programName}</td>
-                        <td><PayBadge status={reg.paymentStatus} /></td>
+                        <td>
+                          <p className="font-semibold text-sm">{reg.contactName}</p>
+                          <p className="text-xs opacity-50">{reg.contactEmail}</p>
+                        </td>
+                        <td className="text-sm max-w-40">
+                          <p className="truncate">{reg.eventName}</p>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            <Users className="h-3.5 w-3.5 opacity-30" />
+                            <span className="text-sm">{programCount} program{programCount !== 1 ? "s" : ""}</span>
+                          </div>
+                          <p className="text-xs opacity-50 mt-0.5">
+                            {reg.groups.map(g => g.programName).join(", ")}
+                          </p>
+                        </td>
                         <td><RegBadge status={reg.regStatus} /></td>
-                        <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>${reg.amount.toFixed(2)}</td>
+                        <td><PayBadge status={reg.payment.paymentStatus} /></td>
+                        <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
+                          ${totalFee(reg).toFixed(2)}
+                          {totalRefunded(reg) > 0 && (
+                            <span className="block text-xs font-normal" style={{ color: "var(--badge-open-text)" }}>
+                              −${totalRefunded(reg).toFixed(2)} refunded
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-xs opacity-60">
+                          {new Date(reg.submittedAt).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
+                        </td>
                         <td>
                           <div className="relative" ref={openAction === reg.id ? actionRef : undefined}>
                             <button onClick={() => setOpenAction(openAction === reg.id ? null : reg.id)}
-                              className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
+                              className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
                               <MoreVertical className="h-4 w-4" />
                             </button>
                             {openAction === reg.id && (
                               <div className="action-dropdown">
-                                <button disabled={!canMarkPaid} onClick={() => { setMarkPaidModal(reg.id); setOpenAction(null); }}>
+                                <button disabled={!canPay}
+                                  onClick={() => { setMarkPaidModal(reg); setOpenAction(null); }}>
                                   <CheckCircle className="h-4 w-4" /> Mark as Paid
                                 </button>
-                                <button disabled={!canRefund} onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } setOpenAction(null); }}>
+                                <button disabled={!canRefund}
+                                  onClick={() => {
+                                    setRefundSel({});
+                                    setRefundModal(reg);
+                                    setOpenAction(null);
+                                  }}>
                                   <RefreshCw className="h-4 w-4" /> Refund
                                 </button>
-                                <button disabled={!canCancel} onClick={() => { setCancelModal(reg.id); setOpenAction(null); }}
-                                  style={{ color: canCancel ? "var(--badge-open-text)" : undefined }}>
-                                  <XCircle className="h-4 w-4" /> Cancel
-                                </button>
-                                {payment?.receiptNumber && (
-                                  <button onClick={() => { setReceiptModal(payment); setOpenAction(null); }}>
+                                {reg.payment.receiptNo && (
+                                  <button onClick={() => { setReceiptModal(reg); setOpenAction(null); }}>
                                     <Receipt className="h-4 w-4" /> View Receipt
                                   </button>
                                 )}
+                                <button disabled={!canCancel}
+                                  onClick={() => { setCancelModal(reg); setOpenAction(null); }}
+                                  style={{ color: canCancel ? "var(--badge-closed-text)" : undefined }}>
+                                  <XCircle className="h-4 w-4" /> Cancel
+                                </button>
                               </div>
                             )}
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                  {pagedRegs.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-10 opacity-40">{filterEvent ? "No registrations found." : "Select an event to view registrations."}</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={regPage} totalPages={regTotalPages} perPage={regPerPage} total={filteredRegs.length} setPage={setRegPage} setPerPage={n => { setRegPerPage(n); setRegPage(1); }} />
-          </div>
-
-          {/* Mobile card list */}
-          <div className="md:hidden space-y-3">
-            {pagedRegs.map(reg => {
-              const canMarkPaid = reg.paymentStatus === "Pending" && reg.regStatus !== "Cancelled";
-              const canRefund = reg.paymentStatus === "Paid" && reg.regStatus !== "Cancelled";
-              const canCancel = reg.regStatus !== "Cancelled";
-              const payment = payments.find(p => p.registrationId === reg.id);
-              return (
-                <div key={reg.id} className="p-5" style={{ border: "1px solid var(--color-table-border)" }}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-semibold text-sm">{reg.club}</p>
-                      <p className="text-xs opacity-60">{reg.name}</p>
-                    </div>
-                    <div className="relative">
-                      <button onClick={() => setOpenAction(openAction === reg.id ? null : reg.id)} className="p-1.5 opacity-50 hover:opacity-100">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                      {openAction === reg.id && (
-                        <div className="action-dropdown">
-                          {canMarkPaid && <button onClick={() => { setMarkPaidModal(reg.id); setOpenAction(null); }}>Mark as Paid</button>}
-                          {canRefund && <button onClick={() => { const p = payments.find(px => px.registrationId === reg.id); if (p) { setRefundModal(p); setRefundSelections({}); } setOpenAction(null); }}>Refund</button>}
-                          {canCancel && <button onClick={() => { setCancelModal(reg.id); setOpenAction(null); }} style={{ color: "var(--badge-open-text)" }}>Cancel</button>}
-                          {payment?.receiptNumber && <button onClick={() => { setReceiptModal(payment); setOpenAction(null); }}>View Receipt</button>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    <PayBadge status={reg.paymentStatus} /><RegBadge status={reg.regStatus} />
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="opacity-70">{reg.programName}</span>
-                    <span className="font-bold" style={{ color: "var(--color-primary)" }}>${reg.amount.toFixed(2)}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {pagedRegs.length === 0 && <p className="text-center py-10 opacity-40">{filterEvent ? "No registrations." : "Select an event."}</p>}
-            <Pagination page={regPage} totalPages={regTotalPages} perPage={regPerPage} total={filteredRegs.length} setPage={setRegPage} setPerPage={n => { setRegPerPage(n); setRegPage(1); }} />
+                      {isExpanded && <ExpandedRow reg={reg} />}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            <Pagination page={page} totalPages={totalPgs} perPage={perPage} total={total}
+              setPage={setPage} setPerPage={n => { setPerPage(n); setPage(1); }} />
           </div>
         </>
       )}
 
-      {/* ═══ PAYMENTS TAB ═══ */}
+      {/* ══════════ PAYMENTS TAB ══════════ */}
       {activeTab === "payments" && (
         <>
-          <div className="p-5 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-            <div className="grid grid-cols-2 md:flex md:flex-wrap items-end gap-4">
-              <FG label="Event"><input className="field-input w-full md:w-52" placeholder="Search event..." value={txnFilterEvent} onChange={e => { setTxnFilterEvent(e.target.value); setTxnPage(1); }} /></FG>
+          <div className="p-4 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+            <div className="flex flex-wrap items-end gap-3">
+              <FG label="Event">
+                <input className="field-input w-52" placeholder="Search event…"
+                  value={txnFilterEvent} onChange={e => { setTxnFilterEvent(e.target.value); setTxnPage(1); }} />
+              </FG>
               <FG label="Payment Status">
-                <select className="field-input w-full md:w-44" value={txnFilterStatus} onChange={e => { setTxnFilterStatus(e.target.value); setTxnPage(1); }}>
-                  <option value="">All</option><option value="Paid">Paid</option><option value="Pending">Pending</option><option value="Refunded">Refunded</option><option value="Partially Refunded">Partially Refunded</option>
+                <select className="field-input w-44" value={txnFilterStatus}
+                  onChange={e => { setTxnFilterStatus(e.target.value); setTxnPage(1); }}>
+                  <option value="">All</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Refunded">Refunded</option>
+                  <option value="Partially Refunded">Partially Refunded</option>
                 </select>
               </FG>
               <FG label="Method">
-                <select className="field-input w-full md:w-40" value={txnFilterMethod} onChange={e => { setTxnFilterMethod(e.target.value); setTxnPage(1); }}>
-                  <option value="">All</option><option value="Credit Card">Credit Card</option><option value="PayNow">PayNow</option><option value="Cash">Cash</option><option value="Bank Transfer">Bank Transfer</option><option value="Others">Others</option>
+                <select className="field-input w-40" value={txnFilterMethod}
+                  onChange={e => { setTxnFilterMethod(e.target.value); setTxnPage(1); }}>
+                  <option value="">All</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="PayNow">PayNow</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Others">Others</option>
                 </select>
               </FG>
             </div>
           </div>
 
-          {/* Desktop payments table */}
-          <div className="hidden md:block" style={{ border: "1px solid var(--color-table-border)" }}>
-            <div className="overflow-x-auto">
-              <table className="trs-table">
-                <thead><tr><th>Receipt</th><th>Event / Program</th><th>Participant</th><th>Method</th><th>Total</th><th>Refunded</th><th>Status</th><th>Paid</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {pagedTxns.map(txn => {
-                    const totalRefunded = txn.lineItems.reduce((s, li) => s + li.refundedAmount, 0);
-                    const totalAmount = txn.lineItems.reduce((s, li) => s + li.amount, 0);
-                    return (
-                      <tr key={txn.id}>
-                        <td className="font-mono text-xs">{txn.receiptNumber || <span className="opacity-30">—</span>}</td>
-                        <td><p className="text-sm font-medium">{txn.event}</p><p className="text-xs opacity-60">{txn.program}</p></td>
-                        <td className="text-sm">{txn.participants}</td>
-                        <td><span className="inline-flex items-center gap-1.5 text-sm"><MethodIcon method={txn.method} />{txn.method}</span></td>
-                        <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>${totalAmount.toFixed(2)}</td>
-                        <td className="text-sm">{totalRefunded > 0 ? <span style={{ color: "var(--badge-open-text)" }}>${totalRefunded.toFixed(2)}</span> : <span className="opacity-30">—</span>}</td>
-                        <td><PayBadge status={txn.paymentStatus} /></td>
-                        <td className="text-xs opacity-70">{txn.paidDate || "—"}</td>
-                        <td>
-                          <button title="Details" onClick={() => setReceiptModal(txn)} className="p-2 hover:opacity-60" style={{ color: "var(--color-primary)" }}>
-                            <Receipt className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {pagedTxns.length === 0 && <tr><td colSpan={9} className="text-center py-10 opacity-40">No transactions found.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={txnPage} totalPages={txnTotalPages} perPage={txnPerPage} total={filteredTxns.length} setPage={setTxnPage} setPerPage={n => { setTxnPerPage(n); setTxnPage(1); }} />
-          </div>
-
-          {/* Mobile payments cards */}
-          <div className="md:hidden space-y-3">
-            {pagedTxns.map(txn => {
-              const totalAmount = txn.lineItems.reduce((s, li) => s + li.amount, 0);
-              return (
-                <div key={txn.id} className="p-5" style={{ border: "1px solid var(--color-table-border)" }}
-                  onClick={() => setReceiptModal(txn)}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div><p className="text-sm font-medium">{txn.event}</p><p className="text-xs opacity-60">{txn.program} · {txn.participants}</p></div>
-                    <PayBadge status={txn.paymentStatus} />
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="opacity-60">{txn.method} · {txn.paidDate || "Unpaid"}</span>
-                    <span className="font-bold" style={{ color: "var(--color-primary)" }}>${totalAmount.toFixed(2)}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {pagedTxns.length === 0 && <p className="text-center py-10 opacity-40">No transactions.</p>}
-            <Pagination page={txnPage} totalPages={txnTotalPages} perPage={txnPerPage} total={filteredTxns.length} setPage={setTxnPage} setPerPage={n => { setTxnPerPage(n); setTxnPage(1); }} />
+          <div style={{ border: "1px solid var(--color-table-border)" }}>
+            <table className="trs-table">
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Registration</th>
+                  <th>Event</th>
+                  <th>Programs</th>
+                  <th>Method</th>
+                  <th>Total</th>
+                  <th>Refunded</th>
+                  <th>Status</th>
+                  <th>Paid Date</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedTxns.length === 0 && (
+                  <tr><td colSpan={10} className="text-center py-10 opacity-40">No transactions found.</td></tr>
+                )}
+                {pagedTxns.map(reg => {
+                  const refunded = totalRefunded(reg);
+                  const fee      = totalFee(reg);
+                  return (
+                    <tr key={reg.id}>
+                      <td className="font-mono text-xs">
+                        {reg.payment.receiptNo || <span className="opacity-30">—</span>}
+                      </td>
+                      <td>
+                        <p className="font-mono text-xs">{reg.id}</p>
+                        <p className="text-xs opacity-60">{reg.contactName}</p>
+                      </td>
+                      <td className="text-sm max-w-36"><p className="truncate">{reg.eventName}</p></td>
+                      <td className="text-xs opacity-70">
+                        {reg.groups.map(g => g.programName).join(", ")}
+                      </td>
+                      <td>
+                        <span className="flex items-center gap-1.5 text-sm">
+                          <MethodIcon method={reg.payment.method} />
+                          {reg.payment.method}
+                        </span>
+                      </td>
+                      <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
+                        ${fee.toFixed(2)}
+                      </td>
+                      <td className="text-sm">
+                        {refunded > 0
+                          ? <span style={{ color: "var(--badge-open-text)" }}>${refunded.toFixed(2)}</span>
+                          : <span className="opacity-30">—</span>}
+                      </td>
+                      <td><PayBadge status={reg.payment.paymentStatus} /></td>
+                      <td className="text-xs opacity-70">{reg.payment.paidDate || "—"}</td>
+                      <td>
+                        <button onClick={() => setReceiptModal(reg)}
+                          className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}
+                          title="View Receipt">
+                          <Receipt className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <Pagination page={txnPage} totalPages={txnTotalPgs} perPage={txnPerPage} total={txnTotal}
+              setPage={setTxnPage} setPerPage={n => { setTxnPerPage(n); setTxnPage(1); }} />
           </div>
         </>
       )}
 
-      {/* ═══ MODALS ═══ */}
+      {/* ══════════ MODALS ══════════ */}
+
       {/* Mark as Paid */}
       <Dialog open={!!markPaidModal} onOpenChange={v => { if (!v) { setMarkPaidModal(null); setMarkPaidRemark(""); } }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
-            <DialogTitle className="font-bold text-xl">Mark as Paid</DialogTitle>
+          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-lg">Mark as Paid</DialogTitle>
+            {markPaidModal && (
+              <p className="text-xs opacity-50 mt-1">
+                {markPaidModal.id} · {markPaidModal.groups.map(g => g.programName).join(", ")} · Total: ${totalFee(markPaidModal).toFixed(2)}
+              </p>
+            )}
           </DialogHeader>
-          <div className="p-8 pt-4 space-y-4">
-            <FG label="Payment Method *"><select className="field-input" value={markPaidMethod} onChange={e => setMarkPaidMethod(e.target.value as PaymentMethod)}>
-              <option value="Credit Card">Credit Card</option><option value="PayNow">PayNow</option><option value="Cash">Cash</option><option value="Bank Transfer">Bank Transfer</option><option value="Others">Others</option>
-            </select></FG>
-            <FG label="Remark *"><textarea className="field-input" rows={3} value={markPaidRemark} onChange={e => setMarkPaidRemark(e.target.value)} placeholder="e.g. Cash collected" /></FG>
+          <div className="p-7 space-y-4">
+            <FG label="Payment Method *">
+              <select className="field-input" value={markPaidMethod}
+                onChange={e => setMarkPaidMethod(e.target.value as PaymentMethod)}>
+                <option value="Credit Card">Credit Card</option>
+                <option value="PayNow">PayNow</option>
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Others">Others</option>
+              </select>
+            </FG>
+            <FG label="Remark *">
+              <textarea className="field-input" rows={2} value={markPaidRemark}
+                onChange={e => setMarkPaidRemark(e.target.value)}
+                placeholder="e.g. Cash collected at counter on 12 Mar" />
+            </FG>
           </div>
-          <DialogFooter className="p-8 pt-0">
-            <button onClick={() => setMarkPaidModal(null)} className="btn-outline px-5 py-2.5 text-sm font-medium">Cancel</button>
-            <button onClick={handleMarkPaid} disabled={!markPaidRemark.trim()} className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">Confirm Payment</button>
+          <DialogFooter className="p-7 pt-0">
+            <button onClick={() => setMarkPaidModal(null)} className="btn-outline px-5 py-2.5 text-sm">Cancel</button>
+            <button onClick={handleMarkPaid} disabled={!markPaidRemark.trim()}
+              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
+              Confirm Payment
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -424,112 +635,149 @@ export default function AdminRegistrations() {
       {/* Cancel */}
       <Dialog open={!!cancelModal} onOpenChange={v => { if (!v) { setCancelModal(null); setCancelReason(""); } }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
-            <DialogTitle className="font-bold text-xl">Cancel Registration</DialogTitle>
+          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-lg">Cancel Registration</DialogTitle>
           </DialogHeader>
-          <div className="p-8 pt-4 space-y-4">
-            <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>If paid, a refund will be triggered automatically.</div>
-            <FG label="Reason *"><textarea className="field-input" rows={3} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="Enter reason..." /></FG>
+          <div className="p-7 space-y-4">
+            {cancelModal?.payment.paymentStatus === "Paid" && (
+              <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
+                ⚠ This registration has been paid. A full refund will be triggered for all line items.
+              </div>
+            )}
+            <FG label="Reason *">
+              <textarea className="field-input" rows={3} value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Enter reason for cancellation…" />
+            </FG>
           </div>
-          <DialogFooter className="p-8 pt-0">
-            <button onClick={() => setCancelModal(null)} className="btn-outline px-5 py-2.5 text-sm font-medium">Close</button>
-            <button onClick={handleCancelAndRefund} disabled={!cancelReason.trim()} className="px-5 py-2.5 text-sm font-semibold disabled:opacity-40" style={{ backgroundColor: "var(--badge-open-text)", color: "var(--color-hero-text)" }}>Confirm Cancel</button>
+          <DialogFooter className="p-7 pt-0">
+            <button onClick={() => setCancelModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
+            <button onClick={handleCancel} disabled={!cancelReason.trim()}
+              className="px-5 py-2.5 text-sm font-semibold disabled:opacity-40"
+              style={{ backgroundColor: "var(--badge-closed-text)", color: "white" }}>
+              Confirm Cancel
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Refund */}
-      <Dialog open={!!refundModal} onOpenChange={v => { if (!v) { setRefundModal(null); setRefundSelections({}); } }}>
-        <DialogContent className="max-w-lg p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
-            <DialogTitle className="font-bold text-xl">Process Refund</DialogTitle>
+      <Dialog open={!!refundModal} onOpenChange={v => { if (!v) { setRefundModal(null); setRefundSel({}); } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-lg">Process Refund</DialogTitle>
+            {refundModal && <p className="text-xs opacity-50 mt-1">{refundModal.id} · {refundModal.contactName}</p>}
           </DialogHeader>
-          <div className="p-8 pt-4 space-y-5">
-            <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>Selected items will be refunded. Each requires a reason.</div>
-            {refundModal?.lineItems.map(li => (
-              <div key={li.id} className="p-4 space-y-3" style={{ border: "1px solid var(--color-table-border)" }}>
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <Switch disabled={li.refundStatus === "Full"} checked={refundSelections[li.id]?.selected || false}
-                    onCheckedChange={checked => setRefundSelections(prev => ({ ...prev, [li.id]: { selected: !!checked, reason: prev[li.id]?.reason || "" } }))} />
-                  <div className="flex-1"><div className="flex items-center justify-between"><span className="text-sm font-medium">{li.label}</span><span className="font-bold text-sm ml-3" style={{ color: "var(--color-primary)" }}>${li.amount.toFixed(2)}</span></div>
-                    {li.refundStatus === "Full" && <p className="text-xs mt-1 opacity-50">Already refunded on {li.refundDate}</p>}</div>
-                </label>
-                {refundSelections[li.id]?.selected && (
-                  <div><label className="block text-xs font-semibold mb-1.5 opacity-70">Reason *</label>
-                    <input className="field-input" placeholder="e.g. Participant withdrew" value={refundSelections[li.id]?.reason || ""}
-                      onChange={e => setRefundSelections(prev => ({ ...prev, [li.id]: { ...prev[li.id], reason: e.target.value } }))} /></div>
-                )}
-              </div>
-            ))}
+          <div className="p-7 space-y-4">
+            {refundModal?.payment.lineItems.map(li => {
+              const alreadyRefunded = li.refundStatus === "Full";
+              return (
+                <div key={li.id} className="p-4 space-y-3"
+                  style={{ border: "1px solid var(--color-table-border)", opacity: alreadyRefunded ? 0.5 : 1 }}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Switch disabled={alreadyRefunded}
+                      checked={refundSel[li.id]?.checked ?? false}
+                      onCheckedChange={v => setRefundSel(p => ({ ...p, [li.id]: { checked: v, reason: p[li.id]?.reason ?? "" } }))} />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{li.programName}</span>
+                        <span className="font-bold text-sm ml-3" style={{ color: "var(--color-primary)" }}>
+                          ${li.amount.toFixed(2)}
+                        </span>
+                      </div>
+                      {alreadyRefunded && <p className="text-xs mt-0.5 opacity-60">Already refunded on {li.refundDate}</p>}
+                    </div>
+                  </label>
+                  {refundSel[li.id]?.checked && (
+                    <input className="field-input" placeholder="Reason *"
+                      value={refundSel[li.id]?.reason ?? ""}
+                      onChange={e => setRefundSel(p => ({ ...p, [li.id]: { ...p[li.id], reason: e.target.value } }))} />
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <DialogFooter className="p-8 pt-0">
-            <button onClick={() => setRefundModal(null)} className="btn-outline px-5 py-2.5 text-sm font-medium">Close</button>
-            <button onClick={handleRefund} disabled={!Object.values(refundSelections).some(s => s.selected && s.reason.trim())}
-              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">Process Refund</button>
+          <DialogFooter className="p-7 pt-0">
+            <button onClick={() => setRefundModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
+            <button onClick={handleRefund}
+              disabled={!Object.values(refundSel).some(s => s.checked && s.reason.trim())}
+              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
+              Process Refund
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Receipt */}
       <Dialog open={!!receiptModal} onOpenChange={v => { if (!v) setReceiptModal(null); }}>
-        <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="sticky top-0 p-8 pb-4 z-10" style={{ backgroundColor: "var(--color-page-bg)", borderBottom: "1px solid var(--color-table-border)" }}>
-            <DialogTitle className="font-bold text-xl">{receiptModal?.receiptNumber ? `Receipt ${receiptModal.receiptNumber}` : "Payment Details"}</DialogTitle>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-lg">
+              {receiptModal?.payment.receiptNo ? `Receipt ${receiptModal.payment.receiptNo}` : "Payment Details"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="p-8 pt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className="opacity-50 text-xs">Transaction ID</p><p className="font-mono">{receiptModal?.id}</p></div>
-              <div><p className="opacity-50 text-xs">Method</p><p>{receiptModal?.method}</p></div>
-              <div><p className="opacity-50 text-xs">Paid Date</p><p>{receiptModal?.paidDate || "—"}</p></div>
-              <div><p className="opacity-50 text-xs">Status</p>{receiptModal && <PayBadge status={receiptModal.paymentStatus} />}</div>
-            </div>
-            <div className="pt-2" style={{ borderTop: "1px solid var(--color-table-border)" }}>
-              <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Line Items</p>
-              {receiptModal?.lineItems.map(li => (
-                <div key={li.id} className="mb-3 p-3" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-                  <div className="flex items-start justify-between gap-2"><span className="text-sm flex-1">{li.label}</span><span className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>${li.amount.toFixed(2)}</span></div>
-                  {li.refundStatus !== "None" && <div className="mt-2 text-xs space-y-0.5" style={{ color: "var(--badge-open-text)" }}><p>Refunded: ${li.refundedAmount.toFixed(2)} on {li.refundDate}</p><p className="opacity-70">Reason: {li.refundReason}</p></div>}
-                </div>
-              ))}
-              <div className="flex items-center justify-between pt-2 font-bold text-sm" style={{ borderTop: "1px solid var(--color-table-border)" }}>
-                <span>Total Paid</span><span style={{ color: "var(--color-primary)" }}>${receiptModal?.lineItems.reduce((s, li) => s + li.amount, 0).toFixed(2)}</span>
+          {receiptModal && (
+            <div className="p-7 space-y-5">
+              {/* Info grid */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><p className="text-xs opacity-50 mb-0.5">Registration ID</p><p className="font-mono text-xs">{receiptModal.id}</p></div>
+                <div><p className="text-xs opacity-50 mb-0.5">Contact</p><p>{receiptModal.contactName}</p></div>
+                <div><p className="text-xs opacity-50 mb-0.5">Method</p><p>{receiptModal.payment.method}</p></div>
+                <div><p className="text-xs opacity-50 mb-0.5">Paid Date</p><p>{receiptModal.payment.paidDate || "—"}</p></div>
+                <div><p className="text-xs opacity-50 mb-0.5">Status</p><PayBadge status={receiptModal.payment.paymentStatus} /></div>
               </div>
+
+              {/* Line items */}
+              <div style={{ borderTop: "1px solid var(--color-table-border)", paddingTop: 16 }}>
+                <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Programs / Line Items</p>
+                {receiptModal.payment.lineItems.map(li => {
+                  const group = receiptModal.groups.find(g => g.id === li.participantGroupId);
+                  return (
+                    <div key={li.id} className="mb-3 p-3"
+                      style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{li.programName}</p>
+                          {group && <p className="text-xs opacity-60">{group.namesDisplay}</p>}
+                        </div>
+                        <span className="font-bold text-sm flex-shrink-0" style={{ color: "var(--color-primary)" }}>
+                          ${li.amount.toFixed(2)}
+                        </span>
+                      </div>
+                      {li.refundStatus !== "None" && (
+                        <div className="mt-2 text-xs space-y-0.5" style={{ color: "var(--badge-open-text)" }}>
+                          <p>Refunded ${li.refundedAmount.toFixed(2)} on {li.refundDate}</p>
+                          <p className="opacity-70">Reason: {li.refundReason}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center justify-between pt-3 font-bold"
+                  style={{ borderTop: "1px solid var(--color-table-border)" }}>
+                  <span className="text-sm">Total</span>
+                  <span style={{ color: "var(--color-primary)" }}>${totalFee(receiptModal).toFixed(2)}</span>
+                </div>
+                {totalRefunded(receiptModal) > 0 && (
+                  <div className="flex items-center justify-between pt-1 text-sm"
+                    style={{ color: "var(--badge-open-text)" }}>
+                    <span>Total Refunded</span>
+                    <span>${totalRefunded(receiptModal).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              {receiptModal.payment.remarks && (
+                <div className="text-xs opacity-60 italic">{receiptModal.payment.remarks}</div>
+              )}
             </div>
-          </div>
-          <DialogFooter className="p-8 pt-0"><button onClick={() => setReceiptModal(null)} className="btn-outline px-5 py-2.5 text-sm font-medium">Close</button></DialogFooter>
+          )}
+          <DialogFooter className="p-7 pt-0">
+            <button onClick={() => setReceiptModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
-}
-
-function FG({ label, children }: { label: string; children: React.ReactNode }) {
-  return (<div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>);
-}
-
-function PayBadge({ status }: { status: string }) {
-  const m: Record<string, { bg: string; text: string }> = {
-    "Paid": { bg: "var(--badge-open-bg)", text: "var(--badge-open-text)" },
-    "Pending": { bg: "var(--badge-soon-bg)", text: "var(--badge-soon-text)" },
-    "Refunded": { bg: "var(--badge-closed-bg)", text: "var(--badge-closed-text)" },
-    "Partially Refunded": { bg: "var(--badge-soon-bg)", text: "var(--badge-soon-text)" },
-  };
-  const s = m[status] ?? m["Pending"];
-  return <span className="inline-flex px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: s.bg, color: s.text }}>{status}</span>;
-}
-
-function RegBadge({ status }: { status: string }) {
-  const m: Record<string, { bg: string; text: string }> = {
-    "Confirmed": { bg: "var(--badge-open-bg)", text: "var(--badge-open-text)" },
-    "Pending": { bg: "var(--badge-soon-bg)", text: "var(--badge-soon-text)" },
-    "Cancelled": { bg: "var(--badge-closed-bg)", text: "var(--badge-closed-text)" },
-  };
-  const s = m[status] ?? m["Pending"];
-  return <span className="inline-flex px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: s.bg, color: s.text }}>{status}</span>;
-}
-
-function MethodIcon({ method }: { method: string }) {
-  if (method === "Credit Card") return <CreditCard className="h-3.5 w-3.5 opacity-60" />;
-  if (method === "PayNow") return <span className="text-xs font-bold px-1" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>PN</span>;
-  return <span className="text-xs opacity-50">—</span>;
 }

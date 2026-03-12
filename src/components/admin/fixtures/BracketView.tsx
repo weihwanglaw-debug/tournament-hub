@@ -1,27 +1,67 @@
 /**
  * BracketView.tsx — SVG-based tournament bracket renderer
  *
- * Uses precise pixel math from bracketLayout.ts — no CSS pseudo-element tricks.
- * Cards are <foreignObject> nodes placed at exact coordinates.
- * Connector <path> elements use the same coordinate system so they always align.
+ * Fixes applied:
+ *  - Player name display rule: if total participants across both slots ≤ PLAYER_NAME_THRESHOLD
+ *    show individual names; otherwise show club/org label only.
+ *  - Click-to-score: clicking any match card opens the ScoreModal (onOpenScore prop).
+ *  - Seed badge only shown when team.seed is actually set (not undefined/null).
+ *  - Court / date shown on cards when available.
+ *  - Card height auto-expands when player names are shown.
  */
 
 import React from "react";
-import { Trophy } from "lucide-react";
+import { Trophy, MousePointerClick } from "lucide-react";
 import type { BracketState, MatchEntry, TeamEntry, FixtureFormat, GroupEntry } from "@/types/config";
 import { computeGroupStandings } from "@/lib/fixtureEngine";
 import {
-  CARD_W, CARD_H, SLOT_H, DIV_H, STUB, COL_W, HDR_H,
+  CARD_W, SLOT_H, DIV_H, STUB, COL_W, HDR_H,
   LINE_COLOR, LINE_W, LINE_WIN, LINE_WIN_W,
   bodyH, cardCY, cardTY, cardLX,
   buildSpecs, type Spec,
 } from "./bracketLayout";
 
-// ─── Match card ────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
-function Card({ match, x, y }: { match?: MatchEntry; x: number; y: number }) {
+/**
+ * If the combined participant count for both teams in a match is ≤ this number,
+ * individual player names are shown. Above it, only the club/org label shows.
+ * Rule: singles (1+1=2) and doubles (2+2=4) always show names. Teams don't.
+ */
+const PLAYER_NAME_THRESHOLD = 4;
+
+/** Extra height per player name line rendered below the slot label */
+const NAME_LINE_H = 13;
+
+// ── Card height calculator ─────────────────────────────────────────────────────
+
+function cardHeight(match?: MatchEntry): number {
+  if (!match) return SLOT_H * 2 + DIV_H;
+  const showNames = showPlayerNames(match);
+  if (!showNames) return SLOT_H * 2 + DIV_H;
+  const t1extra = match.team1.participants.length * NAME_LINE_H;
+  const t2extra = match.team2.participants.length * NAME_LINE_H;
+  return SLOT_H * 2 + DIV_H + Math.max(t1extra, t2extra);
+}
+
+function showPlayerNames(match: MatchEntry): boolean {
+  const total = match.team1.participants.length + match.team2.participants.length;
+  return total <= PLAYER_NAME_THRESHOLD;
+}
+
+// ── Match card ─────────────────────────────────────────────────────────────────
+
+function Card({
+  match, x, y, onClick,
+}: {
+  match?: MatchEntry;
+  x: number;
+  y: number;
+  onClick?: () => void;
+}) {
   const isDone = !!match && (match.status === "Completed" || match.status === "Walkover");
   const games  = match?.games ?? [];
+  const ch     = cardHeight(match);
 
   const t1wins = games.filter(g => g.p1 !== "" && g.p2 !== "" && +g.p1 > +g.p2).length;
   const t2wins = games.filter(g => g.p1 !== "" && g.p2 !== "" && +g.p2 > +g.p1).length;
@@ -37,48 +77,71 @@ function Card({ match, x, y }: { match?: MatchEntry; x: number; y: number }) {
     ? games.filter(g => g.p1 !== "").map(g => `${g.p1}-${g.p2}`).join(" ")
     : null;
 
-  const Slot = ({ team, isWinner, empty, score }: {
+  const showNames = match ? showPlayerNames(match) : false;
+
+  const Slot = ({
+    team, isWinner, empty, score,
+  }: {
     team?: TeamEntry; isWinner: boolean; empty?: boolean; score?: string | null;
   }) => (
     <div style={{
-      height: SLOT_H, display: "flex", alignItems: "center", gap: 5,
-      padding: "0 8px", overflow: "hidden",
+      minHeight: SLOT_H,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      padding: "0 8px",
+      overflow: "hidden",
       background: isWinner ? "var(--color-primary)" : "transparent",
     }}>
-      {!empty && team?.seed != null && (
+      {/* Club label row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        {/* Seed badge — only when seed is actually set (not undefined/null) */}
+        {!empty && team?.seed != null && (
+          <span style={{
+            fontSize: 9, fontWeight: 800, flexShrink: 0, minWidth: 14,
+            color: isWinner ? "rgba(255,255,255,.85)" : "var(--color-primary)",
+          }}>#{team.seed}</span>
+        )}
         <span style={{
-          fontSize: 9, fontWeight: 800, flexShrink: 0, minWidth: 14,
-          color: isWinner ? "rgba(255,255,255,.85)" : "var(--color-primary)",
-        }}>#{team.seed}</span>
-      )}
-      <span style={{
-        fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0,
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        fontStyle: empty ? "italic" : "normal",
-        color: empty ? "#94a3b8" : isWinner ? "#ffffff" : "#1e293b",
-      }}>
-        {empty ? "TBD" : (team?.label || "TBD")}
-      </span>
-      {score != null && (
-        <span style={{
-          fontSize: 11, fontWeight: 800, flexShrink: 0, minWidth: 20,
-          textAlign: "center", padding: "1px 4px", borderRadius: 2,
-          background: isWinner ? "rgba(0,0,0,.18)" : "#e2e8f0",
-          color: isWinner ? "#ffffff" : "#1e293b",
-        }}>{score}</span>
-      )}
-      {isWinner && isDone && (
-        <Trophy style={{ width: 9, height: 9, color: "#fff", flexShrink: 0 }} />
-      )}
+          fontSize: 11, fontWeight: 600, flex: 1, minWidth: 0,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          fontStyle: empty ? "italic" : "normal",
+          color: empty ? "#94a3b8" : isWinner ? "#ffffff" : "#1e293b",
+        }}>
+          {empty ? "TBD" : (team?.label || "TBD")}
+        </span>
+        {score != null && (
+          <span style={{
+            fontSize: 11, fontWeight: 800, flexShrink: 0, minWidth: 20,
+            textAlign: "center", padding: "1px 4px", borderRadius: 2,
+            background: isWinner ? "rgba(0,0,0,.18)" : "#e2e8f0",
+            color: isWinner ? "#ffffff" : "#1e293b",
+          }}>{score}</span>
+        )}
+        {isWinner && isDone && (
+          <Trophy style={{ width: 9, height: 9, color: "#fff", flexShrink: 0 }} />
+        )}
+      </div>
+      {/* Player names — shown when within threshold */}
+      {!empty && showNames && team?.participants.map((p, i) => (
+        <div key={i} style={{
+          fontSize: 9, color: isWinner ? "rgba(255,255,255,.75)" : "#64748b",
+          paddingLeft: team.seed != null ? 19 : 0,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          lineHeight: `${NAME_LINE_H}px`,
+        }}>
+          {p}
+        </div>
+      ))}
     </div>
   );
 
   // Empty / TBD card
   if (!match) {
     return (
-      <foreignObject x={x} y={y} width={CARD_W} height={CARD_H}>
+      <foreignObject x={x} y={y} width={CARD_W} height={ch}>
         <div style={{
-          width: CARD_W, height: CARD_H, overflow: "hidden",
+          width: CARD_W, height: ch, overflow: "hidden",
           border: "1.5px dashed #cbd5e1", background: "#f8fafc", opacity: 0.55,
         }}>
           <Slot isWinner={false} empty />
@@ -89,23 +152,44 @@ function Card({ match, x, y }: { match?: MatchEntry; x: number; y: number }) {
     );
   }
 
+  // Scheduled info line (court + date/time)
+  const scheduleLabel = [
+    match.courtNo,
+    match.matchDate ? new Date(match.matchDate).toLocaleDateString("en-SG", { day: "2-digit", month: "short" }) : "",
+    match.startTime,
+  ].filter(Boolean).join(" · ");
+
   return (
-    <foreignObject x={x} y={y} width={CARD_W} height={CARD_H}>
-      <div style={{
-        width: CARD_W, height: CARD_H, overflow: "hidden",
-        border: "1.5px solid #94a3b8", background: "#ffffff",
-        boxShadow: "0 2px 6px rgba(0,0,0,.10)",
-      }}>
+    <foreignObject x={x} y={y} width={CARD_W} height={ch}>
+      <div
+        onClick={onClick}
+        style={{
+          width: CARD_W, height: ch, overflow: "hidden",
+          border: "1.5px solid #94a3b8", background: "#ffffff",
+          boxShadow: "0 2px 6px rgba(0,0,0,.10)",
+          cursor: onClick ? "pointer" : "default",
+          transition: "box-shadow .15s",
+        }}
+        title={onClick ? "Click to enter / edit score" : undefined}
+      >
         <Slot team={match.team1} isWinner={match.winner === "team1"} score={t1Score} />
         <div style={{
           height: DIV_H, background: "#e2e8f0",
-          display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 6px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 6px",
         }}>
+          {scheduleLabel ? (
+            <span style={{ fontSize: 7.5, fontWeight: 600, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
+              {scheduleLabel}
+            </span>
+          ) : <span />}
           {scoreLabel && (
             <span style={{
               fontSize: 8, fontWeight: 600, color: "#64748b",
-              background: "#ffffff", padding: "0 3px", borderRadius: 2,
+              background: "#ffffff", padding: "0 3px", borderRadius: 2, flexShrink: 0,
             }}>{scoreLabel}</span>
+          )}
+          {!isDone && onClick && !scoreLabel && (
+            <MousePointerClick style={{ width: 9, height: 9, color: "#94a3b8", flexShrink: 0 }} />
           )}
         </div>
         <Slot team={match.team2} isWinner={match.winner === "team2"} score={t2Score} />
@@ -114,25 +198,35 @@ function Card({ match, x, y }: { match?: MatchEntry; x: number; y: number }) {
   );
 }
 
-// ─── Connector line ────────────────────────────────────────────────────────────
-// Path: right-centre of card A  →  stub right  →  vertical  →  stub into card B
+// ── Connector line ─────────────────────────────────────────────────────────────
 
-function Connector({ ci, aIdx, aCount, bIdx, bCount, h, hasWinner }: {
+function Connector({
+  ci, aIdx, aCount, bIdx, bCount, h, hasWinner, matchA, matchB,
+}: {
   ci: number;
   aIdx: number; aCount: number;
   bIdx: number; bCount: number;
   h: number;
   hasWinner: boolean;
+  matchA?: MatchEntry;
+  matchB?: MatchEntry;
 }) {
+  // Use actual card height for centre-Y calculation
+  const chA = cardHeight(matchA);
+  const chB = cardHeight(matchB);
+
+  // Recalculate centres using real card heights
+  // cardCY assumes uniform CARD_H — we override with real heights
+  const aY = cardTY(aIdx, aCount, h) + chA / 2;
+  const bY = cardTY(bIdx, bCount, h) + chB / 2;
+
   const ax = cardLX(ci) + CARD_W;
-  const ay = cardCY(aIdx, aCount, h);
   const bx = cardLX(ci + 1);
-  const by = cardCY(bIdx, bCount, h);
   const mx = ax + STUB;
 
   return (
     <path
-      d={`M ${ax} ${ay} H ${mx} V ${by} H ${bx}`}
+      d={`M ${ax} ${aY} H ${mx} V ${bY} H ${bx}`}
       fill="none"
       stroke={hasWinner ? LINE_WIN : LINE_COLOR}
       strokeWidth={hasWinner ? LINE_WIN_W : LINE_W}
@@ -142,16 +236,18 @@ function Connector({ ci, aIdx, aCount, bIdx, bCount, h, hasWinner }: {
   );
 }
 
-// ─── Full SVG bracket ──────────────────────────────────────────────────────────
+// ── Full SVG bracket ───────────────────────────────────────────────────────────
 
-function BracketSVG({ specs }: { specs: Spec[] }) {
+const BracketSVG = React.forwardRef<HTMLDivElement, {
+  specs: Spec[];
+  onOpenScore?: (m: MatchEntry) => void;
+}>(function BracketSVG({ specs, onOpenScore }, ref) {
   if (specs.length === 0) return null;
 
   const h    = bodyH(specs[0].count);
   const svgW = specs.length * COL_W + STUB;
   const svgH = HDR_H + h;
 
-  // Build connectors: each card in column i+1 feeds from two cards in column i
   const connectors: React.ReactNode[] = [];
   for (let ci = 0; ci < specs.length - 1; ci++) {
     const left  = specs[ci];
@@ -168,6 +264,8 @@ function BracketSVG({ specs }: { specs: Spec[] }) {
             bIdx={rj}    bCount={right.count}
             h={h}
             hasWinner={!!left.matches[aIdx]?.winner}
+            matchA={left.matches[aIdx]}
+            matchB={right.matches[rj]}
           />
         );
       }
@@ -181,7 +279,7 @@ function BracketSVG({ specs }: { specs: Spec[] }) {
     : null;
 
   return (
-    <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", padding: "20px 16px 24px", overflowX: "auto" }}>
+    <div ref={ref} style={{ background: "#ffffff", border: "1px solid #e2e8f0", padding: "20px 16px 24px", overflowX: "auto" }}>
       <svg width={svgW} height={svgH} style={{ display: "block", overflow: "visible" }}>
 
         {/* Round header labels */}
@@ -213,7 +311,13 @@ function BracketSVG({ specs }: { specs: Spec[] }) {
               ...Array(Math.max(0, spec.count - spec.matches.length)).fill(undefined),
             ];
             return cards.map((match, i) => (
-              <Card key={`card-${ci}-${i}`} match={match} x={cardLX(ci)} y={cardTY(i, spec.count, h)} />
+              <Card
+                key={`card-${ci}-${i}`}
+                match={match}
+                x={cardLX(ci)}
+                y={cardTY(i, spec.count, h)}
+                onClick={match && onOpenScore ? () => onOpenScore(match) : undefined}
+              />
             ));
           })}
         </g>
@@ -234,103 +338,47 @@ function BracketSVG({ specs }: { specs: Spec[] }) {
           );
         })()}
       </svg>
+
+      {/* Legend */}
+      <div style={{ marginTop: 12, fontSize: 10, color: "#94a3b8", display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <span>Click any match card to enter or edit the score.</span>
+        {specs.some(s => s.matches.some(m => m.courtNo || m.matchDate)) && (
+          <span>Cards show: court · date · start time in the divider strip.</span>
+        )}
+      </div>
     </div>
   );
-}
+});
 
-// ─── Group phase mini-standings (shown above the KO bracket) ──────────────────
 
-function GroupStrip({ groups, scoringRule }: { groups: GroupEntry[]; scoringRule: string }) {
-  if (!groups.length) return null;
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
-      {groups.map(grp => {
-        const st = computeGroupStandings(grp, scoringRule as never);
-        return (
-          <div key={grp.id} style={{ flex: "1 1 180px", minWidth: 160, maxWidth: 280, border: "1px solid #e2e8f0", background: "#fff", overflow: "hidden" }}>
-            <div style={{ background: "var(--color-primary)", color: "#fff", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".1em", padding: "5px 10px" }}>
-              {grp.name}
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-              <thead>
-                <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                  {["Team", "P", "W", "L", "Pts"].map(col => (
-                    <th key={col} style={{ padding: "3px 8px", fontWeight: 600, fontSize: 9, textTransform: "uppercase", color: "#64748b", textAlign: col === "Team" ? "left" : "center" }}>
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {st.map((s, si) => (
-                  <tr key={s.team.id} style={{ background: si % 2 === 0 ? "#fff" : "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "5px 8px", color: "#1e293b", display: "flex", alignItems: "center", gap: 4 }}>
-                      <span style={{ width: 16, height: 16, fontSize: 9, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", background: s.rank <= 2 ? "var(--color-primary)" : "transparent", color: s.rank <= 2 ? "#fff" : "#94a3b8", borderRadius: 2, flexShrink: 0 }}>
-                        {s.rank}
-                      </span>
-                      {s.team.label}
-                    </td>
-                    {[s.played, s.wins, s.losses, s.points].map((v, vi) => (
-                      <td key={vi} style={{ padding: "5px 8px", textAlign: "center", fontWeight: vi === 1 ? 700 : vi === 3 ? 800 : 400, color: vi === 1 ? "var(--badge-open-text)" : "#1e293b" } as React.CSSProperties}>
-                        {v}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// ── Public export ──────────────────────────────────────────────────────────────
 
-// ─── Public export ─────────────────────────────────────────────────────────────
-
-export function BracketView({ bracketState }: {
+/**
+ * BracketView renders ONLY the knockout SVG bracket.
+ * Group standings are handled by DrawTab separately.
+ */
+export const BracketView = React.forwardRef<HTMLDivElement, {
   bracketState: BracketState;
-  format: FixtureFormat;   // kept in props signature for caller compatibility
-}) {
-  const { groups, sections, matches: koMatches } = bracketState;
-  const hasGroups = groups.length > 0;
-  const isPureKo  = !hasGroups && !sections.length;
+  format?: FixtureFormat;
+  onOpenScore?: (m: MatchEntry) => void;
+}>(function BracketView({ bracketState, onOpenScore }, ref) {
+  const koMatches = bracketState.matches;
 
-  const advancingCount = hasGroups
-    ? groups.length * ((bracketState.config as any)?.advancePerGroup ?? 2)
-    : sections.length > 0
-      ? sections.length
-      : koMatches.length > 0
-        ? koMatches.filter(m => m.round === Math.min(...koMatches.map(x => x.round))).length * 2
-        : 8;
+  const advancingCount = bracketState.groups.length > 0
+    ? bracketState.groups.length * (bracketState.config?.advancePerGroup ?? 2)
+    : koMatches.length > 0
+      ? koMatches.filter(m => m.round === Math.min(...koMatches.map(x => x.round))).length * 2
+      : 8;
 
-  const specs       = buildSpecs(koMatches, advancingCount);
-  const scoringRule = (bracketState as any).scoringRule ?? "badminton_21";
+  const specs = buildSpecs(koMatches, advancingCount);
 
-  const Empty = ({ msg }: { msg: string }) => (
-    <div style={{ background: "#fff", border: "1px solid #e2e8f0", padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-      {msg}
+  if (koMatches.length === 0) return (
+    <div ref={ref} style={{ background: "#fff", border: "1px solid #e2e8f0", padding: "40px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+      {bracketState.phase === "group"
+        ? "Complete the group phase to generate the knockout bracket."
+        : "No bracket generated yet."}
     </div>
   );
 
-  if (isPureKo && koMatches.length === 0) return <Empty msg="No matches generated yet." />;
-
-  return (
-    <div>
-      {hasGroups && (
-        <>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".1em", color: "#64748b", marginBottom: 8 }}>
-            Group Phase
-          </div>
-          <GroupStrip groups={groups} scoringRule={scoringRule} />
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".1em", color: "#64748b", margin: "16px 0 8px" }}>
-            Knockout Bracket
-          </div>
-        </>
-      )}
-      {specs.length > 0
-        ? <BracketSVG specs={specs} />
-        : <Empty msg="Complete the group phase to generate the knockout bracket." />}
-    </div>
-  );
-}
+  return <BracketSVG ref={ref} specs={specs} onOpenScore={onOpenScore} />;
+});

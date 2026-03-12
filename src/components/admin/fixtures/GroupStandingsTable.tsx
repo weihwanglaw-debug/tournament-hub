@@ -4,49 +4,56 @@ import { computeGroupStandings } from "@/lib/fixtureEngine";
 
 interface Props {
   group: GroupEntry;
-  scoringRule: string;
+  advancePerGroup?: number;
 }
 
-export function GroupStandingsTable({ group, scoringRule }: Props) {
-  const standings = computeGroupStandings(group, scoringRule as never);
-  if (standings.every(s => s.played === 0)) return null;
+export function GroupStandingsTable({ group, advancePerGroup = 2 }: Props) {
+  const standings = computeGroupStandings(group);
+  const anyPlayed = standings.some(s => s.played > 0);
 
   return (
-    <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
-      <p className="text-xs font-bold uppercase tracking-wide opacity-50 px-4 py-3 border-b"
-        style={{ borderColor: "var(--color-table-border)" }}>
-        {group.name} — Standings
-      </p>
-      <table className="trs-table">
-        <thead>
-          <tr>
-            <th>#</th><th>Team</th><th>P</th><th>W</th><th>L</th>
-            <th>GF</th><th>GA</th><th>PF</th><th>PA</th><th>Pts</th>
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map(s => (
-            <tr key={s.team.id}>
-              <td className="text-sm font-bold"
-                style={{ color: s.rank <= 2 ? "var(--color-primary)" : undefined }}>
-                {s.rank}
-              </td>
-              <td>
-                <p className="font-medium text-sm">{s.team.label}</p>
-                <p className="text-xs opacity-60">{s.team.participants.join(" / ")}</p>
-              </td>
-              <td className="text-sm">{s.played}</td>
-              <td className="text-sm font-semibold" style={{ color: "var(--badge-open-text)" }}>{s.wins}</td>
-              <td className="text-sm">{s.losses}</td>
-              <td className="text-sm">{s.gamesFor}</td>
-              <td className="text-sm">{s.gamesAgainst}</td>
-              <td className="text-sm">{s.pointsFor}</td>
-              <td className="text-sm">{s.pointsAgainst}</td>
-              <td className="text-sm font-bold">{s.points}</td>
+    <div style={{ border: "1px solid var(--color-table-border)" }}>
+      <div className="px-4 py-2.5 font-bold text-xs uppercase tracking-wide"
+        style={{ backgroundColor: "var(--color-primary)", color: "var(--color-hero-text)" }}>
+        {group.name}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="trs-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Team</th>
+              {anyPlayed && <><th>P</th><th>W</th><th>L</th><th>D</th><th>Pts</th></>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {standings.map(s => (
+              <tr key={s.team.id}>
+                <td className="font-bold text-sm"
+                  style={{ color: s.rank <= advancePerGroup ? "var(--color-primary)" : undefined }}>
+                  {s.rank}
+                </td>
+                <td>
+                  {s.team.seed != null && (
+                    <span className="text-xs font-bold px-1.5 py-0.5 mr-1.5"
+                      style={{ backgroundColor: "var(--color-primary)", color: "var(--color-hero-text)" }}>
+                      #{s.team.seed}
+                    </span>
+                  )}
+                  <span className="font-medium text-sm">{s.team.label}</span>
+                  <div className="text-xs opacity-50">{s.team.participants.join(" / ")}</div>
+                </td>
+                {anyPlayed && <>
+                  <td>{s.played}</td>
+                  <td className="font-semibold" style={{ color: "var(--badge-open-text)" }}>{s.wins}</td>
+                  <td>{s.losses}</td>
+                  <td>{s.draws}</td>
+                  <td className="font-bold">{s.points}</td>
+                </>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
