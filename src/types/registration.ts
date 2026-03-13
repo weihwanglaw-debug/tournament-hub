@@ -243,6 +243,20 @@ export interface CheckoutSession {
   expiresAt:       string;   // ISO datetime — session expiry (Stripe: 24h)
 }
 
+
+// ── Dashboard / stats aggregate ───────────────────────────────────────────────
+// Returned by apiGetRegistrationStats(). Defined here (not in registrationsApi.ts)
+// so it can be imported from the canonical types file alongside Registration, Payment, etc.
+
+export interface RegistrationStats {
+  totalRegistrations: number;
+  confirmed:          number;
+  pending:            number;
+  cancelled:          number;
+  waitlisted:         number;
+  totalRevenue:       number;   // SUM of payments with paymentStatus = "Success"
+  pendingPayments:    number;   // COUNT of payments with paymentStatus = "Pending"
+}
 // ── Derived helpers ───────────────────────────────────────────────────────────
 
 /** Flatten a registration into SeedEntry-compatible objects for the fixture wizard */
