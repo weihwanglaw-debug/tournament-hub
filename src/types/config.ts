@@ -86,6 +86,7 @@ export interface Program {
   gender: string;
   fee: number;
   paymentRequired: boolean;
+  feeStructure: "per_entry" | "per_player"; // per_entry = flat fee for whole group; per_player = fee × each player
   sbaRequired?: boolean;
   minPlayers: number;
   maxPlayers: number;
@@ -289,7 +290,9 @@ export interface Participant {
 export interface CartEntry {
   programId: string;
   programName: string;
-  fee: number;
+  fee: number;               // total fee for this entry (feePerPlayer × players OR flat fee)
+  feeStructure: "per_entry" | "per_player";
+  feePerPlayer?: number;     // only set when feeStructure = "per_player"
   participants: Participant[];
 }
 

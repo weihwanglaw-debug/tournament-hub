@@ -264,6 +264,26 @@ export default function AdminRegistrations() {
     setCancelModal(null); setCancelReason("");
   };
 
+  // ── Refund: check if removing a line item would drop group below minPlayers ──
+  const getGroupMinPlayersWarning = (reg: Registration, lineItemId: string): string | null => {
+    const li = reg.payment.lineItems.find(l => l.id === lineItemId);
+    if (!li?.participantId) return null; // per_entry line item — no player check needed
+    const group = reg.groups.find(g => g.id === li.participantGroupId);
+    if (!group) return null;
+    const eventProgram = (config.events as import("@/types/config").TournamentEvent[])
+      .flatMap(e => e.programs)
+      .find(p => p.id === group.programId);
+    if (!eventProgram) return null;
+    const activeLineItems = reg.payment.lineItems.filter(
+      l => l.participantGroupId === group.id && l.refundStatus !== "Full" && l.id !== lineItemId
+    );
+    const remainingPlayers = activeLineItems.filter(l => l.participantId).length;
+    if (remainingPlayers < eventProgram.minPlayers) {
+      return `Removing this player leaves ${remainingPlayers} player${remainingPlayers !== 1 ? "s" : ""} — below the minimum of ${eventProgram.minPlayers}. The entire entry must be cancelled instead.`;
+    }
+    return null;
+  };
+
   const handleRefund = () => {
     if (!refundModal) return;
     const today = new Date().toISOString().slice(0, 10);
@@ -671,16 +691,28 @@ export default function AdminRegistrations() {
           <div className="p-7 space-y-4">
             {refundModal?.payment.lineItems.map(li => {
               const alreadyRefunded = li.refundStatus === "Full";
+              const warning = refundModal && refundSel[li.id]?.checked
+                ? getGroupMinPlayersWarning(refundModal, li.id)
+                : null;
+              const isPerPlayer = !!li.participantId;
               return (
                 <div key={li.id} className="p-4 space-y-3"
-                  style={{ border: "1px solid var(--color-table-border)", opacity: alreadyRefunded ? 0.5 : 1 }}>
+                  style={{ border: `1px solid ${warning ? "var(--badge-closed-text)" : "var(--color-table-border)"}`, opacity: alreadyRefunded ? 0.5 : 1 }}>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <Switch disabled={alreadyRefunded}
                       checked={refundSel[li.id]?.checked ?? false}
                       onCheckedChange={v => setRefundSel(p => ({ ...p, [li.id]: { checked: v, reason: p[li.id]?.reason ?? "" } }))} />
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{li.programName}</span>
+                        <div>
+                          <span className="text-sm font-medium">{li.programName}</span>
+                          {isPerPlayer && li.playerName && (
+                            <span className="text-xs opacity-60 ml-2">— {li.playerName}</span>
+                          )}
+                          {!isPerPlayer && (
+                            <span className="text-xs opacity-40 ml-2">(per entry)</span>
+                          )}
+                        </div>
                         <span className="font-bold text-sm ml-3" style={{ color: "var(--color-primary)" }}>
                           ${li.amount.toFixed(2)}
                         </span>
@@ -688,7 +720,13 @@ export default function AdminRegistrations() {
                       {alreadyRefunded && <p className="text-xs mt-0.5 opacity-60">Already refunded on {li.refundDate}</p>}
                     </div>
                   </label>
-                  {refundSel[li.id]?.checked && (
+                  {warning && (
+                    <div className="flex items-start gap-2 p-3 text-xs font-medium"
+                      style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>
+                      ⚠ {warning}
+                    </div>
+                  )}
+                  {refundSel[li.id]?.checked && !warning && (
                     <input className="field-input" placeholder="Reason *"
                       value={refundSel[li.id]?.reason ?? ""}
                       onChange={e => setRefundSel(p => ({ ...p, [li.id]: { ...p[li.id], reason: e.target.value } }))} />
@@ -700,7 +738,11 @@ export default function AdminRegistrations() {
           <DialogFooter className="p-7 pt-0">
             <button onClick={() => setRefundModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
             <button onClick={handleRefund}
-              disabled={!Object.values(refundSel).some(s => s.checked && s.reason.trim())}
+              disabled={!Object.entries(refundSel).some(([id, s]) => {
+                if (!s.checked || !s.reason.trim()) return false;
+                if (refundModal && getGroupMinPlayersWarning(refundModal, id)) return false;
+                return true;
+              })}
               className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
               Process Refund
             </button>

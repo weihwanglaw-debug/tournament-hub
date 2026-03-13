@@ -10,6 +10,7 @@ import { ArrowLeftRight, Lock, Printer, FileDown } from "lucide-react";
 import type { BracketState, MatchEntry, TeamEntry } from "@/types/config";
 import { isBracketLocked, computeGroupStandings } from "@/lib/fixtureEngine";
 import { BracketView } from "./BracketView";
+import { buildBracketPrintSvg } from "./bracketPrintSvg";
 
 interface Props {
   bracketState:     BracketState;
@@ -28,72 +29,89 @@ interface Props {
 // "Download PDF" → opens blank tab, writes content, auto-triggers print dialog,
 // closes the tab after the dialog is dismissed.
 
-function resolveCssVars(el: Element, style: CSSStyleDeclaration): void {
-  // Replace var(--x) in inline style strings with computed values
+function resolveCssVars(el: Element): void {
   const computed = window.getComputedStyle(document.documentElement);
-  el.querySelectorAll<HTMLElement | SVGElement>("[style]").forEach(node => {
-    const s = (node as HTMLElement).style;
+  const resolve  = (val: string) =>
+    val.replace(/var\(([^)]+)\)/g, (_, v) => computed.getPropertyValue(v.trim()).trim());
+
+  // Fix inline style properties
+  el.querySelectorAll<HTMLElement>("[style]").forEach(node => {
+    const s = node.style;
     for (let i = 0; i < s.length; i++) {
       const prop = s[i];
       const val  = s.getPropertyValue(prop);
-      if (val.includes("var(--")) {
-        const resolved = val.replace(/var\(([^)]+)\)/g, (_, v) => computed.getPropertyValue(v.trim()).trim());
-        (node as HTMLElement).style.setProperty(prop, resolved);
-      }
+      if (val.includes("var(--")) s.setProperty(prop, resolve(val));
     }
-    // Also handle fill/stroke attributes on SVG elements
-    ["fill", "stroke"].forEach(attr => {
-      const v = node.getAttribute(attr) ?? "";
-      if (v.includes("var(--")) {
-        const resolved = v.replace(/var\(([^)]+)\)/g, (_, name) => computed.getPropertyValue(name.trim()).trim());
-        node.setAttribute(attr, resolved);
-      }
-    });
   });
-  // Also fix SVG text/line/path elements that use var() directly in attributes
-  el.querySelectorAll("[fill],[stroke]").forEach(node => {
-    ["fill", "stroke"].forEach(attr => {
+
+  // Fix SVG elements: fill/stroke attributes AND style.fill / style.stroke
+  el.querySelectorAll("*").forEach(node => {
+    // Attributes
+    ["fill", "stroke", "color"].forEach(attr => {
       const v = node.getAttribute(attr) ?? "";
-      if (v.includes("var(--")) {
-        const resolved = v.replace(/var\(([^)]+)\)/g, (_, name) =>
-          window.getComputedStyle(document.documentElement).getPropertyValue(name.trim()).trim()
-        );
-        node.setAttribute(attr, resolved);
-      }
+      if (v.includes("var(--")) node.setAttribute(attr, resolve(v));
+    });
+    // style.fill / style.stroke on SVG/HTML elements
+    const s = (node as HTMLElement).style;
+    if (!s) return;
+    ["fill", "stroke", "color", "background", "background-color", "border-color"].forEach(prop => {
+      const v = s.getPropertyValue(prop);
+      if (v && v.includes("var(--")) s.setProperty(prop, resolve(v));
     });
   });
 }
 
-function captureSvgHtml(bracketRef: React.RefObject<HTMLDivElement | null>): string {
-  if (!bracketRef.current) return "<p style=\"color:#999;font-style:italic\">No bracket generated.</p>";
-  // Deep clone so we don't mutate the live DOM
+type CapturedBracket = {
+  outerHtml: string;        // full clone HTML (for normal print)
+  svgViewBox: string | null; // "0 0 W H" or null
+  svgInnerHtml: string | null; // content inside <svg> (for split print)
+};
+
+function captureBracket(bracketRef: React.RefObject<HTMLDivElement | null>): CapturedBracket {
+  if (!bracketRef.current) return {
+    outerHtml: "<p style=\"color:#999;font-style:italic\">No bracket generated.</p>",
+    svgViewBox: null,
+    svgInnerHtml: null,
+  };
+
   const clone = bracketRef.current.cloneNode(true) as HTMLElement;
-  // Resolve all CSS variable references in the clone
-  resolveCssVars(clone, window.getComputedStyle(clone));
-  // Remove hover/click cursors not needed in print
-  clone.querySelectorAll("[style]").forEach(n => {
-    (n as HTMLElement).style.cursor = "default";
-    (n as HTMLElement).style.boxShadow = "none";
-    (n as HTMLElement).style.transition = "none";
+  resolveCssVars(clone);
+  clone.querySelectorAll(".minimap, button").forEach(n => n.remove());
+  clone.querySelectorAll<HTMLElement>("[style]").forEach(n => {
+    n.style.cursor = "default";
+    n.style.boxShadow = "none";
+    n.style.transition = "none";
   });
-  // Ensure SVG has explicit pixel dimensions
-  const svg = clone.querySelector("svg");
-  if (svg) {
-    svg.style.overflow = "visible";
+  clone.querySelectorAll("svg").forEach(svg => {
     svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  }
-  clone.style.border   = "none";
-  clone.style.padding  = "0";
+    svg.style.overflow = "visible";
+  });
+  clone.style.border = "none";
+  clone.style.padding = "0";
   clone.style.overflow = "visible";
-  return clone.outerHTML;
+  clone.style.borderRadius = "0";
+
+  // Grab viewBox from the main SVG for split printing
+  const svg = bracketRef.current.querySelector("svg");
+  const svgViewBox = svg?.getAttribute("viewBox") ?? null;
+  const svgClone   = clone.querySelector("svg");
+  const svgInnerHtml = svgClone?.innerHTML ?? null;
+
+  return { outerHtml: clone.outerHTML, svgViewBox, svgInnerHtml };
+}
+
+// Legacy wrapper used for normal (non-split) print
+function captureSvgHtml(bracketRef: React.RefObject<HTMLDivElement | null>): string {
+  return captureBracket(bracketRef).outerHtml;
 }
 
 function openPrintWindow(
-  eventName:  string,
+  eventName:   string,
   programName: string,
-  groupHtml:  string,
-  svgHtml:    string,
-  autoPrint:  boolean,
+  groupHtml:   string,
+  svgHtml:     string,       // pure SVG string(s) — already safe to embed
+  autoPrint:   boolean,
+  isSplit?:    boolean,
 ): void {
   const now = new Date().toLocaleString("en-SG", {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
@@ -141,10 +159,29 @@ function openPrintWindow(
   .no-print button { background: white; color: #1E3A5F; border: none; font-weight: 700;
     font-size: 12px; padding: 6px 16px; cursor: pointer; }
 
+  /* Split-print page break */
+  .page-break { display: none; }
+  .pg2-header { display: none; }
+
   @media print {
     .no-print { display: none; }
-    body { padding: 14px; }
-    @page { margin: 12mm; size: A4 landscape; }
+    body { padding: 10px; }
+    @page { margin: 8mm; size: A4 landscape; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+
+    /* Scale bracket SVG to fit page */
+    .bracket-inner { width: 100%; overflow: visible; }
+    .bracket-inner > div { border: none !important; padding: 0 !important; border-radius: 0 !important; }
+    .bracket-inner svg { width: 100% !important; height: auto !important; max-width: 100% !important; }
+
+    /* Split mode: each half fills its page */
+    .bracket-inner.split svg { width: 100% !important; height: auto !important; }
+    .page-break { display: block; page-break-after: always; break-after: page; height: 0; }
+    .pg2-header { display: block; border-bottom: 3px solid #1E3A5F; padding-bottom: 10px; margin-bottom: 16px; }
+    .pg2-header h1 { font-size: 18px; font-weight: 800; color: #1E3A5F; }
+    .pg2-header h2 { font-size: 13px; font-weight: 400; color: #555; }
+    .bracket-wrap { page-break-before: auto; }
+    .pf { display: none; }
   }
 </style>
 </head><body>
@@ -164,10 +201,12 @@ function openPrintWindow(
 
 ${groupHtml}
 
-${svgHtml ? `<div class="bracket-wrap">
-  <div class="sec-title">Knockout Bracket</div>
-  <div class="bracket-inner">${svgHtml}</div>
-</div>` : ""}
+${svgHtml ? '<div class="bracket-wrap">' +
+  (isSplit
+    ? '<div class="sec-title">Knockout Bracket — Top Half</div><div class="bracket-inner">' + svgHtml + '</div>'
+    : '<div class="sec-title">Knockout Bracket</div><div class="bracket-inner">' + svgHtml + '</div>'
+  ) + '</div>'
+  : ""}
 
 <div class="pf">
   <span>${eventName} · ${programName}</span>
@@ -381,36 +420,72 @@ export function DrawTab({
   const bracketRef = useRef<HTMLDivElement | null>(null);
   const groupsRef  = useRef<HTMLDivElement | null>(null);
 
-  const doPrint = (autoPrint: boolean) => {
-    // Capture group standings HTML from the live DOM
-    const groupHtml = groupsRef.current ? (() => {
-      const clone = groupsRef.current!.cloneNode(true) as HTMLElement;
-      // Convert Tailwind/CSS-var styles to inline
-      const computed = window.getComputedStyle(document.documentElement);
-      clone.querySelectorAll("[style]").forEach(n => {
-        const el = n as HTMLElement;
-        const s  = el.style;
-        for (let i = 0; i < s.length; i++) {
-          const p = s[i];
-          const v = s.getPropertyValue(p);
-          if (v.includes("var(--")) {
-            el.style.setProperty(p, v.replace(/var\(([^)]+)\)/g,
-              (_, name) => computed.getPropertyValue(name.trim()).trim()));
-          }
-        }
-      });
-      return clone.outerHTML;
-    })() : "";
+  // Determine if bracket is large enough to warrant split printing (16+ players = 8+ QF matches)
+  const firstRoundCount = bracketState.matches.length > 0
+    ? bracketState.matches.filter(m => m.round === Math.min(...bracketState.matches.map(x => x.round))).length
+    : 0;
+  const useSplitPrint = firstRoundCount >= 8;
 
-    const svgHtml = captureSvgHtml(bracketRef);
-    openPrintWindow(eventName, programName, groupHtml, svgHtml, autoPrint);
+  const primary = typeof window !== "undefined"
+    ? (getComputedStyle(document.documentElement).getPropertyValue("--color-primary").trim() || "#e05a2b")
+    : "#e05a2b";
+
+  const buildGroupHtml = () => {
+    if (!groupsRef.current) return "";
+    const clone = groupsRef.current.cloneNode(true) as HTMLElement;
+    const computed = window.getComputedStyle(document.documentElement);
+    clone.querySelectorAll("[style]").forEach(n => {
+      const el = n as HTMLElement;
+      const s  = el.style;
+      for (let i = 0; i < s.length; i++) {
+        const p = s[i];
+        const v = s.getPropertyValue(p);
+        if (v.includes("var(--")) {
+          el.style.setProperty(p, v.replace(/var\(([^)]+)\)/g,
+            (_, name) => computed.getPropertyValue(name.trim()).trim()));
+        }
+      }
+    });
+    return clone.outerHTML;
+  };
+
+  const doPrint = (autoPrint: boolean, split = false) => {
+    const groupHtml = buildGroupHtml();
+    const ko = bracketState.matches;
+
+    let svgHtml = "";
+    if (ko.length > 0) {
+      if (split) {
+        // Two pure SVGs stacked with a page-break between them
+        const topSvg = buildBracketPrintSvg(ko, { primary, split: "top" });
+        const botSvg = buildBracketPrintSvg(ko, { primary, split: "bottom" });
+        svgHtml = topSvg +
+          '<div class="page-break"></div>' +
+          '<div class="pg2-header">' +
+            `<h1>${eventName}</h1>` +
+            `<h2>${programName} — Knockout Bracket (Bottom Half)</h2>` +
+          '</div>' +
+          '<div class="sec-title" style="margin-bottom:14px">Knockout Bracket — Bottom Half</div>' +
+          botSvg;
+      } else {
+        svgHtml = buildBracketPrintSvg(ko, { primary });
+      }
+    }
+
+    openPrintWindow(eventName, programName, groupHtml, svgHtml, autoPrint, split);
   };
 
   return (
     <div className="space-y-5">
       {/* Action buttons — live mode only */}
       {!readOnly && (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 flex-wrap">
+          {useSplitPrint && (
+            <button onClick={() => doPrint(false, true)}
+              className="btn-outline flex items-center gap-1.5 px-4 py-2 text-sm font-medium">
+              <Printer className="h-4 w-4" /> Split Print (½ per page)
+            </button>
+          )}
           <button onClick={() => doPrint(false)}
             className="btn-outline flex items-center gap-1.5 px-4 py-2 text-sm font-medium">
             <Printer className="h-4 w-4" /> Preview &amp; Print

@@ -434,6 +434,74 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       ]
     }
   },
+
+  // ── REG-007: per_player fee structure — Mixed Doubles $60/player ─────────
+  //    Demonstrates: 2 line items (one per player), each $60.
+  //    If one player is refunded and 1 remains → drops below minPlayers (2)
+  //    → system should warn admin to cancel whole entry instead.
+  {
+    id: "REG-007",
+    eventId: "evt-1",
+    eventName: "Singapore Open Badminton Championship 2026",
+    submittedAt: "2026-02-01T11:00:00",
+    regStatus: "Confirmed",
+    contactName: "Ng Swee Huat",
+    contactEmail: "ngsh@email.com",
+    contactPhone: "+65 9456 7890",
+    groups: [
+      {
+        id: "PG-009",
+        registrationId: "REG-007",
+        eventId: "evt-1",
+        programId: "prog-5",
+        programName: "Mixed Doubles",
+        fee: 120,          // total = 2 × $60 per player
+        groupStatus: "Confirmed",
+        seed: null,
+        clubDisplay: "Woodlands BC",
+        namesDisplay: "Ng Swee Huat / Tan Siew Lin",
+        participants: [
+          {
+            id: "PART-013",
+            participantGroupId: "PG-009",
+            fullName: "Ng Swee Huat",
+            dob: "1994-06-14",
+            gender: "Male",
+            nationality: "Singaporean",
+            clubSchoolCompany: "Woodlands BC",
+            email: "ngsh@email.com",
+            contactNumber: "+65 9456 7890",
+            sbaId: "SBA-031",
+            customFieldValues: {},
+          },
+          {
+            id: "PART-014",
+            participantGroupId: "PG-009",
+            fullName: "Tan Siew Lin",
+            dob: "1996-09-28",
+            gender: "Female",
+            nationality: "Singaporean",
+            clubSchoolCompany: "Woodlands BC",
+            sbaId: "SBA-032",
+            customFieldValues: {},
+          }
+        ]
+      }
+    ],
+    payment: {
+      id: "PAY-007",
+      registrationId: "REG-007",
+      receiptNo: "RCP-0006",
+      method: "PayNow",
+      paymentStatus: "Paid",
+      paidDate: "2026-02-01",
+      lineItems: [
+        // per_player: one line item per participant, participantId populated
+        { id: "PI-009", participantGroupId: "PG-009", participantId: "PART-013", playerName: "Ng Swee Huat",  programName: "Mixed Doubles (per player)", amount: 60, refundedAmount: 0, refundStatus: "None" },
+        { id: "PI-010", participantGroupId: "PG-009", participantId: "PART-014", playerName: "Tan Siew Lin", programName: "Mixed Doubles (per player)", amount: 60, refundedAmount: 0, refundStatus: "None" },
+      ]
+    }
+  },
 ];
 
 // ── Per-program lookup (for fixture system) ──────────────────────────────────

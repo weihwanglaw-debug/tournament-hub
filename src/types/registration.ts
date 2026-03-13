@@ -65,7 +65,9 @@ export interface ParticipantGroup {
 export interface PaymentLineItem {
   id:               string;   // "PI-001"
   participantGroupId: string;
+  participantId?:   string;   // only set when feeStructure = "per_player"; absent = per_entry flat fee
   programName:      string;
+  playerName?:      string;   // display label when per_player (e.g. "Lee Wei Jie")
   amount:           number;
   refundedAmount:   number;
   refundStatus:     RefundStatus;

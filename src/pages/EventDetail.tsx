@@ -383,10 +383,18 @@ export default function EventDetail() {
   // ── Add to cart ──
   const addToCart = () => {
     if (!selectedProgram) return;
-    const entry: CartEntry = { programId: selectedProgram.id
-      , programName: selectedProgram.name
-      , fee: selectedProgram.paymentRequired ? selectedProgram.fee : 0
-      , participants: [...participants] };
+    const isPerPlayer = selectedProgram.feeStructure === "per_player";
+    const entryFee = selectedProgram.paymentRequired ? selectedProgram.fee : 0;
+    const totalEntryFee = isPerPlayer ? entryFee * participants.length : entryFee;
+
+    const entry: CartEntry = {
+      programId: selectedProgram.id,
+      programName: selectedProgram.name,
+      fee: totalEntryFee,
+      feeStructure: selectedProgram.feeStructure,
+      feePerPlayer: isPerPlayer ? entryFee : undefined,
+      participants: [...participants],
+    };
 
     if (editingCartIndex !== null) {
       setCart((prev) => prev.map((c, i) => (i === editingCartIndex ? entry : c)));
@@ -733,9 +741,14 @@ export default function EventDetail() {
                             <div>
                               <p className="font-semibold">{entry.programName}</p>
                               <p className="text-sm opacity-70 mt-1">{entry.participants.map((p) => p.fullName).join(", ")}</p>
+                              {entry.feeStructure === "per_player" && entry.feePerPlayer != null && (
+                                <p className="text-xs opacity-50 mt-0.5">
+                                  {entry.participants.length} player{entry.participants.length !== 1 ? "s" : ""} × {currency} ${entry.feePerPlayer.toFixed(2)}
+                                </p>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                              <span className="font-bold" style={{ color: "var(--color-primary)" }}>{currency} ${entry.fee}</span>
+                              <span className="font-bold" style={{ color: "var(--color-primary)" }}>{currency} ${entry.fee.toFixed(2)}</span>
                               <button onClick={() => editCartEntry(idx)} className="p-1.5 opacity-50 hover:opacity-100" title="Edit"><Edit2 className="h-4 w-4" /></button>
                               <button onClick={() => removeCartEntry(idx)} className="p-1.5 opacity-50 hover:opacity-100" title="Remove"><Trash2 className="h-4 w-4" /></button>
                             </div>

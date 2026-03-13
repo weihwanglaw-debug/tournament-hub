@@ -26,7 +26,9 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
 
   const [form, setForm] = useState({
     name: "", gender: "Mixed", minAge: 18, maxAge: 45,
-    fee: "0.00", paymentRequired: true, minPlayers: 1, maxPlayers: 1,
+    fee: "0.00", paymentRequired: true,
+    feeStructure: "per_entry" as "per_entry" | "per_player",
+    minPlayers: 1, maxPlayers: 1,
     minParticipants: 4, maxParticipants: 32,
     enableSbaId: false, enableDocumentUpload: false,
     enableGuardianInfo: false, enableRemark: false, customFields: [] as CF[],
@@ -43,6 +45,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
         maxAge:          program.maxAge,
         fee:             program.fee.toFixed(2),
         paymentRequired: program.paymentRequired ?? true,
+        feeStructure:    program.feeStructure ?? "per_entry",
         minPlayers:      program.minPlayers,
         maxPlayers:      program.maxPlayers,
         minParticipants: program.minParticipants ?? 4,
@@ -58,7 +61,9 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
     } else {
       setForm({
         name: "", gender: "Mixed", minAge: 18, maxAge: 45,
-        fee: "0.00", paymentRequired: true, minPlayers: 1, maxPlayers: 1,
+        fee: "0.00", paymentRequired: true,
+        feeStructure: "per_entry" as "per_entry" | "per_player",
+        minPlayers: 1, maxPlayers: 1,
         minParticipants: 4, maxParticipants: 32,
         enableSbaId: false, enableDocumentUpload: false,
         enableGuardianInfo: false, enableRemark: false, customFields: [],
@@ -88,7 +93,9 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
       name: form.name,
       type: form.name,
       gender: form.gender, minAge: form.minAge, maxAge: form.maxAge,
-      fee: parseFloat(form.fee) || 0, paymentRequired: form.paymentRequired,
+      fee: parseFloat(form.fee) || 0,
+      paymentRequired: form.paymentRequired,
+      feeStructure: form.paymentRequired ? form.feeStructure : "per_entry",
       minPlayers: form.minPlayers, maxPlayers: form.maxPlayers,
       minParticipants: form.minParticipants, maxParticipants: form.maxParticipants,
       currentParticipants: program?.currentParticipants ?? 0,
@@ -177,17 +184,46 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
                 onCheckedChange={v => { s("paymentRequired", v); if (!v) s("fee", "0.00"); }} />
             </label>
             {form.paymentRequired ? (
-              <div>
-                <Lbl>Registration Fee (SGD)</Lbl>
-                <div className="flex">
-                  <span className="px-3 flex items-center text-sm font-semibold opacity-60"
-                    style={{ border: "1px solid var(--color-table-border)", borderRight: "none" }}>$</span>
-                  <input type="number" step="0.01" min="0" className="field-input w-36"
-                    style={{ borderLeft: "none" }} value={form.fee}
-                    onChange={e => s("fee", e.target.value)}
-                    onBlur={e => s("fee", parseFloat(e.target.value || "0").toFixed(2))} />
+              <div className="space-y-4">
+                <div>
+                  <Lbl>Registration Fee (SGD)</Lbl>
+                  <div className="flex">
+                    <span className="px-3 flex items-center text-sm font-semibold opacity-60"
+                      style={{ border: "1px solid var(--color-table-border)", borderRight: "none" }}>$</span>
+                    <input type="number" step="0.01" min="0" className="field-input w-36"
+                      style={{ borderLeft: "none" }} value={form.fee}
+                      onChange={e => s("fee", e.target.value)}
+                      onBlur={e => s("fee", parseFloat(e.target.value || "0").toFixed(2))} />
+                  </div>
+                  {formErrors.fee && <Err>{formErrors.fee}</Err>}
                 </div>
-                {formErrors.fee && <Err>{formErrors.fee}</Err>}
+                <div>
+                  <Lbl>Fee Structure</Lbl>
+                  <div className="flex gap-0">
+                    {([
+                      { value: "per_entry", label: "Per Entry", desc: "One flat fee for the whole group/team" },
+                      { value: "per_player", label: "Per Player", desc: "Fee × each player in the entry" },
+                    ] as const).map(opt => (
+                      <button key={opt.value} type="button"
+                        onClick={() => s("feeStructure", opt.value)}
+                        className="flex-1 px-4 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${form.feeStructure === opt.value ? "var(--color-primary)" : "var(--color-table-border)"}`,
+                          backgroundColor: form.feeStructure === opt.value ? "var(--color-primary)" : "transparent",
+                          color: form.feeStructure === opt.value ? "var(--color-hero-text)" : "var(--color-body-text)",
+                          marginRight: opt.value === "per_entry" ? "-1px" : 0,
+                        }}>
+                        <p className="text-sm font-semibold">{opt.label}</p>
+                        <p className="text-xs mt-0.5 opacity-70">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {form.feeStructure === "per_player" && form.maxPlayers > 1 && (
+                    <p className="text-xs mt-2 opacity-60">
+                      e.g. {form.maxPlayers} players × ${parseFloat(form.fee || "0").toFixed(2)} = ${(form.maxPlayers * parseFloat(form.fee || "0")).toFixed(2)} per entry
+                    </p>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-xs opacity-50">Free entry — no payment will be collected.</p>
