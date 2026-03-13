@@ -16,6 +16,8 @@
  */
 
 import type { Registration } from "@/types/registration";
+// Note: Refunds are stored separately in registrationsApi._refunds (mock)
+// and in DB: Refunds table. See apiGetRefunds() and apiInitiateRefund().
 
 let _seq = 0;
 const uid = (prefix: string) => `${prefix}-${String(++_seq).padStart(3, "0")}`;
@@ -66,9 +68,11 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       registrationId: "REG-001",
       receiptNo: "",
       method: "Others",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
       paymentStatus: "Pending",
-      lineItems: [
-        { id: "PI-001", participantGroupId: "PG-001", programName: "Men's Singles", amount: 80, refundedAmount: 0, refundStatus: "None" }
+      items: [
+        { id: "PI-001", participantGroupId: "PG-001", description: "", programName: "Men's Singles", amount: 80, itemStatus: "Success" }
       ]
     }
   },
@@ -128,10 +132,12 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       registrationId: "REG-002",
       receiptNo: "RCP-0001",
       method: "PayNow",
-      paymentStatus: "Paid",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "Success",
       paidDate: "2026-01-12",
-      lineItems: [
-        { id: "PI-002", participantGroupId: "PG-002", programName: "Men's Doubles", amount: 120, refundedAmount: 0, refundStatus: "None" }
+      items: [
+        { id: "PI-002", participantGroupId: "PG-002", description: "", programName: "Men's Doubles", amount: 120, itemStatus: "Success" }
       ]
     }
   },
@@ -188,11 +194,13 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       id: "PAY-003",
       registrationId: "REG-003",
       receiptNo: "RCP-0002",
-      method: "Credit Card",
-      paymentStatus: "Paid",
+      method: "CreditCard",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "Success",
       paidDate: "2026-01-13",
-      lineItems: [
-        { id: "PI-003", participantGroupId: "PG-003", programName: "Mixed Doubles", amount: 120, refundedAmount: 0, refundStatus: "None" }
+      items: [
+        { id: "PI-003", participantGroupId: "PG-003", description: "", programName: "Mixed Doubles", amount: 120, itemStatus: "Success" }
       ]
     }
   },
@@ -279,12 +287,14 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       registrationId: "REG-004",
       receiptNo: "RCP-0003",
       method: "Cash",
-      paymentStatus: "Paid",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "Success",
       paidDate: "2026-01-16",
       remarks: "Cash collected at counter",
-      lineItems: [
-        { id: "PI-004", participantGroupId: "PG-004", programName: "Men's Singles",  amount: 80,  refundedAmount: 0, refundStatus: "None" },
-        { id: "PI-005", participantGroupId: "PG-005", programName: "Men's Doubles",  amount: 120, refundedAmount: 0, refundStatus: "None" }
+      items: [
+        { id: "PI-004", participantGroupId: "PG-004", description: "", programName: "Men's Singles",  amount: 80, itemStatus: "Success" },
+        { id: "PI-005", participantGroupId: "PG-005", description: "", programName: "Men's Doubles",  amount: 120, itemStatus: "Success" }
       ]
     }
   },
@@ -330,19 +340,18 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       id: "PAY-005",
       registrationId: "REG-005",
       receiptNo: "RCP-0004",
-      method: "Credit Card",
-      paymentStatus: "Refunded",
+      method: "CreditCard",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "FullyRefunded",
       paidDate: "2026-01-08",
-      lineItems: [
+      items: [
         {
           id: "PI-006",
           participantGroupId: "PG-006",
           programName: "Women's Singles",
           amount: 80,
-          refundedAmount: 80,
-          refundStatus: "Full",
-          refundDate: "2026-01-20",
-          refundReason: "Participant withdrew due to injury"
+          itemStatus: "Refunded"
         }
       ]
     }
@@ -426,11 +435,13 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       registrationId: "REG-006",
       receiptNo: "RCP-0005",
       method: "PayNow",
-      paymentStatus: "Partially Refunded",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "PartiallyRefunded",
       paidDate: "2026-01-18",
-      lineItems: [
-        { id: "PI-007", participantGroupId: "PG-007", programName: "Women's Singles", amount: 80,  refundedAmount: 0,  refundStatus: "None" },
-        { id: "PI-008", participantGroupId: "PG-008", programName: "Mixed Doubles",   amount: 120, refundedAmount: 120, refundStatus: "Full", refundDate: "2026-01-25", refundReason: "Partner withdrew from Mixed Doubles" }
+      items: [
+        { id: "PI-007", participantGroupId: "PG-007", description: "", programName: "Women's Singles", amount: 80,  itemStatus: "Success" },
+        { id: "PI-008", participantGroupId: "PG-008", description: "", programName: "Mixed Doubles",   amount: 120, itemStatus: "Refunded" }
       ]
     }
   },
@@ -493,12 +504,14 @@ export const MOCK_REGISTRATIONS: Registration[] = [
       registrationId: "REG-007",
       receiptNo: "RCP-0006",
       method: "PayNow",
-      paymentStatus: "Paid",
+      gateway: "Manual",
+      createdAt: "2026-01-10T09:00:00Z",
+      paymentStatus: "Success",
       paidDate: "2026-02-01",
-      lineItems: [
+      items: [
         // per_player: one line item per participant, participantId populated
-        { id: "PI-009", participantGroupId: "PG-009", participantId: "PART-013", playerName: "Ng Swee Huat",  programName: "Mixed Doubles (per player)", amount: 60, refundedAmount: 0, refundStatus: "None" },
-        { id: "PI-010", participantGroupId: "PG-009", participantId: "PART-014", playerName: "Tan Siew Lin", programName: "Mixed Doubles (per player)", amount: 60, refundedAmount: 0, refundStatus: "None" },
+        { id: "PI-009", participantGroupId: "PG-009", description: "", participantId: "PART-013", playerName: "Ng Swee Huat",  programName: "Mixed Doubles (per player)", amount: 60, itemStatus: "Success" },
+        { id: "PI-010", participantGroupId: "PG-009", description: "", participantId: "PART-014", playerName: "Tan Siew Lin", programName: "Mixed Doubles (per player)", amount: 60, itemStatus: "Success" },
       ]
     }
   },

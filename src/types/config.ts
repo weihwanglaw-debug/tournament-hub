@@ -296,35 +296,14 @@ export interface CartEntry {
   participants: Participant[];
 }
 
-export type PaymentMethod = "Credit Card" | "PayNow" | "Cash" | "Bank Transfer" | "Others";
-export type PaymentStatus = "Pending" | "Paid" | "Refunded" | "Partially Refunded";
-export type RefundStatus  = "None" | "Full" | "Partial";
-
-export interface PaymentLineItem {
-  id: string;
-  label: string;
-  amount: number;
-}
-
-// ── PaymentRecord (legacy shape used by Registrations.tsx, kept for compatibility) ──
-
-export interface PaymentRecord {
-  id:             string;
-  registrationId: string;
-  event:          string;
-  program:        string;
-  participants:   string;
-  method:         PaymentMethod;
-  paidDate:       string;
-  receiptNumber:  string;
-  paymentStatus:  PaymentStatus;
-  lineItems: {
-    id: string;
-    label: string;
-    amount: number;
-    refundedAmount: number;
-    refundStatus: RefundStatus;
-    refundDate?: string;
-    refundReason?: string;
-  }[];
-}
+// ── Payment types ─────────────────────────────────────────────────────────────
+// Single source of truth lives in registration.ts.
+// Import from there — do not duplicate here.
+//
+//   import type { PaymentStatus, ItemStatus, RefundStatus,
+//                 PaymentMethod, PaymentGateway,
+//                 Payment, PaymentItem, Refund,
+//                 PAYMENT_STATUS_LABEL } from "@/types/registration";
+//
+// PaymentRecord (legacy flat shape) has been removed.
+// Use Registration → Payment → PaymentItem[] from registration.ts instead.
