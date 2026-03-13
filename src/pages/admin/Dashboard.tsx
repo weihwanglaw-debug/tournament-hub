@@ -1,72 +1,92 @@
-import { useMemo } from "react";
+/**
+ * Dashboard.tsx — Admin overview.
+ *
+ * Registration stats come from apiGetRegistrationStats() — the stub is in
+ * registrationsApi.ts. In mock mode it computes from MOCK_REGISTRATIONS.
+ * In real mode it calls GET /api/registrations/stats.
+ * No config.json / mockStats needed here.
+ */
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import config from "@/data/config.json";
+import { apiGetRegistrationStats, apiGetEvents } from "@/lib/api";
+import type { RegistrationStats } from "@/lib/api";
 import type { TournamentEvent } from "@/types/config";
 import { getEventStatus } from "@/lib/eventUtils";
 import { getFixtureDashboardStats } from "@/lib/fixtureStatus";
-import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown } from "lucide-react";
-
-const mockStats = (config as unknown as { mockStats: Record<string, number> }).mockStats ?? {
-  totalRegistrations: 0, confirmed: 0, pending: 0, cancelled: 0,
-};
+import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown, RefreshCw } from "lucide-react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const events   = config.events as TournamentEvent[];
+
+  const [stats,   setStats]   = useState<RegistrationStats | null>(null);
+  const [events,  setEvents]  = useState<TournamentEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      apiGetRegistrationStats(),
+      apiGetEvents(),
+    ]).then(([statsRes, eventsRes]) => {
+      if (statsRes.data)  setStats(statsRes.data);
+      if (eventsRes.data) setEvents(eventsRes.data);
+      setLoading(false);
+    });
+  }, []);
 
   const openCount     = events.filter(e => getEventStatus(e) === "open").length;
   const upcomingCount = events.filter(e => getEventStatus(e) === "upcoming").length;
-  const fx            = useMemo(() => getFixtureDashboardStats(events), []);
+  const fx            = useMemo(() => getFixtureDashboardStats(events), [events]);
+  const pendingPay    = stats?.pendingPayments ?? 0;
 
   const metrics = [
     {
-      label: "Open Events",
-      value: openCount,
-      icon: CalendarCheck,
-      color: "var(--badge-open-text)",
-      bg:   "var(--badge-open-bg)",
+      label:  "Open Events",
+      value:  openCount,
+      icon:   CalendarCheck,
+      color:  "var(--badge-open-text)",
+      bg:     "var(--badge-open-bg)",
       border: openCount > 0 ? "var(--badge-open-text)" : "var(--color-table-border)",
-      sub: "Accepting registrations",
+      sub:    "Accepting registrations",
       action: null,
     },
     {
-      label: "Upcoming Events",
-      value: upcomingCount,
-      icon: CalendarDays,
-      color: "var(--badge-soon-text)",
-      bg:   "var(--badge-soon-bg)",
+      label:  "Upcoming Events",
+      value:  upcomingCount,
+      icon:   CalendarDays,
+      color:  "var(--badge-soon-text)",
+      bg:     "var(--badge-soon-bg)",
       border: upcomingCount > 0 ? "var(--badge-soon-text)" : "var(--color-table-border)",
-      sub: "Registration not yet open",
+      sub:    "Registration not yet open",
       action: null,
     },
     {
-      label: "Pending Payments",
-      value: mockStats.pending ?? 0,
-      icon: CreditCard,
-      color: "var(--badge-closed-text)",
-      bg:   (mockStats.pending ?? 0) > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
-      border: (mockStats.pending ?? 0) > 0 ? "var(--badge-closed-text)" : "var(--color-table-border)",
-      sub: "Awaiting payment confirmation",
+      label:  "Pending Payments",
+      value:  pendingPay,
+      icon:   CreditCard,
+      color:  "var(--badge-closed-text)",
+      bg:     pendingPay > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
+      border: pendingPay > 0 ? "var(--badge-closed-text)" : "var(--color-table-border)",
+      sub:    "Awaiting payment confirmation",
       action: "/admin/registrations",
     },
     {
-      label: "Pending Fixture Setup",
-      value: fx.pendingFixture,
-      icon: Zap,
-      color: "var(--badge-closed-text)",
-      bg:   fx.pendingFixture > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
+      label:  "Pending Fixture Setup",
+      value:  fx.pendingFixture,
+      icon:   Zap,
+      color:  "var(--badge-closed-text)",
+      bg:     fx.pendingFixture > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
       border: fx.pendingFixture > 0 ? "var(--badge-closed-text)" : "var(--color-table-border)",
-      sub: "Reg. closed — no fixture generated",
+      sub:    "Reg. closed — no fixture generated",
       action: "/admin/fixtures",
     },
     {
-      label: "Pending Result Input",
-      value: fx.pendingResults,
-      icon: ClipboardList,
-      color: "var(--badge-soon-text)",
-      bg:   fx.pendingResults > 0 ? "var(--badge-soon-bg)" : "var(--color-row-hover)",
+      label:  "Pending Result Input",
+      value:  fx.pendingResults,
+      icon:   ClipboardList,
+      color:  "var(--badge-soon-text)",
+      bg:     fx.pendingResults > 0 ? "var(--badge-soon-bg)" : "var(--color-row-hover)",
       border: fx.pendingResults > 0 ? "var(--badge-soon-text)" : "var(--color-table-border)",
-      sub: "Scheduled matches past due",
+      sub:    "Scheduled matches past due",
       action: "/admin/fixtures",
     },
   ];
@@ -84,8 +104,7 @@ export default function Dashboard() {
             <div className="p-5 h-full"
               style={{ border: `2px solid ${m.border}`, backgroundColor: m.bg }}>
               <div className="flex items-start gap-3 mb-3">
-                <div className="p-2 flex-shrink-0"
-                  style={{ backgroundColor: m.color }}>
+                <div className="p-2 flex-shrink-0" style={{ backgroundColor: m.color }}>
                   <m.icon className="h-4 w-4 text-white" />
                 </div>
                 <p className="text-xs font-medium opacity-70 leading-tight pt-1">{m.label}</p>
@@ -96,7 +115,13 @@ export default function Dashboard() {
                   </span>
                 )}
               </div>
-              <p className="font-heading font-bold text-3xl mb-1" style={{ color: m.color }}>{m.value}</p>
+              {loading ? (
+                <div className="flex items-center gap-2 h-9">
+                  <RefreshCw className="h-4 w-4 animate-spin opacity-30" />
+                </div>
+              ) : (
+                <p className="font-heading font-bold text-3xl mb-1" style={{ color: m.color }}>{m.value}</p>
+              )}
               <p className="text-xs opacity-50">{m.sub}</p>
             </div>
           );
@@ -132,9 +157,12 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <p className="text-xs mt-6 opacity-35">
-        Pending payments sourced from mockStats. Fixture counts are live from generated fixtures. Pending results = scheduled date ≤ today with no result entered.
-      </p>
+      {stats && (
+        <p className="text-xs mt-6 opacity-35">
+          {stats.totalRegistrations} total registrations · {stats.confirmed} confirmed · {stats.pending} pending.
+          Fixture counts are live from generated fixtures. Pending results = scheduled date ≤ today with no result entered.
+        </p>
+      )}
     </div>
   );
 }

@@ -22,14 +22,14 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!email || !password) {
       setError("Please fill in all fields.");
       return;
     }
-    const err = login(email, password);
+    const err = await login(email, password);
     if (err) {
       setError(err);
     } else {

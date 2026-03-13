@@ -1,10 +1,17 @@
 /**
- * LiveConfigContext — wraps config.json values that can be edited at runtime
- * via MasterConfig. Components that read these values use this context instead
- * of importing config.json directly.
+ * LiveConfigContext — runtime-editable system configuration.
+ *
+ * Reads initial values from apiGetConfig() (which in mock mode reads config.json,
+ * and in real mode calls GET /api/config). Components that need branding, hero
+ * copy, or payment currency use useLiveConfig() — never import config.json directly.
+ *
+ * MasterConfig.tsx writes changes via apiUpdateConfig(), which updates both the
+ * in-memory store here and (in real mode) persists to the DB.
+ *
+ * MOCK → REAL: swap function bodies in configApi.ts only. This file never changes.
  */
-import React, { createContext, useContext, useState, ReactNode } from "react";
-import rawConfig from "@/data/config.json";
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { apiGetConfig, apiUpdateConfig } from "@/lib/api";
 
 export interface LiveConfig {
   appName:       string;
@@ -19,37 +26,50 @@ export interface LiveConfig {
 }
 
 interface LiveConfigState {
-  cfg: LiveConfig;
-  update: (key: keyof LiveConfig, value: string) => void;
+  cfg:     LiveConfig;
+  loading: boolean;
+  update:  (key: keyof LiveConfig, value: string) => Promise<void>;
 }
 
-const defaults: LiveConfig = {
-  appName:       rawConfig.branding.appName,
-  logoUrl:       rawConfig.branding.logoUrl,
-  heroTitle:     rawConfig.hero.title,
-  heroSubtitle:  rawConfig.hero.subtitle,
-  heroImageUrl:  "",
-  currency:      rawConfig.payment.currency,
-  contactEmail:  rawConfig.footer.contactEmail,
-  copyrightText: rawConfig.footer.copyrightText,
-  consentText:   rawConfig.consentText,
+// Fallback defaults used only during the initial load flash
+const EMPTY: LiveConfig = {
+  appName: "", logoUrl: "", heroTitle: "", heroSubtitle: "",
+  heroImageUrl: "", currency: "SGD", contactEmail: "",
+  copyrightText: "", consentText: "",
 };
 
 const LiveConfigContext = createContext<LiveConfigState>({
-  cfg: defaults,
-  update: () => {},
+  cfg:     EMPTY,
+  loading: true,
+  update:  async () => {},
 });
 
 export const useLiveConfig = () => useContext(LiveConfigContext);
 
 export const LiveConfigProvider = ({ children }: { children: ReactNode }) => {
-  const [cfg, setCfg] = useState<LiveConfig>(defaults);
+  const [cfg,     setCfg]     = useState<LiveConfig>(EMPTY);
+  const [loading, setLoading] = useState(true);
 
-  const update = (key: keyof LiveConfig, value: string) =>
-    setCfg(prev => ({ ...prev, [key]: value }));
+  // ── Load config on mount ─────────────────────────────────────────────────
+  // MOCK: reads config.json via configApi._config in-memory store.
+  // REAL: fetches GET /api/config — no change needed here.
+  useEffect(() => {
+    apiGetConfig().then(result => {
+      if (result.data) setCfg(result.data);
+      setLoading(false);
+    });
+  }, []);
+
+  // ── Update one field ─────────────────────────────────────────────────────
+  // Optimistic update: apply locally first, then persist via API.
+  const update = async (key: keyof LiveConfig, value: string): Promise<void> => {
+    setCfg(prev => ({ ...prev, [key]: value }));   // optimistic
+    const result = await apiUpdateConfig({ [key]: value });
+    if (result.data) setCfg(result.data);           // reconcile with server value
+  };
 
   return (
-    <LiveConfigContext.Provider value={{ cfg, update }}>
+    <LiveConfigContext.Provider value={{ cfg, loading, update }}>
       {children}
     </LiveConfigContext.Provider>
   );
