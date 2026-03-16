@@ -1,14 +1,24 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import config from "@/data/config.json";
 import type { TournamentEvent } from "@/types/config";
+import { apiGetEvents } from "@/lib/api";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import { Plus, Eye, Users, MoreVertical } from "lucide-react";
 
 export default function AdminEvents() {
   const navigate = useNavigate();
-  const events = config.events as TournamentEvent[];
+  const [events,  setEvents]  = useState<TournamentEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiGetEvents().then(r => { if (r.data) setEvents(r.data); }).finally(() => setLoading(false));
+  }, []);
+
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading events…</div>
+  );
 
   const [filterStatus, setFilterStatus] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");

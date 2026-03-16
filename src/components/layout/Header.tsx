@@ -22,8 +22,8 @@ export default function Header() {
   // Determine if on a page with hero (landing or event detail)
   const isHeroPage = location.pathname === "/" || location.pathname.startsWith("/event/");
 
-  const handleLogout = async () => {
-    await logout();
+  const handleLogout = () => {
+    logout();
     setMenuOpen(false);
     navigate("/");
   };

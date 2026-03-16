@@ -25,8 +25,10 @@
  *            EventEdit.tsx (admin), Dashboard.tsx, Fixtures.tsx (admin)
  */
 
-import { ok, err, delay }   from "./_base";
-import type { ApiResult }    from "./_base";
+// // Public (no token): apiGetEvents, apiGetEvent
+// Admin (Bearer token): apiCreateEvent, apiUpdateEvent, apiDeleteEvent, apiAddProgram, apiUpdateProgram, apiDeleteProgram
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
+import type { ApiResult } from "./_base";
 import type { TournamentEvent, Program } from "@/types/config";
 import rawConfig              from "@/data/config.json";
 
@@ -59,7 +61,7 @@ export async function apiGetEvents(filters?: {
   // if (filters?.status)   params.set("status",   filters.status);
   // if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
   // if (filters?.dateTo)   params.set("dateTo",   filters.dateTo);
-  // const res = await fetch(`/api/events?${params}`);
+  // const res = await fetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
   // if (!res.ok) return err("FETCH_FAILED", "Failed to load events.");
   // return ok(await res.json());
 }
@@ -77,7 +79,7 @@ export async function apiGetEvent(eventId: string): Promise<ApiResult<Tournament
   return ok({ ...ev });
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}`);
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, { headers: publicHeaders() });
   // if (!res.ok) return err("NOT_FOUND", "Event not found.");
   // return ok(await res.json());
 }
@@ -101,9 +103,9 @@ export async function apiCreateEvent(
   return ok(newEvent);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/events", {
+  // const res = await fetch(`${API_BASE}/api/events`, {
   //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify(payload),
   // });
   // if (!res.ok) return err("CREATE_FAILED", "Failed to create event.");
@@ -127,9 +129,9 @@ export async function apiUpdateEvent(
   return ok({ ..._events[idx] });
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}`, {
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, {
   //   method: "PUT",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify(patch),
   // });
   // if (!res.ok) return err("UPDATE_FAILED", "Failed to update event.");
@@ -149,7 +151,7 @@ export async function apiDeleteEvent(eventId: string): Promise<ApiResult<null>> 
   return ok(null);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, { method: "DELETE", headers: adminHeaders() });
   // if (!res.ok) return err("DELETE_FAILED", "Failed to delete event.");
   // return ok(null);
 }
@@ -180,7 +182,7 @@ export async function apiAddProgram(
   return ok(newProgram);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}/programs`, {
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs`, {
   //   method: "POST",
   //   headers: { "Content-Type": "application/json" },
   //   body: JSON.stringify(payload),
@@ -210,7 +212,7 @@ export async function apiUpdateProgram(
   return ok({ ..._events[evIdx].programs[pIdx] });
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}/programs/${programId}`, {
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
   //   method: "PUT",
   //   headers: { "Content-Type": "application/json" },
   //   body: JSON.stringify(patch),
@@ -236,7 +238,7 @@ export async function apiDeleteProgram(
   return ok(null);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/events/${eventId}/programs/${programId}`, {
+  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
   //   method: "DELETE",
   // });
   // if (!res.ok) return err("DELETE_FAILED", "Failed to delete program.");

@@ -46,7 +46,7 @@ export async function apiGetConfig(): Promise<ApiResult<LiveConfig>> {
   return ok({ ..._config });
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/config");
+  // const res = await fetch(`${API_BASE}/api/config`, { headers: publicHeaders() });
   // if (!res.ok) return err("FETCH_FAILED", "Failed to load configuration.");
   // return ok(await res.json());
 }
@@ -66,9 +66,9 @@ export async function apiUpdateConfig(
   return ok({ ..._config });
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/config", {
+  // const res = await fetch(`${API_BASE}/api/config`, {
   //   method: "PUT",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify(patch),
   // });
   // if (!res.ok) return err("UPDATE_FAILED", "Failed to save configuration.");

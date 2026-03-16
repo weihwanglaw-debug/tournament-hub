@@ -42,9 +42,9 @@ export async function apiLogin(
   return ok({ user, token: "mock-jwt-token" });
 
   // ── REAL (swap in when backend ready) ─────────────────────────────────────
-  // const res = await fetch("/api/auth/login", {
+  // const res = await fetch(`${API_BASE}/api/auth/login`, {
   //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: publicHeaders(),
   //   body: JSON.stringify({ email, password }),
   // });
   // if (!res.ok) return err("INVALID_CREDENTIALS", "Invalid email or password.");
@@ -62,7 +62,7 @@ export async function apiLogout(): Promise<ApiResult<null>> {
   return ok(null);   // nothing to invalidate in mock
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // await fetch("/api/auth/logout", { method: "POST" });
+  // await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: adminHeaders() });
   // return ok(null);
 }
 
@@ -80,8 +80,8 @@ export async function apiGetMe(token: string): Promise<ApiResult<AdminUser>> {
   return err("NOT_IMPLEMENTED", "Mock: validate session in AuthContext directly.");
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/auth/me", {
-  //   headers: { Authorization: `Bearer ${token}` },
+  // const res = await fetch(`${API_BASE}/api/auth/me`, {
+  //   headers: adminHeaders(),
   // });
   // if (!res.ok) return err("UNAUTHORIZED", "Session expired.");
   // return ok(await res.json());
@@ -106,9 +106,10 @@ export async function apiChangePassword(
   return ok(null);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/auth/change-password", {
+  // const res = await fetch(`${API_BASE}/api/auth/change-password`, {
   //   method: "POST",
   //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify({ userId, currentPassword, newPassword }),
   // });
   // if (!res.ok) return err("INVALID_CREDENTIALS", "Current password is incorrect.");

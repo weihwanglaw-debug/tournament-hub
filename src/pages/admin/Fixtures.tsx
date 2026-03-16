@@ -12,8 +12,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Loader2, Download, Search, X } from "lucide-react";
-import config  from "@/data/config.json";
-import sbaData from "@/data/sba-rankings.json";
 import type { TournamentEvent, SeedEntry, BracketState, MatchEntry, WizardConfig, SbaRanking } from "@/types/config";
 import { isBracketLocked, isPhaseComplete, getAllMatches, getCurrentHeatRound } from "@/lib/fixtureEngine";
 import {
@@ -25,6 +23,7 @@ import {
 import type { ApiError } from "@/lib/fixtureApi";
 import { getProgramFixtureInfo } from "@/lib/fixtureStatus";
 import { exportParticipantsCsv } from "@/lib/exportCsv";
+import { apiGetEvents, apiGetSbaRankings } from "@/lib/api";
 
 import { FixtureWizard } from "@/components/admin/fixtures/WizardSteps";
 import type { WizardResult } from "@/components/admin/fixtures/WizardSteps";
@@ -34,8 +33,6 @@ import { ResultsTab }  from "@/components/admin/fixtures/ResultsTab";
 import { ScoreModal }  from "@/components/admin/fixtures/ScoreModal";
 import { HeatsTab }    from "@/components/admin/fixtures/HeatsTab";
 import { FG }          from "@/components/admin/fixtures/shared";
-
-const SBA_RANKINGS: SbaRanking[] = sbaData as SbaRanking[];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -228,7 +225,15 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
 // ═════════════════════════════════════════════════════════════════════════════
 
 export default function AdminFixtures() {
-  const allEvents = (config.events as TournamentEvent[]).filter(e => e.isSports);
+  const [allEvents,    setAllEvents]    = useState<TournamentEvent[]>([]);
+  const [sbaRankings,  setSbaRankings]  = useState<SbaRanking[]>([]);
+
+  // Load events + SBA rankings from API on mount
+  // Mock: in-memory stores; Real: swap api function bodies — no changes here
+  useEffect(() => {
+    apiGetEvents().then(r => { if (r.data) setAllEvents(r.data.filter(e => e.isSports)); });
+    apiGetSbaRankings().then(r => { if (r.data) setSbaRankings(r.data); });
+  }, []);
   const { toast, Toasts } = useToasts();
 
   // Build flat program rows
@@ -587,7 +592,7 @@ export default function AdminFixtures() {
           {/* External mode */}
           {selRow.mode === "external" && (
             <ExternalPanel
-              participants={selRow.participants} sbaRankings={SBA_RANKINGS}
+              participants={selRow.participants} sbaRankings={sbaRankings}
               isBadminton={isBadminton} eventName={selRow.eventName} programName={selRow.programName}
             />
           )}
@@ -611,7 +616,7 @@ export default function AdminFixtures() {
                 <div className="p-6" style={{ border: "2px solid var(--color-primary)" }}>
                   <FixtureWizard
                     participants={selRow.participants}
-                    sbaRankings={SBA_RANKINGS}
+                    sbaRankings={sbaRankings}
                     isBadminton={isBadminton}
                     onComplete={handleWizardComplete}
                     onCancel={() => setShowWizard(false)}

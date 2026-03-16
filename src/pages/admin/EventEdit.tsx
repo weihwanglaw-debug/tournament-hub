@@ -1,26 +1,59 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2, Scissors, MoreVertical } from "lucide-react";
-import config from "@/data/config.json";
 import type { TournamentEvent, Program } from "@/types/config";
 import { formatDate, getEventStatus } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import ProgramModal from "@/components/admin/ProgramModal";
 import SeedingModal from "@/components/admin/SeedingModal";
 import { Switch } from "@/components/ui/switch";
+import {
+  apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
+  apiAddProgram, apiUpdateProgram, apiDeleteProgram,
+} from "@/lib/api";
 
 const SPORT_TYPES = ["Badminton", "Football", "Basketball", "Volleyball", "Swimming", "Athletics", "Other"];
 const MAX_IMAGE_MB = 2;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
-function generateEventId() { return `evt-${Date.now().toString(36)}`; }
-function generateProgramId() { return `prog-${Date.now().toString(36)}`; }
 
 export default function EventEdit() {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const isNew = eventId === "new";
-  const existing = (config.events as TournamentEvent[]).find(e => e.id === eventId);
+  const [event,    setEvent]   = useState<TournamentEvent | null>(null);
+  const [loading,  setLoading] = useState(!isNew);
+  const [saving,   setSaving]  = useState(false);
+  const [apiError, setApiError] = useState("");
+
+  useEffect(() => {
+    if (isNew) return;
+    apiGetEvent(eventId!).then(r => {
+      if (r.error) { setApiError(r.error.message); return; }
+      const ev = r.data!;
+      setEvent(ev);
+      setPrograms(ev.programs);
+      setGallery(ev.galleryUrls || []);
+      setForm({
+        name:           ev.name,
+        description:    ev.description || "",
+        venue:          ev.venue,
+        venueAddress:   ev.venueAddress || "",
+        eventStartDate: ev.eventStartDate,
+        eventEndDate:   ev.eventEndDate || "",
+        openDate:       ev.openDate,
+        closeDate:      ev.closeDate,
+        maxParticipants: ev.maxParticipants || 100,
+        sponsorInfo:    ev.sponsorInfo || "",
+        bannerUrl:      ev.bannerUrl || "",
+        prospectusUrl:  ev.prospectusUrl || "",
+        consentStatement: ev.consentStatement || "",
+        isSports:       ev.isSports ?? true,
+        sportType:      ev.sportType || "Badminton",
+        fixtureMode:    (ev.fixtureMode || "internal") as "internal" | "external" | "not_required",
+      });
+    }).finally(() => setLoading(false));
+  }, [eventId, isNew]);
 
   const [editing, setEditing] = useState(isNew);
   const [programModalOpen, setProgramModalOpen] = useState(false);
@@ -28,27 +61,18 @@ export default function EventEdit() {
   const [seedingOpen, setSeedingOpen] = useState(false);
   const [seedingProgramId, setSeedingProgramId] = useState("");
   const [openAction, setOpenAction] = useState<string | null>(null);
-  const [programs, setPrograms] = useState<Program[]>(existing?.programs || []);
-  const [gallery, setGallery] = useState<string[]>(existing?.galleryUrls || []);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [gallery, setGallery] = useState<string[]>([]);
   const [galleryError, setGalleryError] = useState("");
   const galleryRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
-    name: existing?.name || "",
-    description: existing?.description || "",
-    venue: existing?.venue || "",
-    venueAddress: existing?.venueAddress || "",
-    eventStartDate: existing?.eventStartDate || "",
-    eventEndDate: existing?.eventEndDate || "",
-    openDate: existing?.openDate || "",
-    closeDate: existing?.closeDate || "",
-    maxParticipants: existing?.maxParticipants || 100,
-    sponsorInfo: existing?.sponsorInfo || "",
-    bannerUrl: existing?.bannerUrl || "",
-    prospectusUrl: existing?.prospectusUrl || "",
-    isSports: existing?.isSports ?? true,
-    sportType: existing?.sportType || "Badminton",
-    fixtureMode: existing?.fixtureMode || "internal" as "internal" | "external" | "not_required",
+    name: "", description: "", venue: "", venueAddress: "",
+    eventStartDate: "", eventEndDate: "", openDate: "", closeDate: "",
+    maxParticipants: 100, sponsorInfo: "", bannerUrl: "", prospectusUrl: "",
+    consentStatement: "",
+    isSports: true, sportType: "Badminton",
+    fixtureMode: "internal" as "internal" | "external" | "not_required",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -89,18 +113,45 @@ export default function EventEdit() {
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = () => {
-    if (!validate()) return;
-    if (isNew) {
-      const newId = generateEventId();
-      alert(`[MOCK] Event "${form.name}" created with ID ${newId}.`);
-      navigate("/admin/events");
-      return;
-    }
-    setEditing(false);
+  const handleDeleteEvent = async () => {
+    if (!eventId || isNew) return;
+    if (!window.confirm("Delete this event permanently? This cannot be undone.")) return;
+    setSaving(true);
+    const r = await apiDeleteEvent(eventId);
+    setSaving(false);
+    if (r.error) { setApiError(r.error.message); return; }
+    navigate("/admin/events");
   };
 
-  const status = existing ? getEventStatus(existing) : undefined;
+  const handleSave = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    setApiError("");
+    try {
+      const payload = { ...form, galleryUrls: gallery, programs };
+      if (isNew) {
+        const r = await apiCreateEvent(payload);
+        if (r.error) { setApiError(r.error.message); return; }
+        navigate("/admin/events");
+      } else {
+        const r = await apiUpdateEvent(eventId!, payload);
+        if (r.error) { setApiError(r.error.message); return; }
+        setEvent(r.data!);
+        setEditing(false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const status = event ? getEventStatus(event) : undefined;
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading event…</div>
+  );
+  if (!isNew && !event && !loading) return (
+    <div className="py-20 text-center opacity-40 text-sm">Event not found.</div>
+  );
 
   return (
     <div>
@@ -113,17 +164,24 @@ export default function EventEdit() {
             </button>
             <div>
               <h1 className="font-bold text-2xl">
-                {isNew ? "Create New Event" : existing?.name || "Event"}
+                {isNew ? "Create New Event" : event?.name || "Event"}
               </h1>
               {status && <div className="mt-1"><StatusBadge status={status} /></div>}
             </div>
           </div>
           <div className="flex gap-3">
             {!isNew && !editing && (
-              <button onClick={() => setEditing(true)}
-                className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
-                <Edit2 className="h-4 w-4" /> Edit Event
-              </button>
+              <>
+                <button onClick={handleDeleteEvent} disabled={saving}
+                  className="btn-outline flex items-center gap-2 px-5 py-2.5 text-sm font-medium"
+                  style={{ color: "var(--badge-closed-text)", borderColor: "var(--badge-closed-text)" }}>
+                  <Trash2 className="h-4 w-4" /> Delete Event
+                </button>
+                <button onClick={() => setEditing(true)}
+                  className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
+                  <Edit2 className="h-4 w-4" /> Edit Event
+                </button>
+              </>
             )}
             {editing && (
               <>
@@ -133,9 +191,9 @@ export default function EventEdit() {
                     <X className="h-4 w-4" /> Cancel
                   </button>
                 )}
-                <button onClick={handleSave}
-                  className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold">
-                  <Save className="h-4 w-4" /> Save Event
+                <button onClick={handleSave} disabled={saving}
+                  className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:opacity-50">
+                  <Save className="h-4 w-4" /> {saving ? "Saving…" : "Save Event"}
                 </button>
               </>
             )}
@@ -386,11 +444,29 @@ export default function EventEdit() {
       <ProgramModal
         open={programModalOpen}
         onClose={() => { setProgramModalOpen(false); setEditingProgram(null); }}
-        onSave={(savedProgram: Program) => {
-          if (editingProgram) {
-            setPrograms(prev => prev.map(p => p.id === savedProgram.id ? savedProgram : p));
+        onSave={async (savedProgram: Program) => {
+          if (!isNew && eventId && eventId !== "new") {
+            if (editingProgram) {
+              const r = await apiUpdateProgram(eventId, savedProgram.id, savedProgram);
+              if (r.data) setPrograms(prev => prev.map(p => p.id === r.data!.id ? r.data! : p));
+            } else {
+              const { id: _id, currentParticipants: _cp, participantSeeds: _ps, ...payload } = savedProgram;
+              void _id; void _cp; void _ps;
+              const r = await apiAddProgram(eventId, payload);
+              if (r.data) setPrograms(prev => [...prev, r.data!]);
+            }
           } else {
-            setPrograms(prev => [...prev, { ...savedProgram, id: generateProgramId(), currentParticipants: 0 }]);
+            // New event — manage locally until event is saved
+            if (editingProgram) {
+              setPrograms(prev => prev.map(p => p.id === savedProgram.id ? savedProgram : p));
+            } else {
+              setPrograms(prev => [...prev, {
+                ...savedProgram,
+                id: `prog-temp-${Date.now().toString(36)}`,
+                currentParticipants: 0,
+                participantSeeds: [],
+              }]);
+            }
           }
           setProgramModalOpen(false);
           setEditingProgram(null);
@@ -398,7 +474,7 @@ export default function EventEdit() {
         program={editingProgram}
         isBadminton={isBadminton}
       />
-      <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} programId={seedingProgramId} />
+      <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} eventId={eventId ?? ""} programId={seedingProgramId} />
     </div>
   );
 }

@@ -51,7 +51,7 @@ export async function apiGetSbaRankings(filters?: {
   // ── REAL ──────────────────────────────────────────────────────────────────
   // const params = new URLSearchParams();
   // if (filters?.category) params.set("category", filters.category);
-  // const res = await fetch(`/api/sba/rankings?${params}`);
+  // const res = await fetch(`${API_BASE}/api/sba/rankings?${params}`, { headers: publicHeaders() });
   // if (!res.ok) return err("FETCH_FAILED", "Failed to load SBA rankings.");
   // return ok(await res.json());
 }
@@ -78,7 +78,7 @@ export async function apiGetSbaMember(sbaId: string): Promise<ApiResult<SbaMembe
   return ok(member);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/sba/members/${sbaId}`);
+  // const res = await fetch(`${API_BASE}/api/sba/members/${sbaId}`, { headers: publicHeaders() });
   // if (!res.ok) return err("NOT_FOUND", "SBA member not found.");
   // return ok(await res.json());
 }
@@ -98,7 +98,7 @@ export async function apiSearchSbaMembers(name: string): Promise<ApiResult<SbaMe
   return ok(results);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/sba/members?name=${encodeURIComponent(name)}`);
+  // const res = await fetch(`${API_BASE}/api/sba/members?name=${encodeURIComponent(name)}`, { headers: publicHeaders() });
   // if (!res.ok) return err("SEARCH_FAILED", "SBA member search failed.");
   // return ok(await res.json());
 }

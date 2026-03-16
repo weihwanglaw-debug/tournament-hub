@@ -28,7 +28,7 @@ export async function apiGetUsers(): Promise<ApiResult<AdminUser[]>> {
   return ok(mockUserStore.getAll());
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/admin/users");
+  // const res = await fetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders() });
   // if (!res.ok) return err("FETCH_FAILED", "Failed to load users.");
   // return ok(await res.json());
 }
@@ -50,9 +50,9 @@ export async function apiCreateUser(
   return ok(newUser);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch("/api/admin/users", {
+  // const res = await fetch(`${API_BASE}/api/admin/users`, {
   //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify(payload),
   // });
   // if (!res.ok) return err("CREATE_FAILED", "Failed to create user.");
@@ -81,9 +81,9 @@ export async function apiUpdateUser(
   return ok(updated);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/admin/users/${id}`, {
+  // const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
   //   method: "PUT",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify(patch),
   // });
   // if (!res.ok) return err("UPDATE_FAILED", "Failed to update user.");
@@ -108,7 +108,7 @@ export async function apiDeleteUser(
   return ok(null);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+  // const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: "DELETE", headers: adminHeaders() });
   // if (!res.ok) return err("DELETE_FAILED", "Failed to delete user.");
   // return ok(null);
 }
@@ -130,9 +130,9 @@ export async function apiResetUserPassword(
   return ok(null);
 
   // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`/api/admin/users/${id}/reset-password`, {
+  // const res = await fetch(`${API_BASE}/api/admin/users/${id}/reset-password`, {
   //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
+  //   headers: adminHeaders(),
   //   body: JSON.stringify({ newPassword }),
   // });
   // if (!res.ok) return err("RESET_FAILED", "Failed to reset password.");

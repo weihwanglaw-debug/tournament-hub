@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight, MapPin, Calendar } from "lucide-react";
 import { motion } from "framer-motion";
-import config from "@/data/config.json";
 import type { TournamentEvent } from "@/types/config";
+import { apiGetEvents } from "@/lib/api";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import eventBanner1 from "@/assets/event-banner-1.jpg";
@@ -15,18 +15,23 @@ const FALLBACK_BANNERS = [eventBanner1, eventBanner2, eventBanner3];
 
 export default function EventCarousel() {
   const navigate = useNavigate();
-  const visibleEvents: TournamentEvent[] = (config.events as TournamentEvent[])
-    .filter((e) => {
-      const status = getEventStatus(e);
-      return status === "open" || status === "upcoming";
-    })
-    .sort((a, b) => {
-      const sA = getEventStatus(a);
-      const sB = getEventStatus(b);
-      if (sA === "open" && sB !== "open") return -1;
-      if (sA !== "open" && sB === "open") return 1;
-      return new Date(a.eventStartDate).getTime() - new Date(b.eventStartDate).getTime();
+  const [visibleEvents, setVisibleEvents] = useState<TournamentEvent[]>([]);
+
+  useEffect(() => {
+    apiGetEvents().then(r => {
+      if (!r.data) return;
+      setVisibleEvents(
+        r.data
+          .filter(e => { const s = getEventStatus(e); return s === "open" || s === "upcoming"; })
+          .sort((a, b) => {
+            const sA = getEventStatus(a), sB = getEventStatus(b);
+            if (sA === "open" && sB !== "open") return -1;
+            if (sA !== "open" && sB === "open") return 1;
+            return new Date(a.eventStartDate).getTime() - new Date(b.eventStartDate).getTime();
+          })
+      );
     });
+  }, []);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align: "start",

@@ -2,16 +2,24 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Edit2, Key, Trash2, Eye, EyeOff, Check, MoreVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { mockUserStore } from "@/data/mockUsers";
+import {
+  apiGetUsers, apiCreateUser, apiUpdateUser,
+  apiDeleteUser, apiResetUserPassword,
+} from "@/lib/api";
 import type { AdminUser } from "@/types/config";
 
 type ModalMode = "create" | "edit" | "reset" | null;
 
 export default function UserManagement() {
   const { user: currentUser } = useAuth();
-  const [, forceRender] = useState(0);
-  const refresh = () => forceRender(n => n + 1);
-  const users = mockUserStore.getAll();
+  const [users,   setUsers]   = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+
+  const loadUsers = () =>
+    apiGetUsers().then(r => { if (r.data) setUsers(r.data); }).finally(() => setLoading(false));
+
+  useEffect(() => { loadUsers(); }, []);
 
   const [modal, setModal] = useState<ModalMode>(null);
   const [target, setTarget] = useState<AdminUser | null>(null);
@@ -47,8 +55,7 @@ export default function UserManagement() {
       if (!fName.trim()) e.name = "Required";
       if (!fEmail.trim()) e.email = "Required";
       else if (!/\S+@\S+\.\S+/.test(fEmail)) e.email = "Invalid email";
-      const emailExists = mockUserStore.getAll().some(u => u.email === fEmail && u.id !== target?.id);
-      if (emailExists) e.email = "Email already in use";
+      // Duplicate email check is done server-side; API returns EMAIL_TAKEN error code
     }
     if (mode === "create" || mode === "reset") {
       if (!fPass.trim()) e.pass = "Required";
@@ -59,22 +66,62 @@ export default function UserManagement() {
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
     if (!validate(modal)) return;
-    if (modal === "create") { mockUserStore.add({ id: `u${Date.now()}`, name: fName, email: fEmail, role: fRole, password: fPass, lastLogin: "" }); }
-    else if (modal === "edit" && target) { mockUserStore.update(target.id, { name: fName, email: fEmail, role: fRole }); }
-    else if (modal === "reset" && target) { mockUserStore.update(target.id, { password: fPass }); }
-    refresh(); setModal(null);
+    setSaving(true);
+    setApiError("");
+    try {
+      if (modal === "create") {
+        const r = await apiCreateUser({ name: fName, email: fEmail, role: fRole, password: fPass, mustChangePassword: false });
+        if (r.error) {
+          if (r.error.code === "EMAIL_TAKEN") setErrors(p => ({ ...p, email: "Email already in use" }));
+          else setApiError(r.error.message);
+          return;
+        }
+      } else if (modal === "edit" && target) {
+        const r = await apiUpdateUser(target.id, { name: fName, email: fEmail, role: fRole });
+        if (r.error) {
+          if (r.error.code === "EMAIL_TAKEN") setErrors(p => ({ ...p, email: "Email already in use" }));
+          else setApiError(r.error.message);
+          return;
+        }
+      } else if (modal === "reset" && target) {
+        const r = await apiResetUserPassword(target.id, fPass);
+        if (r.error) { setApiError(r.error.message); return; }
+      }
+      await loadUsers();
+      setModal(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = () => { if (delConf) { mockUserStore.remove(delConf); refresh(); } setDelConf(null); };
+  const handleDelete = async () => {
+    if (!delConf || !currentUser) return;
+    const r = await apiDeleteUser(delConf, currentUser.id);
+    if (r.error) { setApiError(r.error.message); }
+    else { await loadUsers(); }
+    setDelConf(null);
+  };
 
   const isSelf = (u: AdminUser) => u.id === currentUser?.id;
   const roleLabel = (r: string) => r === "superadmin" ? "Super Admin" : "Event Admin";
   const roleBadge = (r: string) => ({ bg: r === "superadmin" ? "var(--color-primary)" : "var(--badge-soon-bg)", text: r === "superadmin" ? "var(--color-hero-text)" : "var(--badge-soon-text)" });
 
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading users…</div>
+  );
+
   return (
     <div>
+      {apiError && (
+        <div className="mb-4 px-4 py-3 text-sm font-medium"
+          style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)", border: "1px solid var(--badge-closed-text)" }}>
+          {apiError}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-8">
         <div className="admin-page-title" style={{ marginBottom: 0 }}><h1>User Management</h1></div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold"><Plus className="h-4 w-4" /> Add User</button>

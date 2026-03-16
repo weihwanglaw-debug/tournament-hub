@@ -38,8 +38,12 @@ export default function MasterConfig() {
     setEditValue(cfg[row.id]);
   };
 
-  const commitEdit = (id: keyof LiveConfig) => {
-    update(id, editValue);
+  const [saving, setSaving] = useState(false);
+
+  const commitEdit = async (id: keyof LiveConfig) => {
+    setSaving(true);
+    await update(id, editValue);   // persists via apiUpdateConfig() → PUT /api/config
+    setSaving(false);
     setEditId(null);
     setSaved(id);
     setTimeout(() => setSaved(null), 2000);
@@ -55,7 +59,7 @@ export default function MasterConfig() {
     <div>
       <div className="admin-page-title"><h1>Master Configuration</h1></div>
       <p className="text-xs opacity-50 mb-8 -mt-4">
-        Changes here apply live across the app. In production, values are persisted via PUT /api/config.
+        Changes are saved immediately via the API. In mock mode, values persist until page refresh.
       </p>
 
       {/* Group filter tabs */}
@@ -107,7 +111,7 @@ export default function MasterConfig() {
                             <input className="field-input text-sm w-full"
                               value={editValue} onChange={e => setEditValue(e.target.value)}
                               autoFocus
-                              onKeyDown={e => { if (e.key === "Enter") commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
+                              onKeyDown={e => { if (e.key === "Enter") void commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
                           )
                         ) : (
                           <span className={`text-sm ${row.type === "textarea" ? "whitespace-pre-wrap" : "truncate max-w-md block"} ${!cfg[row.id] ? "opacity-30 italic" : ""}`}>
@@ -132,7 +136,7 @@ export default function MasterConfig() {
                           <button onClick={() => startEdit(row)} title="Edit"
                             className="p-1.5 transition-opacity hover:opacity-70"
                             style={{ color: saved === row.id ? "var(--badge-open-text)" : "var(--color-primary)" }}>
-                            {saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
+                            {saving && editId === row.id ? "…" : saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
                           </button>
                         )}
                       </td>
@@ -160,7 +164,7 @@ export default function MasterConfig() {
                     ) : (
                       <button onClick={() => startEdit(row)} className="p-1.5"
                         style={{ color: saved === row.id ? "var(--badge-open-text)" : "var(--color-primary)" }}>
-                        {saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
+                        {saving && editId === row.id ? "…" : saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
                       </button>
                     )}
                   </div>
@@ -171,7 +175,7 @@ export default function MasterConfig() {
                     ) : (
                       <input className="field-input text-sm w-full"
                         value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus
-                        onKeyDown={e => { if (e.key === "Enter") commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
+                        onKeyDown={e => { if (e.key === "Enter") void commitEdit(row.id); if (e.key === "Escape") cancelEdit(); }} />
                     )
                   ) : (
                     <p className={`text-sm mt-1 ${!cfg[row.id] ? "opacity-30 italic" : ""}`}>

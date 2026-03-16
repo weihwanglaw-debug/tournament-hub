@@ -1,74 +1,94 @@
 /**
- * AuthContext.tsx — Authentication state for the app.
+ * AuthContext.tsx
  *
- * MOCK:  apiLogin / apiLogout delegate to mockUserStore internally.
- * REAL:  swap function bodies in authApi.ts only — this file never changes.
+ * Mock:  delegates to mockUserStore (login) + localStorage (session)
+ * Real:  swap the three commented fetch() blocks:
+ *          apiLogin()          → POST /auth/login
+ *          apiGetMe(token)     → GET  /auth/me   (session restore on boot)
+ *          apiLogout()         → POST /auth/logout
  *
- * login() is now async. Callers (LoginModal) must await it.
- * The signature change is intentional: sync login can't work once the real
- * backend requires a network round-trip.
+ * mustChangePassword is enforced here — any component that needs the flag
+ * can read it from user?.mustChangePassword.
+ *
+ * Token storage: localStorage("trs_token") for Bearer auth.
+ * Remove mock: delete mockUserStore import + mock blocks.
  */
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import type { AdminUser } from "@/types/config";
-import { apiLogin, apiLogout } from "@/lib/api";
+import { apiLogin, apiLogout, apiGetMe } from "@/lib/api";
+
+const TOKEN_KEY = "trs_token";
+const USER_KEY  = "trs_user";
 
 interface AuthState {
-  isAuthenticated: boolean;
-  user:   AdminUser | null;
-  login:  (email: string, password: string) => Promise<string | null>;  // null = success, string = error msg
-  logout: () => Promise<void>;
+  isAuthenticated:    boolean;
+  user:               AdminUser | null;
+  mustChangePassword: boolean;
+  login:   (email: string, password: string) => Promise<string | null>;
+  logout:  () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
-  isAuthenticated: false,
-  user:   null,
-  login:  async () => "Not initialised",
-  logout: async () => {},
+  isAuthenticated:    false,
+  user:               null,
+  mustChangePassword: false,
+  login:   async () => "Not initialised",
+  logout:  async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<AdminUser | null>(null);
+  const [user,  setUser]  = useState<AdminUser | null>(null);
+  const [ready, setReady] = useState(false);   // prevents flash of unauthenticated state
 
-  // ── Restore session on boot ──────────────────────────────────────────────
-  // Reads cached user from localStorage so the UI doesn't flash logged-out.
-  // MOCK: re-validates against in-memory mockUserStore (catches deleted users).
-  // REAL: replace the inner block with apiGetMe(token) to validate the JWT.
+  // ── Session restore on boot ────────────────────────────────────────────────
   useEffect(() => {
-    const saved = localStorage.getItem("trs_user");
-    if (!saved) return;
-    try {
-      const parsed: AdminUser = JSON.parse(saved);
-      // Dynamic import keeps the mock dep tree-shakeable when backend is live.
-      import("@/data/mockUsers").then(({ mockUserStore }) => {
-        const stillExists = mockUserStore.getAll().find(u => u.id === parsed.id);
-        if (stillExists) setUser(stillExists);
-        else             localStorage.removeItem("trs_user");
-      });
-    } catch {
-      localStorage.removeItem("trs_user");
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) { setReady(true); return; }
+
+    // MOCK: restore from localStorage snapshot ─────────────────────────────
+    // (Real: replace this block with the fetch() below)
+    const saved = localStorage.getItem(USER_KEY);
+    if (saved) {
+      try { setUser(JSON.parse(saved)); } catch { /* ignore */ }
     }
+    setReady(true);
+
+    // REAL: validate token against backend ──────────────────────────────────
+    // apiGetMe(token).then(r => {
+    //   if (r.data) setUser(r.data);
+    //   else { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
+    // }).finally(() => setReady(true));
   }, []);
 
-  // ── Login ────────────────────────────────────────────────────────────────
+  // ── Login ──────────────────────────────────────────────────────────────────
   const login = async (email: string, password: string): Promise<string | null> => {
-    const result = await apiLogin(email, password);
-    if (result.error) return result.error.message;
-    setUser(result.data.user);
-    localStorage.setItem("trs_user", JSON.stringify(result.data.user));
-    return null;   // success
+    const r = await apiLogin(email, password);
+    if (r.error) return r.error.message;
+
+    const { user: loggedIn, token } = r.data!;
+    setUser(loggedIn);
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(loggedIn));
+    return null;
   };
 
-  // ── Logout ───────────────────────────────────────────────────────────────
-  const logout = async (): Promise<void> => {
-    await apiLogout();   // REAL: invalidates JWT server-side
+  // ── Logout ─────────────────────────────────────────────────────────────────
+  const logout = async () => {
+    await apiLogout();            // no-op in mock; invalidates session in real backend
     setUser(null);
-    localStorage.removeItem("trs_user");
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
   };
+
+  const mustChangePassword = !!(user?.mustChangePassword);
+
+  if (!ready) return null;     // brief null prevents flash; replace with <LoadingSpinner /> if preferred
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated: !!user, user, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated: !!user, user, mustChangePassword, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

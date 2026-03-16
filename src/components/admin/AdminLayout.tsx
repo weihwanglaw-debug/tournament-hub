@@ -7,15 +7,17 @@ import {
 } from "lucide-react";
 
 export default function AdminLayout() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, mustChangePassword } = useAuth();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "superadmin";
   const [collapsed, setCollapsed] = useState(true); // default collapsed
   const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) navigate("/login", { replace: true });
-  }, [isAuthenticated, navigate]);
+    if (!isAuthenticated) { navigate("/login", { replace: true }); return; }
+    // Enforce password change before accessing any admin page
+    if (mustChangePassword) navigate("/admin/change-password", { replace: true });
+  }, [isAuthenticated, mustChangePassword, navigate]);
 
   if (!isAuthenticated) return null;
 
@@ -85,7 +87,7 @@ export default function AdminLayout() {
             </>
           )}
           <button
-            onClick={() => { logout(); navigate("/"); }}
+            onClick={async () => { await logout(); navigate("/"); }}
             title="Logout"
             className={`flex items-center gap-2 text-sm hover:bg-white/10 py-2.5 w-full transition-colors ${
               expanded ? "px-3" : "justify-center px-0"

@@ -19,6 +19,7 @@ import AdminRegistrations from "@/pages/admin/Registrations";
 import AdminFixtures from "@/pages/admin/Fixtures";
 import MasterConfig from "@/pages/admin/Masterconfig";
 import UserManagement from "@/pages/admin/Usermanagement";
+import ChangePassword from "@/pages/admin/ChangePassword";
 import UIElements from "@/pages/UIElements";
 import NotFound from "@/pages/NotFound";
 
@@ -47,6 +48,7 @@ const App = () => (
                   <Route path="fixtures" element={<AdminFixtures />} />
                   <Route path="config" element={<MasterConfig />} />
                   <Route path="users" element={<UserManagement />} />
+                  <Route path="change-password" element={<ChangePassword />} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
