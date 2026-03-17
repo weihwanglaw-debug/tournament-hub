@@ -17,6 +17,7 @@ import Footer from "@/components/layout/Footer";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { apiGetRegistration } from "@/lib/api";
+import { API_BASE } from "@/lib/api/_base";
 import type { Registration } from "@/lib/api";
 
 export default function PaymentResult() {
@@ -108,7 +109,9 @@ export default function PaymentResult() {
                 A confirmation email has been sent with your tournament details.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button className="btn-primary px-6 py-2.5 text-sm font-semibold">
+                <button
+                  className="btn-primary px-6 py-2.5 text-sm font-semibold"
+                  onClick={() => window.open(`${API_BASE}/api/registrations/${regId}/receipt`, "_blank")}>
                   Download Receipt
                 </button>
                 <button onClick={() => navigate("/")} className="btn-outline px-6 py-2.5 text-sm font-medium">

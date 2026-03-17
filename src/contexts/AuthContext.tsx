@@ -48,19 +48,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) { setReady(true); return; }
 
-    // MOCK: restore from localStorage snapshot ─────────────────────────────
-    // (Real: replace this block with the fetch() below)
-    const saved = localStorage.getItem(USER_KEY);
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch { /* ignore */ }
-    }
-    setReady(true);
-
-    // REAL: validate token against backend ──────────────────────────────────
-    // apiGetMe(token).then(r => {
-    //   if (r.data) setUser(r.data);
-    //   else { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
-    // }).finally(() => setReady(true));
+    // Validate token against backend on every page load.
+    // If the token is expired or invalid, wipe it and show the login page.
+    apiGetMe(token).then(r => {
+      if (r.data) setUser(r.data);
+      else { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
+    }).finally(() => setReady(true));
   }, []);
 
   // ── Login ──────────────────────────────────────────────────────────────────

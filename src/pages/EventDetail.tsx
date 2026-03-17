@@ -502,9 +502,6 @@ export default function EventDetail() {
         };
       });
 
-      // Flatten all payment items from all groups
-      const allItems = groups.flatMap(g => g.items ?? []);
-
       const regPayload = {
         eventId:      event.id,
         eventName:    event.name,
@@ -512,18 +509,18 @@ export default function EventDetail() {
         contactName:  cart[0]?.participants[0]?.fullName ?? "",
         contactEmail: cart[0]?.participants[0]?.email    ?? "",
         contactPhone: cart[0]?.participants[0]?.contactNumber ?? "",
-        groups: groups.map(({ items: _items, ...g }) => g),   // ParticipantGroup[] without items
+        groups,   // items stay inside each group — backend CreateGroupDto.Items expects this
         payment: {
-          id:             "PAY-TEMP",
-          registrationId: "REG-TEMP",
+          id:             "PAY-TEMP",          // replaced by backend
+          registrationId: "REG-TEMP",          // replaced by backend
           eventId:        event.id,
-          gateway:        "Stripe" as const,
-          method:         "CreditCard" as const,
+          gateway:        "Stripe"      as const,
+          method:         "CreditCard"  as const,
           amount:         totalPrice,
           currency:       currency,
-          paymentStatus:  "Pending" as const,
-          items:          allItems,
+          paymentStatus:  "Pending"     as const,
           createdAt:      new Date().toISOString(),
+          items:          [],            // backend builds items from groups
         },
       };
 

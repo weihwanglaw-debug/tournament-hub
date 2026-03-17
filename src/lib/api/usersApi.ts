@@ -10,10 +10,9 @@
  * Consumers: Usermanagement.tsx, AuthContext.tsx (read only)
  */
 
-import { ok, err, delay } from "./_base";
+import { ok, err, delay, API_BASE, adminHeaders, parseError } from "./_base";
 import type { ApiResult }  from "./_base";
 import type { AdminUser }  from "@/types/config";
-import { mockUserStore }   from "@/data/mockUsers";
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
@@ -24,13 +23,9 @@ import { mockUserStore }   from "@/data/mockUsers";
 export async function apiGetUsers(): Promise<ApiResult<AdminUser[]>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  return ok(mockUserStore.getAll());
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders() });
-  // if (!res.ok) return err("FETCH_FAILED", "Failed to load users.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders() });
+  if (!res.ok) return err("FETCH_FAILED", "Failed to load users.");
+  return ok(await res.json());
 }
 
 /**
@@ -42,21 +37,13 @@ export async function apiCreateUser(
 ): Promise<ApiResult<AdminUser>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const emailTaken = mockUserStore.getAll().some(u => u.email === payload.email);
-  if (emailTaken) return err("EMAIL_TAKEN", "Email address is already in use.");
-  const newUser: AdminUser = { ...payload, id: `usr-${Date.now().toString(36)}` };
-  mockUserStore.add(newUser);
-  return ok(newUser);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/admin/users`, {
-  //   method: "POST",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) return err("CREATE_FAILED", "Failed to create user.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/admin/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return err("CREATE_FAILED", "Failed to create user.");
+  return ok(await res.json());
 }
 
 /**
@@ -69,25 +56,13 @@ export async function apiUpdateUser(
 ): Promise<ApiResult<AdminUser>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const user = mockUserStore.getAll().find(u => u.id === id);
-  if (!user) return err("NOT_FOUND", "User not found.");
-  if (patch.email) {
-    const emailTaken = mockUserStore.getAll().some(u => u.email === patch.email && u.id !== id);
-    if (emailTaken) return err("EMAIL_TAKEN", "Email address is already in use.");
-  }
-  mockUserStore.update(id, patch);
-  const updated = mockUserStore.getAll().find(u => u.id === id)!;
-  return ok(updated);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
-  //   method: "PUT",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify(patch),
-  // });
-  // if (!res.ok) return err("UPDATE_FAILED", "Failed to update user.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
+    method: "PUT",
+    headers: adminHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return err("UPDATE_FAILED", "Failed to update user.");
+  return ok(await res.json());
 }
 
 /**
@@ -100,17 +75,9 @@ export async function apiDeleteUser(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  if (id === currentUserId) return err("CANNOT_DELETE_SELF", "You cannot delete your own account.");
-  const user = mockUserStore.getAll().find(u => u.id === id);
-  if (!user) return err("NOT_FOUND", "User not found.");
-  mockUserStore.remove(id);
+  const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: "DELETE", headers: adminHeaders() });
+  if (!res.ok) return err("DELETE_FAILED", "Failed to delete user.");
   return ok(null);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: "DELETE", headers: adminHeaders() });
-  // if (!res.ok) return err("DELETE_FAILED", "Failed to delete user.");
-  // return ok(null);
 }
 
 /**
@@ -123,18 +90,11 @@ export async function apiResetUserPassword(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const user = mockUserStore.getAll().find(u => u.id === id);
-  if (!user) return err("NOT_FOUND", "User not found.");
-  mockUserStore.update(id, { password: newPassword, mustChangePassword: true });
+  const res = await fetch(`${API_BASE}/api/admin/users/${id}/reset-password`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ newPassword }),
+  });
+  if (!res.ok) return err("RESET_FAILED", "Failed to reset password.");
   return ok(null);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/admin/users/${id}/reset-password`, {
-  //   method: "POST",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify({ newPassword }),
-  // });
-  // if (!res.ok) return err("RESET_FAILED", "Failed to reset password.");
-  // return ok(null);
 }

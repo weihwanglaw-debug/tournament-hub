@@ -43,7 +43,7 @@ export default function ChangePassword() {
     if (!validate() || !user) return;
     setSaving(true);
     setApiError("");
-    const r = await apiChangePassword(user.id, currentPw, newPw);
+    const r = await apiChangePassword(currentPw, newPw);
     setSaving(false);
     if (r.error) { setApiError(r.error.message); return; }
     setSuccess(true);

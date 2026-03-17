@@ -30,11 +30,6 @@
 import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
 import type { ApiResult } from "./_base";
 import type { TournamentEvent, Program } from "@/types/config";
-import rawConfig              from "@/data/config.json";
-
-// ── In-memory store (mock only) ───────────────────────────────────────────────
-// Deep-clone so mutations during the session don't corrupt the module cache.
-let _events: TournamentEvent[] = JSON.parse(JSON.stringify(rawConfig.events));
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
@@ -50,20 +45,13 @@ export async function apiGetEvents(filters?: {
 }): Promise<ApiResult<TournamentEvent[]>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  let result = [..._events];
-  // Filtering is currently done client-side; backend will handle it via query params.
-  void filters;
-  return ok(result);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const params = new URLSearchParams();
-  // if (filters?.status)   params.set("status",   filters.status);
-  // if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
-  // if (filters?.dateTo)   params.set("dateTo",   filters.dateTo);
-  // const res = await fetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
-  // if (!res.ok) return err("FETCH_FAILED", "Failed to load events.");
-  // return ok(await res.json());
+  const params = new URLSearchParams();
+  if (filters?.status)   params.set("status",   filters.status);
+  if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+  if (filters?.dateTo)   params.set("dateTo",   filters.dateTo);
+  const res = await fetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
+  if (!res.ok) return err("FETCH_FAILED", "Failed to load events.");
+  return ok(await res.json());
 }
 
 /**
@@ -73,15 +61,9 @@ export async function apiGetEvents(filters?: {
 export async function apiGetEvent(eventId: string): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const ev = _events.find(e => e.id === eventId);
-  if (!ev) return err("NOT_FOUND", `Event '${eventId}' not found.`);
-  return ok({ ...ev });
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, { headers: publicHeaders() });
-  // if (!res.ok) return err("NOT_FOUND", "Event not found.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/events/${eventId}`, { headers: publicHeaders() });
+  if (!res.ok) return err("NOT_FOUND", "Event not found.");
+  return ok(await res.json());
 }
 
 /**
@@ -93,23 +75,13 @@ export async function apiCreateEvent(
 ): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const newEvent: TournamentEvent = {
-    ...payload,
-    id:       `evt-${Date.now().toString(36)}`,
-    programs: [],
-  };
-  _events = [..._events, newEvent];
-  return ok(newEvent);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events`, {
-  //   method: "POST",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) return err("CREATE_FAILED", "Failed to create event.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/events`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return err("CREATE_FAILED", "Failed to create event.");
+  return ok(await res.json());
 }
 
 /**
@@ -122,20 +94,13 @@ export async function apiUpdateEvent(
 ): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const idx = _events.findIndex(e => e.id === eventId);
-  if (idx < 0) return err("NOT_FOUND", "Event not found.");
-  _events[idx] = { ..._events[idx], ...patch };
-  return ok({ ..._events[idx] });
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, {
-  //   method: "PUT",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify(patch),
-  // });
-  // if (!res.ok) return err("UPDATE_FAILED", "Failed to update event.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/events/${eventId}`, {
+    method: "PUT",
+    headers: adminHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return err("UPDATE_FAILED", "Failed to update event.");
+  return ok(await res.json());
 }
 
 /**
@@ -146,14 +111,9 @@ export async function apiUpdateEvent(
 export async function apiDeleteEvent(eventId: string): Promise<ApiResult<null>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  _events = _events.filter(e => e.id !== eventId);
+  const res = await fetch(`${API_BASE}/api/events/${eventId}`, { method: "DELETE", headers: adminHeaders() });
+  if (!res.ok) return err("DELETE_FAILED", "Failed to delete event.");
   return ok(null);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}`, { method: "DELETE", headers: adminHeaders() });
-  // if (!res.ok) return err("DELETE_FAILED", "Failed to delete event.");
-  // return ok(null);
 }
 
 // ── Program sub-resource ──────────────────────────────────────────────────────
@@ -169,26 +129,13 @@ export async function apiAddProgram(
 ): Promise<ApiResult<Program>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const idx = _events.findIndex(e => e.id === eventId);
-  if (idx < 0) return err("NOT_FOUND", "Event not found.");
-  const newProgram: Program = {
-    ...payload,
-    id:                  `prog-${Date.now().toString(36)}`,
-    currentParticipants: 0,
-    participantSeeds:    [],
-  };
-  _events[idx] = { ..._events[idx], programs: [..._events[idx].programs, newProgram] };
-  return ok(newProgram);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) return err("CREATE_FAILED", "Failed to add program.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return err("CREATE_FAILED", "Failed to add program.");
+  return ok(await res.json());
 }
 
 /**
@@ -203,22 +150,13 @@ export async function apiUpdateProgram(
 ): Promise<ApiResult<Program>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const evIdx = _events.findIndex(e => e.id === eventId);
-  if (evIdx < 0) return err("NOT_FOUND", "Event not found.");
-  const pIdx = _events[evIdx].programs.findIndex(p => p.id === programId);
-  if (pIdx < 0) return err("NOT_FOUND", "Program not found.");
-  _events[evIdx].programs[pIdx] = { ..._events[evIdx].programs[pIdx], ...patch };
-  return ok({ ..._events[evIdx].programs[pIdx] });
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
-  //   method: "PUT",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(patch),
-  // });
-  // if (!res.ok) return err("UPDATE_FAILED", "Failed to update program.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return err("UPDATE_FAILED", "Failed to update program.");
+  return ok(await res.json());
 }
 
 /**
@@ -231,16 +169,9 @@ export async function apiDeleteProgram(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  const evIdx = _events.findIndex(e => e.id === eventId);
-  if (evIdx < 0) return err("NOT_FOUND", "Event not found.");
-  _events[evIdx].programs = _events[evIdx].programs.filter(p => p.id !== programId);
+  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) return err("DELETE_FAILED", "Failed to delete program.");
   return ok(null);
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
-  //   method: "DELETE",
-  // });
-  // if (!res.ok) return err("DELETE_FAILED", "Failed to delete program.");
-  // return ok(null);
 }

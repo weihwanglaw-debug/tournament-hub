@@ -12,26 +12,9 @@
  * Consumers: LiveConfigContext.tsx, Masterconfig.tsx
  */
 
-import { ok, delay }     from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
 import type { ApiResult } from "./_base";
 import type { LiveConfig } from "@/contexts/LiveConfigContext";
-import rawConfig           from "@/data/config.json";
-
-// ── In-memory store (mock only) ───────────────────────────────────────────────
-// This mirrors exactly what LiveConfigContext holds in useState().
-// The real backend replaces this with a DB row.
-
-let _config: LiveConfig = {
-  appName:       rawConfig.branding.appName,
-  logoUrl:       rawConfig.branding.logoUrl,
-  heroTitle:     rawConfig.hero.title,
-  heroSubtitle:  rawConfig.hero.subtitle,
-  heroImageUrl:  "",
-  currency:      rawConfig.payment.currency,
-  contactEmail:  rawConfig.footer.contactEmail,
-  copyrightText: rawConfig.footer.copyrightText,
-  consentText:   rawConfig.consentText,
-};
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
@@ -42,13 +25,9 @@ let _config: LiveConfig = {
 export async function apiGetConfig(): Promise<ApiResult<LiveConfig>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  return ok({ ..._config });
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/config`, { headers: publicHeaders() });
-  // if (!res.ok) return err("FETCH_FAILED", "Failed to load configuration.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/config`, { headers: publicHeaders() });
+  if (!res.ok) return err("FETCH_FAILED", "Failed to load configuration.");
+  return ok(await res.json());
 }
 
 /**
@@ -61,16 +40,11 @@ export async function apiUpdateConfig(
 ): Promise<ApiResult<LiveConfig>> {
   await delay();
 
-  // ── MOCK ──────────────────────────────────────────────────────────────────
-  _config = { ..._config, ...patch };
-  return ok({ ..._config });
-
-  // ── REAL ──────────────────────────────────────────────────────────────────
-  // const res = await fetch(`${API_BASE}/api/config`, {
-  //   method: "PUT",
-  //   headers: adminHeaders(),
-  //   body: JSON.stringify(patch),
-  // });
-  // if (!res.ok) return err("UPDATE_FAILED", "Failed to save configuration.");
-  // return ok(await res.json());
+  const res = await fetch(`${API_BASE}/api/config`, {
+    method: "PUT",
+    headers: adminHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return err("UPDATE_FAILED", "Failed to save configuration.");
+  return ok(await res.json());
 }
