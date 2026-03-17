@@ -15,7 +15,7 @@
  * Consumers: Fixtures.tsx (seeding panel), EventDetail.tsx (SBA ID autofill)
  */
 
-import { ok, err, delay, API_BASE, publicHeaders, parseError } from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult }   from "./_base";
 import type { SbaRanking }  from "@/types/config";
 
@@ -42,7 +42,7 @@ export async function apiGetSbaRankings(filters?: {
 
   const params = new URLSearchParams();
   if (filters?.category) params.set("category", filters.category);
-  const res = await fetch(`${API_BASE}/api/sba/rankings?${params}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/sba/rankings?${params}`, { headers: publicHeaders() });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load SBA rankings.");
   return ok(await res.json());
 }
@@ -55,7 +55,7 @@ export async function apiGetSbaRankings(filters?: {
 export async function apiGetSbaMember(sbaId: string): Promise<ApiResult<SbaMember>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/sba/members/${sbaId}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/sba/members/${sbaId}`, { headers: publicHeaders() });
   if (!res.ok) return err("NOT_FOUND", "SBA member not found.");
   return ok(await res.json());
 }
@@ -67,7 +67,7 @@ export async function apiGetSbaMember(sbaId: string): Promise<ApiResult<SbaMembe
 export async function apiSearchSbaMembers(name: string): Promise<ApiResult<SbaMember[]>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/sba/members?name=${encodeURIComponent(name)}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/sba/members?name=${encodeURIComponent(name)}`, { headers: publicHeaders() });
   if (!res.ok) return err("SEARCH_FAILED", "SBA member search failed.");
   return ok(await res.json());
 }

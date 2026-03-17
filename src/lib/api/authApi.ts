@@ -10,7 +10,7 @@
  * Consumers: AuthContext.tsx
  */
 
-import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult }  from "./_base";
 import type { AdminUser }  from "@/types/config";
 
@@ -33,7 +33,7 @@ export async function apiLogin(
 ): Promise<ApiResult<LoginResponse>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  const res = await apiFetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
     headers: publicHeaders(),
     body: JSON.stringify({ email, password }),
@@ -49,7 +49,7 @@ export async function apiLogin(
 export async function apiLogout(): Promise<ApiResult<null>> {
   await delay();
 
-  await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: adminHeaders() });
+  await apiFetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: adminHeaders() });
   return ok(null);
 }
 
@@ -61,7 +61,7 @@ export async function apiLogout(): Promise<ApiResult<null>> {
 export async function apiGetMe(token: string): Promise<ApiResult<AdminUser>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/auth/me`, {
+  const res = await apiFetch(`${API_BASE}/api/auth/me`, {
     headers: adminHeaders(),
   });
   if (!res.ok) return err("UNAUTHORIZED", "Session expired.");
@@ -78,7 +78,7 @@ export async function apiChangePassword(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+  const res = await apiFetch(`${API_BASE}/api/auth/change-password`, {
     method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify({ currentPassword, newPassword }),

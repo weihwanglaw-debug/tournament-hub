@@ -10,7 +10,7 @@ import {
   generateKnockoutFromGroups, swapTeams,
   advanceHeatsRound, saveHeatResult, assignHeatPlaces,
 } from "@/lib/fixtureEngine";
-import { API_BASE, adminHeaders, parseError } from "@/lib/api/_base";
+import { API_BASE, adminHeaders, parseError, apiFetch } from "@/lib/api/_base";
 
 // ── Result types ──────────────────────────────────────────────────────────────
 export interface ApiError { code: string; message: string }
@@ -24,7 +24,7 @@ async function persist(
   eventId: string, programId: string,
   state: BracketState,
 ): Promise<ApiResult<BracketState>> {
-  const res = await fetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
     method:  "POST",
     headers: adminHeaders(),
     body:    JSON.stringify({
@@ -43,7 +43,7 @@ export async function apiGetFixture(
   eventId: string,
   programId: string,
 ): Promise<ApiResult<BracketState | null>> {
-  const res = await fetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
     headers: adminHeaders(),
   });
   if (res.status === 404) return ok(null);
@@ -76,7 +76,7 @@ export async function apiResetFixture(
   eventId: string,
   programId: string,
 ): Promise<ApiResult<null>> {
-  const res = await fetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}`, {
     method:  "DELETE",
     headers: adminHeaders(),
   });

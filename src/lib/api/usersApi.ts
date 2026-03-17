@@ -10,7 +10,7 @@
  * Consumers: Usermanagement.tsx, AuthContext.tsx (read only)
  */
 
-import { ok, err, delay, API_BASE, adminHeaders, parseError } from "./_base";
+import { ok, err, delay, API_BASE, adminHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult }  from "./_base";
 import type { AdminUser }  from "@/types/config";
 
@@ -23,7 +23,7 @@ import type { AdminUser }  from "@/types/config";
 export async function apiGetUsers(): Promise<ApiResult<AdminUser[]>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders() });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load users.");
   return ok(await res.json());
 }
@@ -37,7 +37,7 @@ export async function apiCreateUser(
 ): Promise<ApiResult<AdminUser>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/admin/users`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/users`, {
     method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify(payload),
@@ -56,7 +56,7 @@ export async function apiUpdateUser(
 ): Promise<ApiResult<AdminUser>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/admin/users/${id}`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/users/${id}`, {
     method: "PUT",
     headers: adminHeaders(),
     body: JSON.stringify(patch),
@@ -75,7 +75,7 @@ export async function apiDeleteUser(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: "DELETE", headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/admin/users/${id}`, { method: "DELETE", headers: adminHeaders() });
   if (!res.ok) return err("DELETE_FAILED", "Failed to delete user.");
   return ok(null);
 }
@@ -90,7 +90,7 @@ export async function apiResetUserPassword(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/admin/users/${id}/reset-password`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/users/${id}/reset-password`, {
     method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify({ newPassword }),

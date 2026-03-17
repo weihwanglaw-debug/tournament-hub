@@ -27,7 +27,7 @@
 
 // // Public (no token): apiGetEvents, apiGetEvent
 // Admin (Bearer token): apiCreateEvent, apiUpdateEvent, apiDeleteEvent, apiAddProgram, apiUpdateProgram, apiDeleteProgram
-import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult } from "./_base";
 import type { TournamentEvent, Program } from "@/types/config";
 
@@ -49,7 +49,7 @@ export async function apiGetEvents(filters?: {
   if (filters?.status)   params.set("status",   filters.status);
   if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
   if (filters?.dateTo)   params.set("dateTo",   filters.dateTo);
-  const res = await fetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load events.");
   return ok(await res.json());
 }
@@ -61,7 +61,7 @@ export async function apiGetEvents(filters?: {
 export async function apiGetEvent(eventId: string): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}`, { headers: publicHeaders() });
   if (!res.ok) return err("NOT_FOUND", "Event not found.");
   return ok(await res.json());
 }
@@ -75,7 +75,7 @@ export async function apiCreateEvent(
 ): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events`, {
+  const res = await apiFetch(`${API_BASE}/api/events`, {
     method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify(payload),
@@ -94,7 +94,7 @@ export async function apiUpdateEvent(
 ): Promise<ApiResult<TournamentEvent>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}`, {
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}`, {
     method: "PUT",
     headers: adminHeaders(),
     body: JSON.stringify(patch),
@@ -111,7 +111,7 @@ export async function apiUpdateEvent(
 export async function apiDeleteEvent(eventId: string): Promise<ApiResult<null>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}`, { method: "DELETE", headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}`, { method: "DELETE", headers: adminHeaders() });
   if (!res.ok) return err("DELETE_FAILED", "Failed to delete event.");
   return ok(null);
 }
@@ -129,7 +129,7 @@ export async function apiAddProgram(
 ): Promise<ApiResult<Program>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs`, {
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -150,7 +150,7 @@ export async function apiUpdateProgram(
 ): Promise<ApiResult<Program>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -169,7 +169,7 @@ export async function apiDeleteProgram(
 ): Promise<ApiResult<null>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
     method: "DELETE",
   });
   if (!res.ok) return err("DELETE_FAILED", "Failed to delete program.");

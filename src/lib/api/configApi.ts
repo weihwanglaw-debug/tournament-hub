@@ -12,7 +12,7 @@
  * Consumers: LiveConfigContext.tsx, Masterconfig.tsx
  */
 
-import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult } from "./_base";
 import type { LiveConfig } from "@/contexts/LiveConfigContext";
 
@@ -25,7 +25,7 @@ import type { LiveConfig } from "@/contexts/LiveConfigContext";
 export async function apiGetConfig(): Promise<ApiResult<LiveConfig>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/config`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/config`, { headers: publicHeaders() });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load configuration.");
   return ok(await res.json());
 }
@@ -40,7 +40,7 @@ export async function apiUpdateConfig(
 ): Promise<ApiResult<LiveConfig>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/config`, {
+  const res = await apiFetch(`${API_BASE}/api/config`, {
     method: "PUT",
     headers: adminHeaders(),
     body: JSON.stringify(patch),

@@ -31,7 +31,7 @@
  *   RefundStatus:  "Pending"→'P'  "Success"→'S'  "Failed"→'F'
  */
 
-import { ok, err, delay, paginate, API_BASE, publicHeaders, adminHeaders, parseError } from "./_base";
+import { ok, err, delay, paginate, API_BASE, publicHeaders, adminHeaders, parseError, apiFetch } from "./_base";
 import type { ApiResult, PageParams, PagedResult } from "./_base";
 import type {
   Registration, ParticipantGroup, Payment, PaymentItem,
@@ -65,7 +65,7 @@ export async function apiCreateRegistration(
 ): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations`, {
     method: "POST",
     headers: publicHeaders(),
     body: JSON.stringify(payload),
@@ -93,7 +93,7 @@ export async function apiInitiateCheckout(
 ): Promise<ApiResult<CheckoutSession>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/Payment/create-checkout-session`, {
+  const res = await apiFetch(`${API_BASE}/api/Payment/create-checkout-session`, {
     method: "POST",
     headers: publicHeaders(),
     body: JSON.stringify({
@@ -123,7 +123,7 @@ export async function apiInitiateCheckout(
 export async function apiGetRegistration(id: string): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${id}`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${id}`, {
     headers: publicHeaders(),
   });
   if (!res.ok) return err("NOT_FOUND", (await parseError(res)).message);
@@ -151,7 +151,7 @@ export async function apiGetRegistrations(
   if (filters?.payStatus) p.set("payStatus", filters.payStatus);
   if (filters?.search)    p.set("search",    filters.search);
   if (page)               { p.set("page", String(page.page)); p.set("pageSize", String(page.pageSize)); }
-  const res = await fetch(`${API_BASE}/api/registrations?${p}`, { headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/registrations?${p}`, { headers: adminHeaders() });
   if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
   return ok(await res.json());
 }
@@ -166,7 +166,7 @@ export async function apiUpdateRegistrationStatus(
 ): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${id}/status`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${id}/status`, {
     method: "PATCH",
     headers: adminHeaders(),
     body: JSON.stringify({ status }),
@@ -186,7 +186,7 @@ export async function apiUpdateGroupStatus(
 ): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/groups/${groupId}/status`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/groups/${groupId}/status`, {
     method: "PATCH",
     headers: adminHeaders(),
     body: JSON.stringify({ status }),
@@ -206,7 +206,7 @@ export async function apiUpdateGroupSeed(
 ): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/groups/${groupId}/seed`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/groups/${groupId}/seed`, {
     method: "PATCH",
     headers: adminHeaders(),
     body: JSON.stringify({ seed }),
@@ -222,7 +222,7 @@ export async function apiUpdateGroupSeed(
 export async function apiGetPayment(registrationId: string): Promise<ApiResult<Payment>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/payment`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/payment`, {
     headers: adminHeaders(),
   });
   if (!res.ok) return err("NOT_FOUND", (await parseError(res)).message);
@@ -242,7 +242,7 @@ export async function apiUpdatePayment(
 ): Promise<ApiResult<Registration>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/payment`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/payment`, {
     method: "PATCH",
     headers: adminHeaders(),
     body: JSON.stringify(patch),
@@ -258,7 +258,7 @@ export async function apiUpdatePayment(
 export async function apiGetRefunds(registrationId: string): Promise<ApiResult<Refund[]>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/payment/refunds`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/payment/refunds`, {
     headers: adminHeaders(),
   });
   if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
@@ -285,7 +285,7 @@ export async function apiInitiateRefund(
 ): Promise<ApiResult<Refund>> {
   await delay();
 
-  const res = await fetch(`${API_BASE}/api/registrations/${registrationId}/payment/refunds`, {
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/payment/refunds`, {
     method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify({ paymentItemId, refundAmount, refundReason }),
@@ -311,7 +311,7 @@ export async function apiExportRegistrations(
   const p = new URLSearchParams();
   if (eventId && eventId !== "all") p.set("eventId", eventId);
   if (programId) p.set("programId", programId);
-  const res = await fetch(`${API_BASE}/api/registrations/export?${p}`, { headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/registrations/export?${p}`, { headers: adminHeaders() });
   if (!res.ok) return err("EXPORT_FAILED", (await parseError(res)).message);
   return ok(await res.json());
 }
@@ -326,7 +326,7 @@ export async function apiGetRegistrationStats(
   await delay();
 
   const p = eventId ? `?eventId=${eventId}` : "";
-  const res = await fetch(`${API_BASE}/api/registrations/stats${p}`, { headers: adminHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/registrations/stats${p}`, { headers: adminHeaders() });
   if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
   return ok(await res.json());
 }
