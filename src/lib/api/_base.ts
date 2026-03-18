@@ -72,12 +72,16 @@ export async function apiFetch(
   const res = await fetch(url, options);
 
   if (res.status === 401) {
-    // Token expired or invalid — wipe session and redirect to login
+    // Token expired or invalid — wipe session and redirect to login.
+    // Skip if already on a login/public page to prevent redirect loops
+    // (e.g. apiGetMe() during boot calls this and we're already on /login).
     localStorage.removeItem("trs_token");
     localStorage.removeItem("trs_user");
-    // Use replace so back button doesn't loop
-    window.location.replace("/admin/login");
-    // Return the 401 response so callers don't crash while the redirect fires
+    const path = window.location.pathname;
+    const isLoginPage = path === "/login" || path === "/admin/login" || path === "/";
+    if (!isLoginPage) {
+      window.location.replace("/admin/login");
+    }
     return res;
   }
 

@@ -8,24 +8,20 @@ import { Plus, Eye, Users, MoreVertical } from "lucide-react";
 
 export default function AdminEvents() {
   const navigate = useNavigate();
-  const [events,  setEvents]  = useState<TournamentEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events,         setEvents]         = useState<TournamentEvent[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [filterStatus,   setFilterStatus]   = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo,   setFilterDateTo]   = useState("");
+  const [filterRegStatus,setFilterRegStatus]= useState("");
+  const [openAction,     setOpenAction]     = useState<string | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    apiGetEvents().then(r => { if (r.data) setEvents(r.data); }).finally(() => setLoading(false));
+    apiGetEvents({ includeInactive: true }).then(r => {
+      if (r.data) setEvents(r.data);
+    }).finally(() => setLoading(false));
   }, []);
-
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading events…</div>
-  );
-
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
-  const [filterRegStatus, setFilterRegStatus] = useState("");
-  const [openAction, setOpenAction] = useState<string | null>(null);
-  const actionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!openAction) return;
@@ -46,6 +42,10 @@ export default function AdminEvents() {
 
   const clearFilters = () => { setFilterStatus(""); setFilterDateFrom(""); setFilterDateTo(""); setFilterRegStatus(""); };
   const hasFilter = filterStatus || filterDateFrom || filterDateTo || filterRegStatus;
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading events…</div>
+  );
 
   return (
     <div>
@@ -125,7 +125,7 @@ export default function AdminEvents() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-10 opacity-40">No events match the current filters.</td></tr>
+              <tr><td colSpan={7} className="text-center py-10 opacity-40">No events found.</td></tr>
             )}
           </tbody>
         </table>
@@ -171,7 +171,7 @@ export default function AdminEvents() {
             </div>
           );
         })}
-        {filtered.length === 0 && <p className="text-center py-10 opacity-40">No events match the current filters.</p>}
+        {filtered.length === 0 && <p className="text-center py-10 opacity-40">No events found.</p>}
       </div>
     </div>
   );

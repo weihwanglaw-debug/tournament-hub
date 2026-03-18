@@ -42,14 +42,18 @@ export async function apiGetEvents(filters?: {
   status?: string;          // "open" | "upcoming" | "closed"
   dateFrom?: string;        // ISO date
   dateTo?: string;          // ISO date
+  includeInactive?: boolean; // admin only — include soft-deleted events
 }): Promise<ApiResult<TournamentEvent[]>> {
   await delay();
 
   const params = new URLSearchParams();
-  if (filters?.status)   params.set("status",   filters.status);
-  if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
-  if (filters?.dateTo)   params.set("dateTo",   filters.dateTo);
-  const res = await apiFetch(`${API_BASE}/api/events?${params}`, { headers: publicHeaders() });
+  if (filters?.status)          params.set("status",          filters.status);
+  if (filters?.dateFrom)        params.set("dateFrom",        filters.dateFrom);
+  if (filters?.dateTo)          params.set("dateTo",          filters.dateTo);
+  if (filters?.includeInactive) params.set("includeInactive", "true");
+  // Use adminHeaders if includeInactive is requested (admin-only flag)
+  const headers = filters?.includeInactive ? adminHeaders() : publicHeaders();
+  const res = await apiFetch(`${API_BASE}/api/events?${params}`, { headers });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load events.");
   return ok(await res.json());
 }
@@ -171,6 +175,7 @@ export async function apiDeleteProgram(
 
   const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
     method: "DELETE",
+    headers: adminHeaders(),
   });
   if (!res.ok) return err("DELETE_FAILED", "Failed to delete program.");
   return ok(null);
