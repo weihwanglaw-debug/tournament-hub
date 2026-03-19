@@ -12,7 +12,7 @@
  * Consumers: LiveConfigContext.tsx, Masterconfig.tsx
  */
 
-import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError, apiFetch } from "./_base";
+import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, apiFetch } from "./_base";
 import type { ApiResult } from "./_base";
 import type { LiveConfig } from "@/contexts/LiveConfigContext";
 
@@ -43,7 +43,7 @@ export async function apiUpdateConfig(
   const res = await apiFetch(`${API_BASE}/api/config`, {
     method: "PUT",
     headers: adminHeaders(),
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ updates: patch }),  // ← wrapped to match backend UpdateConfigRequest
   });
   if (!res.ok) return err("UPDATE_FAILED", "Failed to save configuration.");
   return ok(await res.json());

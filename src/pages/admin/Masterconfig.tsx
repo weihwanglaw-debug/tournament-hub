@@ -13,36 +13,42 @@ interface ConfigRow {
 }
 
 const CONFIG_ROWS: ConfigRow[] = [
-  { id: "appName",       group: "Branding",  label: "Application Name",                         type: "text"     },
-  { id: "logoUrl",       group: "Branding",  label: "Logo URL",                                 type: "url"      },
-  { id: "heroTitle",     group: "Hero",      label: "Hero Title",                               type: "text"     },
-  { id: "heroSubtitle",  group: "Hero",      label: "Hero Subtitle",                            type: "textarea" },
-  { id: "heroImageUrl",  group: "Hero",      label: "Hero Background Image URL",                type: "url"      },
-  { id: "currency",      group: "Payment",   label: "Currency Code",                            type: "text"     },
-  { id: "contactEmail",  group: "Footer",    label: "Contact Email",                            type: "text"     },
-  { id: "copyrightText", group: "Footer",    label: "Copyright Text",                           type: "text"     },
-  { id: "consentText",   group: "Consent",   label: "Consent Statement (applies to all events)",type: "textarea" },
+  { id: "appName",       group: "Branding",   label: "Application Name",                          type: "text"     },
+  { id: "logoUrl",       group: "Branding",   label: "Logo URL",                                  type: "url"      },
+  { id: "heroTitle",     group: "Hero",       label: "Hero Title",                                type: "text"     },
+  { id: "heroSubtitle",  group: "Hero",       label: "Hero Subtitle",                             type: "textarea" },
+  { id: "heroImageUrl",  group: "Hero",       label: "Hero Background Image URL",                 type: "url"      },
+  { id: "currency",      group: "Payment",    label: "Currency Code",                             type: "text"     },
+  { id: "contactEmail",  group: "Footer",     label: "Contact Email",                             type: "text"     },
+  { id: "copyrightText", group: "Footer",     label: "Copyright Text",                            type: "text"     },
+  { id: "consentText",   group: "Consent",    label: "Consent Statement (applies to all events)", type: "textarea" },
+  { id: "adEnabled",     group: "Ad Banner",  label: "Show Ad Banner (true / false)",             type: "text"     },
+  { id: "adUrl",         group: "Ad Banner",  label: "Ad Link URL",                               type: "url"      },
+  { id: "adImageUrl",    group: "Ad Banner",  label: "Ad Background Image URL",                   type: "url"      },
+  { id: "adTag",         group: "Ad Banner",  label: "Ad Tag Label (e.g. Partner Venue)",         type: "text"     },
+  { id: "adTitle",       group: "Ad Banner",  label: "Ad Headline",                               type: "text"     },
+  { id: "adBody",        group: "Ad Banner",  label: "Ad Body Text",                              type: "textarea" },
+  { id: "adButtonLabel", group: "Ad Banner",  label: "Ad Button Label",                           type: "text"     },
 ];
 
-const GROUPS = ["All", "Branding", "Hero", "Payment", "Footer", "Consent"];
+const GROUPS = ["All", "Branding", "Hero", "Payment", "Footer", "Consent", "Ad Banner"];
 
 export default function MasterConfig() {
   const { cfg, update } = useLiveConfig();
-  const [editId,       setEditId]       = useState<keyof LiveConfig | null>(null);
-  const [editValue,    setEditValue]    = useState("");
-  const [saved,        setSaved]        = useState<string | null>(null);
-  const [activeGroup,  setActiveGroup]  = useState("All");
+  const [editId,      setEditId]      = useState<keyof LiveConfig | null>(null);
+  const [editValue,   setEditValue]   = useState("");
+  const [saved,       setSaved]       = useState<string | null>(null);
+  const [saving,      setSaving]      = useState(false);
+  const [activeGroup, setActiveGroup] = useState("All");
 
   const startEdit = (row: ConfigRow) => {
     setEditId(row.id);
     setEditValue(cfg[row.id]);
   };
 
-  const [saving, setSaving] = useState(false);
-
   const commitEdit = async (id: keyof LiveConfig) => {
     setSaving(true);
-    await update(id, editValue);   // persists via apiUpdateConfig() → PUT /api/config
+    await update(id, editValue);
     setSaving(false);
     setEditId(null);
     setSaved(id);
@@ -59,7 +65,7 @@ export default function MasterConfig() {
     <div>
       <div className="admin-page-title"><h1>Master Configuration</h1></div>
       <p className="text-xs opacity-50 mb-8 -mt-4">
-        Changes are saved immediately via the API. In mock mode, values persist until page refresh.
+        Changes are saved immediately via the API.
       </p>
 
       {/* Group filter tabs */}
@@ -84,7 +90,8 @@ export default function MasterConfig() {
               style={{ borderBottom: "1px solid var(--color-table-border)" }}>
               {group}
             </p>
-            {/* Desktop: table / Mobile: cards */}
+
+            {/* Desktop: table */}
             <div className="hidden md:block" style={{ border: "1px solid var(--color-table-border)" }}>
               <table className="trs-table w-full">
                 <thead>
@@ -125,7 +132,7 @@ export default function MasterConfig() {
                             <button onClick={() => commitEdit(row.id)} title="Save"
                               className="p-1.5 transition-opacity hover:opacity-70"
                               style={{ color: "var(--badge-open-text)" }}>
-                              <Check className="h-4 w-4" />
+                              {saving ? "…" : <Check className="h-4 w-4" />}
                             </button>
                             <button onClick={cancelEdit} title="Cancel"
                               className="p-1.5 opacity-40 hover:opacity-80">
@@ -136,7 +143,7 @@ export default function MasterConfig() {
                           <button onClick={() => startEdit(row)} title="Edit"
                             className="p-1.5 transition-opacity hover:opacity-70"
                             style={{ color: saved === row.id ? "var(--badge-open-text)" : "var(--color-primary)" }}>
-                            {saving && editId === row.id ? "…" : saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
+                            {saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
                           </button>
                         )}
                       </td>
@@ -145,7 +152,8 @@ export default function MasterConfig() {
                 </tbody>
               </table>
             </div>
-            {/* Mobile: card list */}
+
+            {/* Mobile: cards */}
             <div className="md:hidden space-y-3">
               {groupRows.map(row => (
                 <div key={row.id} className="p-4" style={{ border: "1px solid var(--color-table-border)" }}>
@@ -157,14 +165,14 @@ export default function MasterConfig() {
                     {editId === row.id ? (
                       <div className="flex items-center gap-1">
                         <button onClick={() => commitEdit(row.id)} className="p-1.5" style={{ color: "var(--badge-open-text)" }}>
-                          <Check className="h-4 w-4" />
+                          {saving ? "…" : <Check className="h-4 w-4" />}
                         </button>
                         <button onClick={cancelEdit} className="p-1.5 opacity-40"><X className="h-4 w-4" /></button>
                       </div>
                     ) : (
                       <button onClick={() => startEdit(row)} className="p-1.5"
                         style={{ color: saved === row.id ? "var(--badge-open-text)" : "var(--color-primary)" }}>
-                        {saving && editId === row.id ? "…" : saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
+                        {saved === row.id ? <Check className="h-4 w-4" /> : <Edit2 className="h-4 w-4" />}
                       </button>
                     )}
                   </div>

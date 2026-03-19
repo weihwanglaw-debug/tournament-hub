@@ -21,19 +21,28 @@ export interface LiveConfig {
   contactEmail:  string;
   copyrightText: string;
   consentText:   string;
+  // Ad banner
+  adEnabled:     string;
+  adUrl:         string;
+  adImageUrl:    string;
+  adTag:         string;
+  adTitle:       string;
+  adBody:        string;
+  adButtonLabel: string;
 }
 
 interface LiveConfigState {
-  cfg:    LiveConfig;
+  cfg:     LiveConfig;
   loading: boolean;
-  update: (key: keyof LiveConfig, value: string) => Promise<void>;
+  update:  (key: keyof LiveConfig, value: string) => Promise<void>;
 }
 
-// Fallback empty defaults — only shown for the brief moment before apiGetConfig resolves
 const EMPTY: LiveConfig = {
   appName: "", logoUrl: "", heroTitle: "", heroSubtitle: "",
   heroImageUrl: "", currency: "SGD", contactEmail: "",
   copyrightText: "", consentText: "",
+  adEnabled: "true", adUrl: "", adImageUrl: "",
+  adTag: "", adTitle: "", adBody: "", adButtonLabel: "Learn More",
 };
 
 const LiveConfigContext = createContext<LiveConfigState>({
@@ -46,18 +55,16 @@ export const LiveConfigProvider = ({ children }: { children: ReactNode }) => {
   const [cfg,     setCfg]     = useState<LiveConfig>(EMPTY);
   const [loading, setLoading] = useState(true);
 
-  // Load config from API on mount
   useEffect(() => {
     apiGetConfig().then(r => {
       if (r.data) setCfg(r.data);
     }).finally(() => setLoading(false));
   }, []);
 
-  // update() persists via API then reflects locally
   const update = async (key: keyof LiveConfig, value: string) => {
     const r = await apiUpdateConfig({ [key]: value });
-    if (r.data) setCfg(r.data);          // use server-returned canonical value
-    else setCfg(prev => ({ ...prev, [key]: value }));  // optimistic fallback on error
+    if (r.data) setCfg(r.data);
+    else setCfg(prev => ({ ...prev, [key]: value }));
   };
 
   return (

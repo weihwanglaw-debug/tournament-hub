@@ -135,7 +135,7 @@ export async function apiAddProgram(
 
   const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: adminHeaders(),
     body: JSON.stringify(payload),
   });
   if (!res.ok) return err("CREATE_FAILED", "Failed to add program.");
@@ -156,7 +156,7 @@ export async function apiUpdateProgram(
 
   const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: adminHeaders(),
     body: JSON.stringify(patch),
   });
   if (!res.ok) return err("UPDATE_FAILED", "Failed to update program.");
