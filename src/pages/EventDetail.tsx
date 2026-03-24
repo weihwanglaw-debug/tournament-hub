@@ -224,16 +224,48 @@ export default function EventDetail() {
     }).finally(() => setEventLoading(false));
   }, [id]);
 
+  // ── Session storage key — scoped per event so different events don't clash ──
+  const SESSION_KEY = id ? `trs_cart_${id}` : null;
+
+  // ── Contact person (who submits — receives the receipt email) ─────────────
+  interface ContactPerson { name: string; email: string; phone: string; }
+
+  // ── Restore cart + contact from sessionStorage on mount (payment retry flow) ──
+  const restoreSession = (): { cart: CartEntry[]; contact: ContactPerson } | null => {
+    if (!SESSION_KEY) return null;
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Strip documentFile (File objects can't survive serialization)
+      if (parsed.cart) {
+        parsed.cart = (parsed.cart as CartEntry[]).map(entry => ({
+          ...entry,
+          participants: entry.participants.map((p: Participant) => ({ ...p, documentFile: null })),
+        }));
+      }
+      return parsed;
+    } catch { return null; }
+  };
+
+  const savedSession = restoreSession();
+
   // Registration state
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(savedSession ? 3 : 1);  // jump to cart if restoring
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [cart, setCart] = useState<CartEntry[]>([]);
+  const [cart, setCart] = useState<CartEntry[]>(savedSession?.cart ?? []);
   const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
   const [existingParticipants, setExistingParticipants] = useState<Participant[]>([]);
+
+  // ── Contact person state ──────────────────────────────────────────────────
+  const [contact, setContact] = useState<ContactPerson>(
+    savedSession?.contact ?? { name: "", email: "", phone: "" }
+  );
+  const [contactErrors, setContactErrors] = useState<Partial<ContactPerson>>({});
   const [suggestions, setSuggestions] = useState<{ idx: number; matches: Participant[] } | null>(null);
   const [sbaStatus, setSbaStatus] = useState<Record<number, "idle" | "loading" | "found" | "not_found">>({});
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -429,121 +461,137 @@ export default function EventDetail() {
     setErrors({}); setFormError(""); setOverrideOpen(false); setOverrideReason(""); addToCart();
   };
 
-  // ── Checkout: create registration → initiate payment session ─────────────
-  // Mock: apiCreateRegistration → in-memory store, apiInitiateCheckout → mock session URL
-  // Real: swap registrationsApi.ts bodies to fetch() — no changes needed here
+  // ── Persist cart + contact to sessionStorage (survives gateway redirect) ──
+  const saveSession = (currentCart: CartEntry[], currentContact: { name: string; email: string; phone: string }) => {
+    if (!SESSION_KEY) return;
+    try {
+      const serializable = {
+        cart: currentCart.map(entry => ({
+          ...entry,
+          participants: entry.participants.map(p => ({ ...p, documentFile: null })),
+        })),
+        contact: currentContact,
+      };
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(serializable));
+    } catch { /* storage full or private mode — silently skip */ }
+  };
+
+  const clearSession = () => { if (SESSION_KEY) sessionStorage.removeItem(SESSION_KEY); };
+
+  // ── Build registration payload from cart + contact ────────────────────────
+  const buildRegistrationPayload = () => {
+    const groups = cart.map((entry, i) => {
+      const groupId = `PG-TEMP-${i}`;
+      const isPerPlayer = entry.feeStructure === "per_player";
+      const parts = entry.participants.map((p, pi) => {
+        const monthIdx = MONTHS.indexOf(p.dobMonth);
+        const dob = p.dobYear && p.dobMonth && p.dobDay
+          ? `${p.dobYear}-${String(monthIdx + 1).padStart(2,"0")}-${p.dobDay}`
+          : "";
+        return {
+          id: `PART-TEMP-${i}-${pi}`, participantGroupId: groupId,
+          fullName: p.fullName, dob, gender: p.gender,
+          nationality: p.nationality, clubSchoolCompany: p.clubSchoolCompany,
+          email: p.email, contactNumber: p.contactNumber, tshirtSize: p.tshirtSize,
+          sbaId: p.sbaId || undefined, guardianName: p.guardianName || undefined,
+          guardianContact: p.guardianContact || undefined, remark: p.remark || undefined,
+          customFieldValues: p.customFieldValues ?? {},
+        };
+      });
+      const items = isPerPlayer
+        ? parts.map((p, pi) => ({
+            id: `PI-TEMP-${i}-${pi}`, paymentId: "PAY-TEMP",
+            participantGroupId: groupId, participantId: p.id,
+            programName: entry.programName,
+            description: `${entry.programName} — ${p.fullName}`,
+            playerName: p.fullName, amount: entry.feePerPlayer ?? 0, itemStatus: "Pending" as const,
+          }))
+        : [{
+            id: `PI-TEMP-${i}`, paymentId: "PAY-TEMP",
+            participantGroupId: groupId, programName: entry.programName,
+            description: `${entry.programName} — ${parts.map(p => p.fullName).join(" / ")}`,
+            amount: entry.fee, itemStatus: "Pending" as const,
+          }];
+      return {
+        id: groupId, registrationId: "REG-TEMP", eventId: event!.id,
+        programId: entry.programId, programName: entry.programName, fee: entry.fee,
+        groupStatus: "Pending" as const, seed: null, participants: parts,
+        clubDisplay: parts[0]?.clubSchoolCompany ?? "",
+        namesDisplay: parts.map(p => p.fullName).join(" / "),
+        items,
+      };
+    });
+    return {
+      eventId: event!.id, eventName: event!.name, regStatus: "Pending" as const,
+      contactName: contact.name, contactEmail: contact.email, contactPhone: contact.phone,
+      groups,
+      payment: {
+        id: "PAY-TEMP", registrationId: "REG-TEMP", eventId: event!.id,
+        gateway: "Stripe" as const, method: "CreditCard" as const,
+        amount: totalPrice, currency, paymentStatus: "Pending" as const,
+        createdAt: new Date().toISOString(), items: [],
+      },
+    };
+  };
+
+  // ── Checkout ──────────────────────────────────────────────────────────────
+  // New flow for paid registrations:
+  //   1. Save cart + contact to sessionStorage (survives browser redirect)
+  //   2. Send cart payload to backend to create Stripe session (no DB write yet)
+  //   3. Redirect user to Stripe
+  //   4. On success: Stripe webhook fires → backend writes Registration + Payment to DB
+  //   5. PaymentResult.tsx detects success, calls clearSession()
+  //   On cancel/fail: user returns to this page with cart restored from sessionStorage.
+  //   No dirty Pending records are created in the database.
   const handleCheckout = async () => {
     if (!event || !consentChecked) return;
+
+    // Validate contact fields
+    const cErrs: { name?: string; email?: string; phone?: string } = {};
+    if (!contact.name.trim())  cErrs.name  = "Required";
+    if (!contact.email.trim()) cErrs.email = "Required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) cErrs.email = "Invalid email";
+    if (!contact.phone.trim()) cErrs.phone = "Required";
+    if (Object.keys(cErrs).length) { setContactErrors(cErrs); return; }
+    setContactErrors({});
+
     setSubmitting(true);
     setSubmitError("");
     try {
-      // 1. Build the registration payload from cart
-      const groups = cart.map((entry, i) => {
-        const groupId = `PG-TEMP-${i}`;  // server replaces with real ID
-        const isPerPlayer = entry.feeStructure === "per_player";
-        const participants = entry.participants.map((p, pi) => {
-          const monthIdx = MONTHS.indexOf(p.dobMonth);
-          const dob = p.dobYear && p.dobMonth && p.dobDay
-            ? `${p.dobYear}-${String(monthIdx + 1).padStart(2,"0")}-${p.dobDay}`
-            : "";
-          return {
-            id:                 `PART-TEMP-${i}-${pi}`,
-            participantGroupId: groupId,
-            fullName:           p.fullName,
-            dob,
-            gender:             p.gender,
-            nationality:        p.nationality,
-            clubSchoolCompany:  p.clubSchoolCompany,
-            email:              p.email,
-            contactNumber:      p.contactNumber,
-            tshirtSize:         p.tshirtSize,
-            sbaId:              p.sbaId || undefined,
-            guardianName:       p.guardianName || undefined,
-            guardianContact:    p.guardianContact || undefined,
-            remark:             p.remark || undefined,
-            customFieldValues:  p.customFieldValues ?? {},
-          };
-        });
-        // Payment items: one per player if per_player, one per group if per_entry
-        const items = isPerPlayer
-          ? participants.map((p, pi) => ({
-              id:                 `PI-TEMP-${i}-${pi}`,
-              paymentId:          "PAY-TEMP",
-              participantGroupId: groupId,
-              participantId:      p.id,
-              programName:        entry.programName,
-              description:        `${entry.programName} — ${p.fullName}`,
-              playerName:         p.fullName,
-              amount:             entry.feePerPlayer ?? 0,
-              itemStatus:         "Pending" as const,
-            }))
-          : [{
-              id:                 `PI-TEMP-${i}`,
-              paymentId:          "PAY-TEMP",
-              participantGroupId: groupId,
-              programName:        entry.programName,
-              description:        `${entry.programName} — ${participants.map(p => p.fullName).join(" / ")}`,
-              amount:             entry.fee,
-              itemStatus:         "Pending" as const,
-            }];
-        return {
-          id:             groupId,
-          registrationId: "REG-TEMP",
-          eventId:        event.id,
-          programId:      entry.programId,
-          programName:    entry.programName,
-          fee:            entry.fee,
-          groupStatus:    "Pending" as const,
-          seed:           null,
-          participants,
-          clubDisplay:    participants[0]?.clubSchoolCompany ?? "",
-          namesDisplay:   participants.map(p => p.fullName).join(" / "),
-          items,
-        };
-      });
-
-      const regPayload = {
-        eventId:      event.id,
-        eventName:    event.name,
-        regStatus:    "Pending" as const,
-        contactName:  cart[0]?.participants[0]?.fullName ?? "",
-        contactEmail: cart[0]?.participants[0]?.email    ?? "",
-        contactPhone: cart[0]?.participants[0]?.contactNumber ?? "",
-        groups,   // items stay inside each group — backend CreateGroupDto.Items expects this
-        payment: {
-          id:             "PAY-TEMP",          // replaced by backend
-          registrationId: "REG-TEMP",          // replaced by backend
-          eventId:        event.id,
-          gateway:        "Stripe"      as const,
-          method:         "CreditCard"  as const,
-          amount:         totalPrice,
-          currency:       currency,
-          paymentStatus:  "Pending"     as const,
-          createdAt:      new Date().toISOString(),
-          items:          [],            // backend builds items from groups
-        },
-      };
-
-      // 2. Create the registration
-      const regResult = await apiCreateRegistration(regPayload);
-      if (regResult.error) { setSubmitError(regResult.error.message); return; }
-      const registration = regResult.data!;
-
-      // 3. Initiate checkout (free/admin-pay: skip gateway, navigate to success directly)
       const needsPayment = cart.some(e => {
         const prog = event?.programs.find(p => p.id === e.programId);
         return prog?.paymentRequired && e.fee > 0;
       });
 
       if (!needsPayment) {
-        navigate(`/payment/result?status=success&reg=${registration.id}`);
+        // Free registration — write to DB immediately, no gateway
+        const regResult = await apiCreateRegistration(buildRegistrationPayload());
+        if (regResult.error) { setSubmitError(regResult.error.message); return; }
+        clearSession();
+        navigate(`/payment/result?status=success&reg=${regResult.data!.id}`);
         return;
       }
 
-      const checkoutResult = await apiInitiateCheckout(registration.id, paymentMethod);
+      // Paid registration — save full cart + contact + payload to sessionStorage BEFORE leaving
+      saveSession(cart, contact);
+
+      // Ask backend to create a Stripe session only — no DB write yet
+      const checkoutResult = await apiInitiateCheckout("", paymentMethod, buildRegistrationPayload(), event.id);
       if (checkoutResult.error) { setSubmitError(checkoutResult.error.message); return; }
 
-      // 4. Redirect to gateway (mock: /payment/result; real: Stripe hosted page)
+      // Also persist the gatewaySessionId so PaymentResult can call confirm-session
+      if (SESSION_KEY && checkoutResult.data?.gatewaySessionId) {
+        try {
+          const raw = sessionStorage.getItem(SESSION_KEY);
+          const existing = raw ? JSON.parse(raw) : {};
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+            ...existing,
+            gatewaySessionId: checkoutResult.data.gatewaySessionId,
+            payload: buildRegistrationPayload(),
+          }));
+        } catch { /* ignore */ }
+      }
+
       window.location.href = checkoutResult.data!.checkoutUrl;
 
     } finally {
@@ -904,6 +952,60 @@ export default function EventDetail() {
                           <span className="font-bold text-lg">Total</span>
                           <span className="font-bold text-xl" style={{ color: "var(--color-primary)" }}>{currency} ${totalPrice}</span>
                         </div>
+                        {/* Session restored banner — shown when user returns after payment cancel */}
+                        {savedSession && (
+                          <div className="flex items-center gap-3 p-4 mb-5 text-sm"
+                            style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)", border: "1px solid var(--badge-soon-text)" }}>
+                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                            <span>Your previous cart has been restored. You can review and try payment again.</span>
+                          </div>
+                        )}
+
+                        {/* Contact person — receipt will be sent here */}
+                        <div className="p-5 mb-5" style={{ border: "1px solid var(--color-table-border)" }}>
+                          <p className="text-xs font-semibold mb-4 opacity-60">CONTACT PERSON</p>
+                          <p className="text-xs opacity-50 mb-4">The registration receipt will be emailed to this address.</p>
+                          <div className="grid sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                Full Name <span style={{ color: "var(--badge-open-text)" }}>*</span>
+                              </label>
+                              <input
+                                className="field-input"
+                                placeholder="Name of person registering"
+                                value={contact.name}
+                                onChange={e => { setContact(c => ({ ...c, name: e.target.value })); setContactErrors(ce => ({ ...ce, name: undefined })); }}
+                              />
+                              {contactErrors.name && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.name}</p>}
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                Email <span style={{ color: "var(--badge-open-text)" }}>*</span>
+                              </label>
+                              <input
+                                className="field-input"
+                                type="email"
+                                placeholder="receipt@email.com"
+                                value={contact.email}
+                                onChange={e => { setContact(c => ({ ...c, email: e.target.value })); setContactErrors(ce => ({ ...ce, email: undefined })); }}
+                              />
+                              {contactErrors.email && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.email}</p>}
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">
+                                Phone <span style={{ color: "var(--badge-open-text)" }}>*</span>
+                              </label>
+                              <input
+                                className="field-input"
+                                placeholder="+65 9123 4567"
+                                value={contact.phone}
+                                onChange={e => { setContact(c => ({ ...c, phone: e.target.value })); setContactErrors(ce => ({ ...ce, phone: undefined })); }}
+                              />
+                              {contactErrors.phone && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.phone}</p>}
+                            </div>
+                          </div>
+                        </div>
+
                         {/* Payment method selector — only shown when payment is required */}
                         {cart.some(e => {
                           const prog = event?.programs.find(p => p.id === e.programId);

@@ -83,31 +83,56 @@ export async function apiCreateRegistration(
  *   "card"   → Stripe hosted checkout (credit card)
  *   "paynow" → Stripe PayNow flow (or your own PayNow endpoint)
  *
- * Security: amount is NEVER sent from the frontend.
- *   The backend fetches the amount from Payments.Amount in the DB.
- *   This matches your HTML checkout page's design exactly.
+ * ── SESSION-FIRST PAYMENT FLOW ───────────────────────────────────────────────
+ * For paid registrations the frontend no longer writes a Pending registration
+ * to the DB before redirecting to Stripe. Instead:
+ *   1. Full cart payload is sent here as `registrationPayload`.
+ *   2. Backend creates the Stripe session, embedding the payload as metadata.
+ *   3. DB write (Registration + Payment) happens ONLY inside the Stripe webhook
+ *      after payment is confirmed — no dirty Pending records ever exist.
+ *   4. Stripe embeds the real registrationId in the return URL via metadata.
+ *   5. On cancel/failure no DB record exists — user retries from sessionStorage.
+ *
+ * For free registrations, registrationPayload is omitted and registrationId is
+ * passed instead (DB write happens before calling this, no gateway involved).
  */
 export async function apiInitiateCheckout(
   registrationId: string,
   paymentMethod:  "card" | "paynow" = "card",
+  registrationPayload?: object,   // full cart payload — session-first paid flow only
+  eventId?: string,               // used to build cancel return URL for retry routing
 ): Promise<ApiResult<CheckoutSession>> {
   await delay();
+
+  const isPaidFlow = !!registrationPayload;
+
+  const body = isPaidFlow
+    ? {
+        // Session-first: backend creates Stripe session only.
+        // Full payload NOT sent here — it lives in browser sessionStorage.
+        // Backend computes amount from registrationPayload for security,
+        // then discards it. DB insert happens in confirm-session after Stripe success.
+        registrationPayload,  // backend uses this to compute amount only
+        paymentMethod,
+        successUrl: `${window.location.origin}/payment/result?status=success${eventId ? `&event=${eventId}` : ""}`,
+        cancelUrl:  `${window.location.origin}/payment/result?status=cancel${eventId ? `&event=${eventId}` : ""}`,
+      }
+    : {
+        registrationId: Number(registrationId),
+        paymentMethod,
+        successUrl: `${window.location.origin}/payment/result?reg=${registrationId}`,
+        cancelUrl:  `${window.location.origin}/payment/result?status=cancel&reg=${registrationId}`,
+      };
 
   const res = await apiFetch(`${API_BASE}/api/Payment/create-checkout-session`, {
     method: "POST",
     headers: publicHeaders(),
-    body: JSON.stringify({
-      registrationId: Number(registrationId),  // backend uses INT
-      paymentMethod,                           // "card" | "paynow"
-      successUrl: `${window.location.origin}/payment/result?reg=${registrationId}`,
-      cancelUrl:  `${window.location.origin}/payment/result?status=cancel&reg=${registrationId}`,
-      // Amount intentionally omitted — backend reads from DB (security requirement)
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) return err("CHECKOUT_FAILED", (await parseError(res)).message);
   const data = await res.json();
   return ok({
-    registrationId,
+    registrationId:   String(data.registrationId ?? registrationId ?? ""),
     paymentId:        String(data.paymentId ?? ""),
     checkoutUrl:      data.checkoutUrl ?? data.url,
     gatewaySessionId: data.gatewaySessionId ?? data.sessionId ?? "",
@@ -116,10 +141,37 @@ export async function apiInitiateCheckout(
 }
 
 /**
- * GET /api/registrations/:id
- * Public: used by PaymentResult.tsx to fetch the receipt after Stripe redirects back.
- * No auth needed — the registrationId in the URL is the only required identifier.
+ * POST /api/registrations/confirm-session
+ * Public: called by PaymentResult.tsx after Stripe redirects back with success.
+ *
+ * This is the ONLY point where Registration + Payment are written to the DB.
+ * The backend must:
+ *   1. Verify the gatewaySessionId with Stripe (confirm payment_status = "paid")
+ *   2. Insert Registration, ParticipantGroups, Participants, Payment, PaymentItems
+ *   3. Generate receipt number
+ *   4. Send confirmation email to contactEmail
+ *   5. Return the new registrationId
+ *
+ * Idempotent: if a Registration already exists for this gatewaySessionId,
+ * return the existing registrationId without re-inserting.
  */
+export async function apiConfirmSession(
+  gatewaySessionId: string,
+  registrationPayload: object,
+): Promise<ApiResult<{ registrationId: string }>> {
+  await delay();
+
+  const res = await apiFetch(`${API_BASE}/api/registrations/confirm-session`, {
+    method: "POST",
+    headers: publicHeaders(),
+    body: JSON.stringify({ gatewaySessionId, registrationPayload }),
+  });
+  if (!res.ok) return err("CONFIRM_FAILED", (await parseError(res)).message);
+  const data = await res.json();
+  return ok({ registrationId: String(data.registrationId) });
+}
+
+
 export async function apiGetRegistration(id: string): Promise<ApiResult<Registration>> {
   await delay();
 
