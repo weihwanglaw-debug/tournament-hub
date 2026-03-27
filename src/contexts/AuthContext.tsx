@@ -15,6 +15,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { PageLoader } from "@/components/ui/LoadingSpinner";
 import type { AdminUser } from "@/types/config";
 import { apiLogin, apiLogout, apiGetMe } from "@/lib/api";
 
@@ -78,7 +79,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const mustChangePassword = !!(user?.mustChangePassword);
 
-  if (!ready) return null;     // brief null prevents flash; replace with <LoadingSpinner /> if preferred
+  if (!ready) return <PageLoader label="Authenticating…" />;
 
   return (
     <AuthContext.Provider value={{ isAuthenticated: !!user, user, mustChangePassword, login, logout }}>

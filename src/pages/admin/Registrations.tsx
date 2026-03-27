@@ -27,6 +27,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/TableControls";
 import { Switch } from "@/components/ui/switch";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -427,7 +428,7 @@ export default function AdminRegistrations() {
               </thead>
               <tbody>
                 {loadingRegs && (
-                  <tr><td colSpan={10} className="text-center py-10 opacity-40">Loading…</td></tr>
+                  <tr><td colSpan={10} className="text-center py-6"><LoadingSpinner size="sm" label="Loading registrations…" /></td></tr>
                 )}
                 {!loadingRegs && paged.length === 0 && (
                   <tr><td colSpan={10} className="text-center py-10 opacity-40">No registrations found.</td></tr>

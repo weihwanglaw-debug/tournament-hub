@@ -1,35 +1,44 @@
 /**
  * Dashboard.tsx
- *
- * Mock:  reads events from apiGetEvents() (in-memory), stats from apiGetRegistrationStats()
- * Real:  swap api function bodies — no changes needed here
- *
- * Fixture stats still read localStorage via fixtureStatus.ts.
- * When fixtureApi migrates to real backend, replace getFixtureDashboardStats()
- * with an API call here — that is the only change needed.
+ * Reads events + registration stats from the real backend API.
+ * Fixture stats use apiGetFixtureStatus() bulk check instead of localStorage.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TournamentEvent } from "@/types/config";
 import type { RegistrationStats } from "@/lib/api";
 import { apiGetEvents, apiGetRegistrationStats, apiExportRegistrations } from "@/lib/api";
 import { exportRegistrationsCsv } from "@/lib/exportCsv";
-import { getFixtureDashboardStats } from "@/lib/fixtureStatus";
+import { apiGetFixtureStatus } from "@/lib/fixtureApi";
+import { computeFixtureDashboardStats, FixtureDashboardStats } from "@/lib/fixtureStatus";
 import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown } from "lucide-react";
+import { PageLoader } from "@/components/ui/LoadingSpinner";
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
   const [events,  setEvents]  = useState<TournamentEvent[]>([]);
   const [stats,   setStats]   = useState<RegistrationStats | null>(null);
+  const [fx,      setFx]      = useState<FixtureDashboardStats>({ pendingPayments: 0, pendingFixture: 0, pendingResults: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([apiGetEvents(), apiGetRegistrationStats()])
-      .then(([evR, stR]) => {
-        if (evR.data) setEvents(evR.data);
+    Promise.all([apiGetEvents({ includeInactive: false }), apiGetRegistrationStats()])
+      .then(async ([evR, stR]) => {
+        const evs = evR.data ?? [];
+        setEvents(evs);
         if (stR.data) setStats(stR.data);
+
+        // Fetch fixture existence for all sports programs in one call
+        const sportProgIds = evs
+          .filter(e => e.isSports && e.fixtureMode === "internal")
+          .flatMap(e => e.programs.map(p => p.id));
+
+        if (sportProgIds.length > 0) {
+          const fxR = await apiGetFixtureStatus(sportProgIds);
+          if (fxR.data) setFx(computeFixtureDashboardStats(evs, fxR.data));
+        }
       })
       .finally(() => setLoading(false));
   }, []);
@@ -37,9 +46,6 @@ export default function Dashboard() {
   const today = new Date().toISOString().slice(0, 10);
   const openCount     = events.filter(e => e.openDate <= today && today <= e.closeDate).length;
   const upcomingCount = events.filter(e => e.openDate > today).length;
-
-  // Fixture stats read from localStorage via fixtureStatus.ts
-  const fx = useMemo(() => getFixtureDashboardStats(events), [events]);
 
   const pendingPayments = stats?.pendingPayments ?? 0;
 
@@ -110,9 +116,7 @@ export default function Dashboard() {
     "Payment Summary",
   ];
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading dashboard…</div>;
-  }
+  if (loading) return <PageLoader label="Loading dashboard…" />;
 
   return (
     <div>

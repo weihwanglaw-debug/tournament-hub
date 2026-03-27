@@ -7,12 +7,12 @@ import StatusBadge from "@/components/events/StatusBadge";
 import ProgramModal from "@/components/admin/ProgramModal";
 import SeedingModal from "@/components/admin/SeedingModal";
 import { Switch } from "@/components/ui/switch";
+import { PageLoader } from "@/components/ui/LoadingSpinner";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
   apiAddProgram, apiUpdateProgram, apiDeleteProgram,
 } from "@/lib/api";
 
-const SPORT_TYPES = ["Badminton", "Football", "Basketball", "Volleyball", "Swimming", "Athletics", "Other"];
 const MAX_IMAGE_MB = 2;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -132,6 +132,12 @@ export default function EventEdit() {
       if (isNew) {
         const r = await apiCreateEvent(payload);
         if (r.error) { setApiError(r.error.message); return; }
+        // Persist any programs that were added locally before the event was saved
+        for (const prog of programs) {
+          const { id: _id, currentParticipants: _cp, participantSeeds: _ps, ...progPayload } = prog;
+          void _id; void _cp; void _ps;
+          await apiAddProgram(r.data!.id, progPayload);
+        }
         navigate("/admin/events");
       } else {
         const r = await apiUpdateEvent(eventId!, payload);
@@ -146,9 +152,7 @@ export default function EventEdit() {
 
   const status = event ? getEventStatus(event) : undefined;
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-20 opacity-40 text-sm">Loading event…</div>
-  );
+  if (loading) return <PageLoader label="Loading event…" />;
   if (!isNew && !event && !loading) return (
     <div className="py-20 text-center opacity-40 text-sm">Event not found.</div>
   );
@@ -266,10 +270,17 @@ export default function EventEdit() {
 
           {form.isSports && (
             <div className="grid sm:grid-cols-2 gap-6">
-              <FF label="Sport">
-                <select className="field-input" value={form.sportType} onChange={e => set("sportType", e.target.value)} disabled={!editing}>
-                  {SPORT_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <FF label="Sport Type">
+                <label className="flex items-center gap-3 text-sm cursor-pointer py-2">
+                  <Switch
+                    checked={form.sportType === "Badminton"}
+                    disabled={!editing}
+                    onCheckedChange={checked => set("sportType", checked ? "Badminton" : "Other")}
+                  />
+                  <span className="font-medium">
+                    {form.sportType === "Badminton" ? "Badminton" : "Non-Badminton"}
+                  </span>
+                </label>
               </FF>
               <FF label="Fixture Management Mode">
                 {editing ? (

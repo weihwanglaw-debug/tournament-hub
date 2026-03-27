@@ -16,14 +16,17 @@ import type { TournamentEvent, SeedEntry, BracketState, MatchEntry, WizardConfig
 import { isBracketLocked, isPhaseComplete, getAllMatches, getCurrentHeatRound } from "@/lib/fixtureEngine";
 import {
   apiGenerateDraw, apiGetFixture, apiResetFixture,
+  apiGetFixtureStatus,
   apiSaveScore, apiUpdateSchedule,
   apiAdvanceKnockoutRound, apiAdvanceToKnockout, apiSwapTeams,
   apiSaveHeatResult, apiAdvanceHeatsRound, apiAssignHeatPlaces,
 } from "@/lib/fixtureApi";
 import type { ApiError } from "@/lib/fixtureApi";
-import { getProgramFixtureInfo } from "@/lib/fixtureStatus";
+import { groupsToSeedEntries } from "@/types/registration";
+import { computeProgramFixtureStatus } from "@/lib/fixtureStatus";
+
 import { exportParticipantsCsv } from "@/lib/exportCsv";
-import { apiGetEvents, apiGetSbaRankings } from "@/lib/api";
+import { apiGetEvents, apiGetSbaRankings, apiGetRegistrations } from "@/lib/api";
 
 import { FixtureWizard } from "@/components/admin/fixtures/WizardSteps";
 import type { WizardResult } from "@/components/admin/fixtures/WizardSteps";
@@ -82,15 +85,14 @@ function useToasts() {
 
 // ── Status badges ─────────────────────────────────────────────────────────────
 
-function DrawBadge({ eventId, programId, closeDate, mode }: { eventId: string; programId: string; closeDate: string; mode: string }) {
-  const info = useMemo(
-    () => getProgramFixtureInfo(eventId, { id: programId, name: "" }, closeDate, mode),
-    [eventId, programId, closeDate, mode]
-  );
+function DrawBadge({ programId, closeDate, mode, fixtureExists }: {
+  programId: string; closeDate: string; mode: string; fixtureExists: Record<string, boolean>;
+}) {
   if (mode === "not_required") return <span className="text-xs opacity-30">Not Required</span>;
   if (mode === "external")     return <span className="text-xs opacity-50 italic">External</span>;
-  if (info.status === "reg_open") return <span className="text-xs opacity-30">Reg. Open</span>;
-  if (info.status === "ready")    return <span className="text-xs font-bold" style={{ color: "var(--badge-closed-text)" }}>● Pending</span>;
+  const regClosed = new Date() > new Date(closeDate);
+  if (!regClosed)                     return <span className="text-xs opacity-30">Reg. Open</span>;
+  if (!fixtureExists[programId])      return <span className="text-xs font-bold" style={{ color: "var(--badge-closed-text)" }}>● Pending</span>;
   return <span className="text-xs font-bold" style={{ color: "var(--badge-open-text)" }}>✓ Generated</span>;
 }
 
@@ -225,13 +227,23 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
 // ═════════════════════════════════════════════════════════════════════════════
 
 export default function AdminFixtures() {
-  const [allEvents,    setAllEvents]    = useState<TournamentEvent[]>([]);
-  const [sbaRankings,  setSbaRankings]  = useState<SbaRanking[]>([]);
+  const [allEvents,          setAllEvents]          = useState<TournamentEvent[]>([]);
+  const [sbaRankings,        setSbaRankings]        = useState<SbaRanking[]>([]);
+  const [fixtureExists,      setFixtureExists]      = useState<Record<string, boolean>>({});
+  const [selRowParticipants, setSelRowParticipants] = useState<SeedEntry[]>([]);
 
-  // Load events + SBA rankings from API on mount
-  // Mock: in-memory stores; Real: swap api function bodies — no changes here
+  // Load events + SBA rankings from real API on mount
   useEffect(() => {
-    apiGetEvents().then(r => { if (r.data) setAllEvents(r.data.filter(e => e.isSports)); });
+    apiGetEvents({ includeInactive: false }).then(async r => {
+      const evs = (r.data ?? []).filter(e => e.isSports);
+      setAllEvents(evs);
+      // Bulk-check which programs already have a fixture in the DB
+      const progIds = evs.flatMap(e => e.programs.map(p => p.id));
+      if (progIds.length > 0) {
+        const fxR = await apiGetFixtureStatus(progIds);
+        if (fxR.data) setFixtureExists(fxR.data);
+      }
+    });
     apiGetSbaRankings().then(r => { if (r.data) setSbaRankings(r.data); });
   }, []);
   const { toast, Toasts } = useToasts();
@@ -311,9 +323,33 @@ export default function AdminFixtures() {
     return () => { cancelled = true; };
   }, [selRow?.eventId, selRow?.programId]);
 
+  // Load confirmed participant groups from registrations API when a program row is selected.
+  // The event API always returns participantSeeds = [] — real seeds live in registrations.
+  useEffect(() => {
+    if (!selRow) { setSelRowParticipants([]); return; }
+    apiGetRegistrations(
+      { eventId: selRow.eventId, programId: selRow.programId },  // all non-cancelled
+      { page: 1, pageSize: 500 },
+    ).then(r => {
+      if (!r.data) return;
+      const allGroups = r.data.items.flatMap(reg =>
+        reg.groups.filter(g => g.programId === selRow.programId)
+      );
+      setSelRowParticipants(groupsToSeedEntries(allGroups));
+    });
+  }, [selRow?.eventId, selRow?.programId]);
+
+
   // ── Bracket cached results display in table — refresh on save ────────────
-  const [tableVersion, setTableVersion] = useState(0);
-  const refreshTable = () => setTableVersion(v => v + 1);
+  // refreshTable re-fetches fixture existence so badges update immediately after actions
+  const refreshTable = useCallback(() => {
+    const progIds = allEvents.flatMap(e => e.programs.map(p => p.id));
+    if (progIds.length > 0) {
+      apiGetFixtureStatus(progIds).then(r => {
+        if (r.data) setFixtureExists(r.data);
+      });
+    }
+  }, [allEvents]);
 
   // ── Wizard complete ───────────────────────────────────────────────────────
   const handleWizardComplete = async ({ config: wizConfig, seeds, bracket: prebuilt }: WizardResult) => {
@@ -323,6 +359,7 @@ export default function AdminFixtures() {
     setBracketState(result.data!);
     setShowWizard(false);
     setActiveTab(isHeats ? "heats" : "draw");
+    setFixtureExists(prev => ({ ...prev, [selRow.programId]: true }));
     refreshTable();
     toast.success("Fixture saved.");
   };
@@ -331,7 +368,7 @@ export default function AdminFixtures() {
   const handleReset = async () => {
     if (!selRow || !window.confirm("Reset this fixture? All match data will be lost.")) return;
     await withLoading(() => apiResetFixture(selRow.eventId, selRow.programId));
-    setBracketState(null); setShowWizard(false); refreshTable(); toast.success("Fixture reset.");
+    setBracketState(null); setShowWizard(false); setFixtureExists(prev => ({ ...prev, [selRow.programId]: false })); refreshTable(); toast.success("Fixture reset.");
   };
 
   // ── Next round ────────────────────────────────────────────────────────────
@@ -489,8 +526,13 @@ export default function AdminFixtures() {
                 {filtered.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-8 text-sm opacity-30">No programs match the current filters.</td></tr>
                 ) : filtered.map(row => {
-                  const bracket = (() => { try { const r = localStorage.getItem(`fixture_${row.eventId}_${row.programId}`); return r ? JSON.parse(r) as BracketState : null; } catch { return null; } })();
-                  const info    = getProgramFixtureInfo(row.eventId, { id: row.programId, name: row.programName }, row.closeDate, row.mode);
+                  // bracket is null in the table view — full bracket is only loaded when row is selected.
+                  // Use fixtureExists map (from bulk API call on mount) for status badges.
+                  const info    = computeProgramFixtureStatus(
+                    { id: row.programId, name: row.programName },
+                    row.closeDate, row.mode,
+                    null  // no bracket in table view — DrawBadge uses fixtureExists instead
+                  );
                   const urgent  = info.status === "ready" || info.status === "in_progress";
                   return (
                     <tr key={`${row.eventId}-${row.programId}`}
@@ -511,17 +553,14 @@ export default function AdminFixtures() {
                         </span>
                       </td>
                       <td className="text-xs opacity-60 whitespace-nowrap">{row.startDate} → {row.endDate}</td>
-                      <td><DrawBadge eventId={row.eventId} programId={row.programId} closeDate={row.closeDate} mode={row.mode} /></td>
+                      <td><DrawBadge programId={row.programId} closeDate={row.closeDate} mode={row.mode} fixtureExists={fixtureExists} /></td>
                       <td>
-                        {row.mode === "not_required" || row.mode === "external" || !bracket
-                          ? <span className="text-xs opacity-30">—</span>
-                          : (() => {
-                              const all = getAllMatches(bracket);
-                              const sched = all.filter(m => m.matchDate).length;
-                              return <span className="text-xs opacity-60">{sched}/{all.length} scheduled</span>;
-                            })()}
+                        {/* Schedule count not available in table view — only loaded when program is selected */}
+                        {fixtureExists[row.programId] && row.mode === "internal"
+                          ? <span className="text-xs opacity-40">See details →</span>
+                          : <span className="text-xs opacity-30">—</span>}
                       </td>
-                      <td><ResultsBadge bracket={row.mode === "not_required" ? null : bracket} /></td>
+                      <td><ResultsBadge bracket={null} /></td>
                       <td>
                         {row.mode === "not_required"
                           ? <span className="text-xs opacity-30">—</span>
@@ -564,11 +603,11 @@ export default function AdminFixtures() {
                   <span className="opacity-30">·</span>
                   <span className="opacity-50">{selRow.startDate} → {selRow.endDate}</span>
                   <span className="opacity-30">·</span>
-                  <span className="opacity-50">{selRow.participants.length} entries</span>
+                  <span className="opacity-50">{selRowParticipants.length} entries</span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => exportParticipantsCsv(selRow.eventName, selRow.programName, selRow.participants, isBadminton)}
+                <button onClick={() => exportParticipantsCsv(selRow.eventName, selRow.programName, selRowParticipants, isBadminton)}
                   className="btn-outline flex items-center gap-1.5 px-4 py-2 text-xs">
                   <Download className="h-3.5 w-3.5" /> Export Participants
                 </button>
@@ -592,7 +631,7 @@ export default function AdminFixtures() {
           {/* External mode */}
           {selRow.mode === "external" && (
             <ExternalPanel
-              participants={selRow.participants} sbaRankings={sbaRankings}
+              participants={selRowParticipants} sbaRankings={sbaRankings}
               isBadminton={isBadminton} eventName={selRow.eventName} programName={selRow.programName}
             />
           )}
@@ -605,7 +644,7 @@ export default function AdminFixtures() {
                 <div className="py-12 flex flex-col items-center gap-4"
                   style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
                   <p className="text-sm opacity-50">No fixture generated for this program.</p>
-                  {selRow.participants.length >= 2
+                  {selRowParticipants.length >= 2
                     ? <button onClick={() => setShowWizard(true)} className="btn-primary px-6 py-2.5 text-sm font-semibold">Generate Fixture →</button>
                     : <p className="text-xs opacity-30">Need at least 2 registered entries.</p>}
                 </div>
@@ -615,7 +654,7 @@ export default function AdminFixtures() {
               {showWizard && !bracketState && (
                 <div className="p-6" style={{ border: "2px solid var(--color-primary)" }}>
                   <FixtureWizard
-                    participants={selRow.participants}
+                    participants={selRowParticipants}
                     sbaRankings={sbaRankings}
                     isBadminton={isBadminton}
                     onComplete={handleWizardComplete}

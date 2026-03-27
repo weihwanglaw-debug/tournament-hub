@@ -14,6 +14,7 @@ import StatusBadge, { getProgramCapacityStatus } from "@/components/events/Statu
 import { useAuth } from "@/contexts/AuthContext";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import { PageLoader } from "@/components/ui/LoadingSpinner";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -382,7 +383,7 @@ export default function EventDetail() {
       if (!p.contactNumber.trim()) errs[`${px}.contactNumber`] = "Required";
       if (!p.nationality.trim()) errs[`${px}.nationality`] = "Required";
       if (!p.clubSchoolCompany.trim()) errs[`${px}.clubSchoolCompany`] = "Required";
-      if (!p.tshirtSize) errs[`${px}.tshirtSize`] = "Required";
+      if (selectedProgram.fields.enableTshirt && !p.tshirtSize) errs[`${px}.tshirtSize`] = "Required";
       if (p.dobDay && p.dobMonth && p.dobYear) {
         const monthIdx = MONTHS.indexOf(p.dobMonth);
         const dob = new Date(+p.dobYear, monthIdx, +p.dobDay);
@@ -500,21 +501,20 @@ export default function EventDetail() {
       });
       const items = isPerPlayer
         ? parts.map((p, pi) => ({
-            id: `PI-TEMP-${i}-${pi}`, paymentId: "PAY-TEMP",
-            participantGroupId: groupId, participantId: p.id,
             programName: entry.programName,
             description: `${entry.programName} — ${p.fullName}`,
-            playerName: p.fullName, amount: entry.feePerPlayer ?? 0, itemStatus: "Pending" as const,
+            playerName: p.fullName,
+            amount: entry.feePerPlayer ?? 0,
+            participantIndex: pi,  // backend uses this to link to the saved Participant row
           }))
         : [{
-            id: `PI-TEMP-${i}`, paymentId: "PAY-TEMP",
-            participantGroupId: groupId, programName: entry.programName,
+            programName: entry.programName,
             description: `${entry.programName} — ${parts.map(p => p.fullName).join(" / ")}`,
-            amount: entry.fee, itemStatus: "Pending" as const,
+            amount: entry.fee,
           }];
       return {
-        id: groupId, registrationId: "REG-TEMP", eventId: event!.id,
-        programId: entry.programId, programName: entry.programName, fee: entry.fee,
+        id: groupId, registrationId: "REG-TEMP", eventId: Number(event!.id),
+        programId: Number(entry.programId), programName: entry.programName, fee: entry.fee,
         groupStatus: "Pending" as const, seed: null, participants: parts,
         clubDisplay: parts[0]?.clubSchoolCompany ?? "",
         namesDisplay: parts.map(p => p.fullName).join(" / "),
@@ -522,11 +522,11 @@ export default function EventDetail() {
       };
     });
     return {
-      eventId: event!.id, eventName: event!.name, regStatus: "Pending" as const,
+      eventId: Number(event!.id), eventName: event!.name, regStatus: "Pending" as const,
       contactName: contact.name, contactEmail: contact.email, contactPhone: contact.phone,
       groups,
       payment: {
-        id: "PAY-TEMP", registrationId: "REG-TEMP", eventId: event!.id,
+        id: "PAY-TEMP", registrationId: "REG-TEMP", eventId: Number(event!.id),
         gateway: "Stripe" as const, method: "CreditCard" as const,
         amount: totalPrice, currency, paymentStatus: "Pending" as const,
         createdAt: new Date().toISOString(), items: [],
@@ -613,7 +613,9 @@ export default function EventDetail() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 flex items-center justify-center opacity-40 text-sm">Loading event…</main>
+        <main className="flex-1 flex items-center justify-center">
+          <PageLoader label="Loading event…" />
+        </main>
         <Footer />
       </div>
     );
@@ -847,11 +849,13 @@ export default function EventDetail() {
                           <Field label="Club / School / Company" error={errors[`p${idx}.clubSchoolCompany`]}>
                             <input className="field-input" value={p.clubSchoolCompany} onChange={(e) => updateParticipant(idx, "clubSchoolCompany", e.target.value)} />
                           </Field>
+                          {selectedProgram.fields.enableTshirt && (
                           <Field label="T-Shirt Size" error={errors[`p${idx}.tshirtSize`]}>
                             <select className="field-input" value={p.tshirtSize} onChange={(e) => updateParticipant(idx, "tshirtSize", e.target.value)}>
                               <option value="">Select</option>{TSHIRT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
                           </Field>
+                          )}
                           {selectedProgram.fields.enableSbaId && (
                             <div className="sm:col-span-2">
                               <Field label="SBA ID">

@@ -61,7 +61,7 @@ export interface RegistrationFilters {
  * Does NOT initiate checkout — call apiInitiateCheckout() next.
  */
 export async function apiCreateRegistration(
-  payload: Omit<Registration, "id" | "submittedAt">,
+  payload: Record<string, unknown>,
 ): Promise<ApiResult<Registration>> {
   await delay();
 
@@ -161,7 +161,7 @@ export async function apiConfirmSession(
 ): Promise<ApiResult<{ registrationId: string }>> {
   await delay();
 
-  const res = await apiFetch(`${API_BASE}/api/registrations/confirm-session`, {
+  const res = await apiFetch(`${API_BASE}/api/Payment/confirm-session`, {
     method: "POST",
     headers: publicHeaders(),
     body: JSON.stringify({ gatewaySessionId, registrationPayload }),
@@ -340,7 +340,7 @@ export async function apiInitiateRefund(
   const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/payment/refunds`, {
     method: "POST",
     headers: adminHeaders(),
-    body: JSON.stringify({ paymentItemId, refundAmount, refundReason }),
+    body: JSON.stringify({ paymentItemId: Number(paymentItemId), refundAmount, refundReason }),
   });
   if (!res.ok) {
     const e = await parseError(res);

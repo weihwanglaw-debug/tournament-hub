@@ -49,12 +49,12 @@ export default function SeedingModal({ open, onClose, eventId, programId }: Seed
     setFinalized(false);
 
     apiGetRegistrations(
-      { eventId, programId, regStatus: "Confirmed" },
+      { eventId, programId },  // include Pending + Confirmed; exclude Cancelled via groupStatus filter
       { page: 1, pageSize: 200 },
     ).then(r => {
       if (r.error) { setError(r.error.message); return; }
       const groups: ParticipantGroup[] = (r.data?.items ?? [])
-        .flatMap(reg => reg.groups.filter(g => g.programId === programId));
+        .flatMap(reg => reg.groups.filter(g => g.programId === programId && g.groupStatus !== "Cancelled"));
       setRows(groups.map(g => ({
         registrationId: g.registrationId,
         groupId:        g.id,

@@ -38,6 +38,21 @@ async function persist(
   return ok(state);
 }
 
+// ── GET /api/fixtures/status  ─────────────────────────────────────────────────
+// Returns { [programId]: boolean } — true means a fixture row exists in the DB.
+// Used by the Fixtures table and Dashboard to show Draw status without fetching full brackets.
+export async function apiGetFixtureStatus(
+  programIds: string[],
+): Promise<ApiResult<Record<string, boolean>>> {
+  if (!programIds.length) return ok({});
+  const res = await apiFetch(
+    `${API_BASE}/api/fixtures/status?programIds=${programIds.join(",")}`,
+    { headers: adminHeaders() },
+  );
+  if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
+
 // ── GET /api/fixtures/:eventId/:programId ─────────────────────────────────────
 export async function apiGetFixture(
   eventId: string,

@@ -12,6 +12,7 @@ export interface ProgramFields {
   enableDocumentUpload: boolean;
   enableGuardianInfo: boolean;
   enableRemark?: boolean;
+  enableTshirt?: boolean;
   customFields: CustomField[];
 }
 

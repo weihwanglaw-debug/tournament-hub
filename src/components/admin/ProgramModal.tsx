@@ -31,7 +31,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
     minPlayers: 1, maxPlayers: 1,
     minParticipants: 4, maxParticipants: 32,
     enableSbaId: false, enableDocumentUpload: false,
-    enableGuardianInfo: false, enableRemark: false, customFields: [] as CF[],
+    enableGuardianInfo: false, enableRemark: false, enableTshirt: true, customFields: [] as CF[],
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -50,10 +50,11 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
         maxPlayers:      program.maxPlayers,
         minParticipants: program.minParticipants ?? 4,
         maxParticipants: program.maxParticipants,
-        enableSbaId:          program.fields.enableSbaId,
+        enableSbaId:          isBadminton ? program.fields.enableSbaId : false,
         enableDocumentUpload: program.fields.enableDocumentUpload,
         enableGuardianInfo:   program.fields.enableGuardianInfo,
         enableRemark:         program.fields.enableRemark ?? false,
+        enableTshirt:         program.fields.enableTshirt ?? true,
         customFields: program.fields.customFields.map(cf => ({
           label: cf.label, type: cf.type, mandatory: cf.required, options: cf.options || "",
         })),
@@ -66,11 +67,11 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
         minPlayers: 1, maxPlayers: 1,
         minParticipants: 4, maxParticipants: 32,
         enableSbaId: false, enableDocumentUpload: false,
-        enableGuardianInfo: false, enableRemark: false, customFields: [],
+        enableGuardianInfo: false, enableRemark: false, enableTshirt: true, customFields: [],
       });
     }
     setFormErrors({});
-  }, [program, open]);
+  }, [program, open, isBadminton]);
 
   const s      = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }));
   const addCF  = () => s("customFields", [...form.customFields, { label: "", type: "text", mandatory: false, options: "" }]);
@@ -104,6 +105,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
       fields: {
         enableSbaId: form.enableSbaId, enableDocumentUpload: form.enableDocumentUpload,
         enableGuardianInfo: form.enableGuardianInfo, enableRemark: form.enableRemark,
+        enableTshirt: form.enableTshirt,
         customFields: form.customFields.map(cf => ({
           label: cf.label, type: cf.type, required: cf.mandatory, options: cf.options || undefined,
         })),
@@ -234,6 +236,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
           <Sec title="Optional Fields">
             <div className="grid sm:grid-cols-2 gap-3">
               {[
+                { key: "enableTshirt",        label: "T-Shirt Size" },
                 { key: "enableDocumentUpload", label: "Document Upload" },
                 { key: "enableGuardianInfo",   label: "Guardian Info" },
                 { key: "enableRemark",         label: "Remark Field" },
