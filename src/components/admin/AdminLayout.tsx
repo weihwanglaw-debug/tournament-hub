@@ -1,13 +1,15 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, CalendarDays, Users, GitBranch,
-  LogOut, Trophy, Shield, Settings, ChevronLeft, ChevronRight, Menu,
+  LogOut, Trophy, Shield, Settings, ChevronLeft, Menu, Sun, Moon,
 } from "lucide-react";
 
 export default function AdminLayout() {
   const { isAuthenticated, user, logout, mustChangePassword } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "superadmin";
   const [collapsed, setCollapsed] = useState(true); // default collapsed
@@ -80,6 +82,17 @@ export default function AdminLayout() {
         </nav>
 
         <div className={`mt-auto ${expanded ? "px-4" : "px-2"} pb-4`}>
+          <button
+            onClick={toggleTheme}
+            title="Toggle theme"
+            className={`flex items-center gap-2 text-sm hover:bg-white/10 py-2.5 w-full transition-colors ${
+              expanded ? "px-3 mb-2" : "justify-center px-0 mb-2"
+            }`}
+          >
+            {theme === "a" ? <Moon className="h-4 w-4 flex-shrink-0" /> : <Sun className="h-4 w-4 flex-shrink-0" />}
+            {expanded && (theme === "a" ? "Dark Mode" : "Light Mode")}
+          </button>
+
           {expanded && (
             <>
               <p className="text-xs opacity-60 mb-1">{user?.name}</p>

@@ -165,7 +165,7 @@ export default function EventEdit() {
   return (
     <div>
       {/* ── Sticky Header ── */}
-      <div className="sticky-header">
+      <div className="sticky-header px-2 md:px-4">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate("/admin/events")} className="btn-back">
