@@ -1,9 +1,9 @@
 /**
  * PaymentResult.tsx
  *
- * Landing page after Stripe redirects back.
+ * Landing page after Stripe redirects back OR after free registration.
  *
- * ── SESSION-FIRST FLOW ────────────────────────────────────────────────────────
+ * ── SESSION-FIRST FLOW (PAID) ─────────────────────────────────────────────────
  * All registration data (cart, participants, contact person) is stored in
  * browser sessionStorage under key trs_cart_{eventId}. No DB record is created
  * before Stripe confirms payment.
@@ -13,8 +13,20 @@
  *   2. Call POST /api/registrations/confirm-session
  *      Backend: verifies payment with Stripe, writes Registration + Payment to DB,
  *      generates receipt, sends confirmation email, returns registrationId
- *   3. Poll GET /api/registrations/:id until paymentStatus = "Success"
+ *   3. Poll GET /api/registrations/:id until paymentStatus = "S"
  *   4. Clear sessionStorage, show receipt
+ *
+ * ── FREE REGISTRATION FLOW ───────────────────────────────────────────────────
+ * Free registrations are written directly to the DB (no Stripe session).
+ * The confirmation page is reached via:
+ *   /payment/result?status=success&reg={registrationId}
+ *
+ * On FREE SUCCESS (/payment/result?status=success&reg={registrationId}):
+ *   1. Detect: status=success + reg param present + no event param
+ *   2. Skip confirm-session entirely — set regId directly
+ *   3. Poll GET /api/registrations/:id until regStatus = "Confirmed"
+ *      (paymentStatus stays "P" for free regs — never "S")
+ *   4. Show receipt
  *
  * On CANCEL (/payment/result?status=cancel&event={eventId}):
  *   - No DB record was created — nothing to clean up
@@ -45,9 +57,13 @@ export default function PaymentResult() {
   const navigate  = useNavigate();
   const status    = params.get("status");
   const eventId   = params.get("event");
+  const regParam  = params.get("reg");
 
   const isSuccess = status === "success";
   const isCancel  = status === "cancel" || status === "failed";
+
+  // Free registration: status=success + reg param present + no event param
+  const isFreeReg = isSuccess && !!regParam && !eventId;
 
   const initialPhase: Phase = isSuccess ? "confirming" : isCancel ? "cancelled" : "done";
 
@@ -57,13 +73,22 @@ export default function PaymentResult() {
   const [errorMsg,     setErrorMsg]     = useState("");
   const [pollCount,    setPollCount]    = useState(0);
 
-  // ── On success: read sessionStorage → call confirm-session → get regId ────
+  // ── On success: handle paid flow (confirm-session) OR free flow (skip straight to polling) ──
   useEffect(() => {
     if (!isSuccess) return;
 
+    // ── FREE REGISTRATION: reg param present, no event param ─────────────────
+    if (isFreeReg) {
+      // Registration already exists in DB — skip confirm-session entirely
+      setRegId(regParam);
+      setPhase("polling");
+      return;
+    }
+
+    // ── PAID REGISTRATION: event param drives session key ────────────────────
     const SESSION_KEY = eventId ? `trs_cart_${eventId}` : null;
 
-    // No session key means no eventId in URL — shouldn't happen in normal flow
+    // No session key means no eventId in URL — shouldn't happen in normal paid flow
     if (!SESSION_KEY) {
       setPhase("error");
       setErrorMsg("Missing event context. If your payment was successful you will receive a confirmation email. Otherwise please contact the organiser.");
@@ -108,7 +133,10 @@ export default function PaymentResult() {
     });
   }, []); // run once on mount
 
-  // ── Poll until registration is confirmed by webhook ───────────────────────
+  // ── Poll until registration is confirmed ──────────────────────────────────
+  // Resolves when:
+  //   - Paid:  paymentStatus === "S"
+  //   - Free:  regStatus === "Confirmed" (paymentStatus stays "P")
   useEffect(() => {
     if (phase !== "polling" || !regId) return;
 
@@ -124,7 +152,13 @@ export default function PaymentResult() {
         if (cancelled) return;
         if (r.data) {
           setRegistration(r.data);
-          if (r.data.payment.paymentStatus === "Success" || attempts >= MAX_ATTEMPTS) {
+
+          const paidSuccess  = r.data.payment.paymentStatus === "S";
+          const freeConfirmed =
+            r.data.regStatus === "Confirmed" &&
+            r.data.payment.paymentStatus === "P";
+
+          if (paidSuccess || freeConfirmed || attempts >= MAX_ATTEMPTS) {
             setPhase("done");
             return;
           }
@@ -143,11 +177,16 @@ export default function PaymentResult() {
     return () => { cancelled = true; };
   }, [phase, regId]);
 
-  const isConfirmed = registration?.payment.paymentStatus === "Success";
+  // Confirmed when paid AND succeeded, OR free AND status is Confirmed
+  const isConfirmed =
+    registration?.payment.paymentStatus === "S" ||
+    (registration?.regStatus === "Confirmed" &&
+      registration?.payment.paymentStatus === "P");
+
   const receiptNo   = registration?.payment.receiptNo ?? (regId ? `TRS-${regId}` : "—");
 
   const handleTryAgain = () => {
-    if (eventId) navigate(`/events/${eventId}`);
+    if (eventId) navigate(`/event/${eventId}`);
     else navigate("/");
   };
 

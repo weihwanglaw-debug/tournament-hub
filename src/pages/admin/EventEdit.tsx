@@ -132,11 +132,16 @@ export default function EventEdit() {
       if (isNew) {
         const r = await apiCreateEvent(payload);
         if (r.error) { setApiError(r.error.message); return; }
-        // Persist any programs that were added locally before the event was saved
+        // Persist any programs that were added locally before the event was saved.
+        // Each program is saved individually — stop and surface the error if any fail.
         for (const prog of programs) {
           const { id: _id, currentParticipants: _cp, participantSeeds: _ps, ...progPayload } = prog;
           void _id; void _cp; void _ps;
-          await apiAddProgram(r.data!.id, progPayload);
+          const pr = await apiAddProgram(r.data!.id, progPayload);
+          if (pr.error) {
+            setApiError(`Event created but failed to save program "${prog.name}": ${pr.error.message}`);
+            return;
+          }
         }
         navigate("/admin/events");
       } else {
@@ -204,6 +209,14 @@ export default function EventEdit() {
           </div>
         </div>
       </div>
+
+      {/* ── API Error ── */}
+      {apiError && (
+        <div className="mb-6 px-4 py-3 text-sm font-medium"
+          style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)", border: "1px solid var(--badge-closed-text)" }}>
+          {apiError}
+        </div>
+      )}
 
       {/* ── Event Details ── */}
       <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
@@ -403,9 +416,12 @@ export default function EventEdit() {
                               <button onClick={() => { setEditingProgram(prog); setProgramModalOpen(true); setOpenAction(null); }}>
                                 <Edit2 className="h-4 w-4" /> Edit Program
                               </button>
-                              <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>
-                                <Scissors className="h-4 w-4" /> Seeding
-                              </button>
+                              {/* Seeding only available once the event is saved (has a real ID) */}
+                              {!isNew && (
+                                <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>
+                                  <Scissors className="h-4 w-4" /> Seeding
+                                </button>
+                              )}
                               <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${prog.id}`); setOpenAction(null); }}>
                                 <Users className="h-4 w-4" /> Registrations
                               </button>
@@ -435,7 +451,10 @@ export default function EventEdit() {
                       {openAction === prog.id && (
                         <div className="action-dropdown">
                           <button onClick={() => { setEditingProgram(prog); setProgramModalOpen(true); setOpenAction(null); }}>Edit</button>
-                          <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>Seeding</button>
+                          {/* Seeding only available once the event is saved (has a real ID) */}
+                          {!isNew && (
+                            <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>Seeding</button>
+                          )}
                           <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${prog.id}`); setOpenAction(null); }}>Registrations</button>
                         </div>
                       )}
@@ -485,6 +504,7 @@ export default function EventEdit() {
         program={editingProgram}
         isBadminton={isBadminton}
       />
+      {/* SeedingModal only mounts with a real saved eventId — isNew guard above prevents opening */}
       <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} eventId={eventId ?? ""} programId={seedingProgramId} />
     </div>
   );

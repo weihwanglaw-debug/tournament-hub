@@ -34,7 +34,14 @@ export default function AdminEvents() {
   }, [openAction]);
 
   const filtered = useMemo(() => events.filter(ev => {
+    const regStatus =
+      new Date() < new Date(ev.openDate)
+        ? "upcoming"
+        : new Date() > new Date(ev.closeDate)
+          ? "closed"
+          : "open";
     if (filterStatus && getEventStatus(ev) !== filterStatus) return false;
+    if (filterRegStatus && regStatus !== filterRegStatus) return false;
     if (filterDateFrom) { const to = ev.eventEndDate || ev.eventStartDate; if (to < filterDateFrom) return false; }
     if (filterDateTo) { const from = ev.eventStartDate; if (from > filterDateTo) return false; }
     return true;

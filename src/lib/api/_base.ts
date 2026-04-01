@@ -78,9 +78,9 @@ export async function apiFetch(
     localStorage.removeItem("trs_token");
     localStorage.removeItem("trs_user");
     const path = window.location.pathname;
-    const isLoginPage = path === "/login" || path === "/admin/login" || path === "/";
+    const isLoginPage = path === "/login" || path === "/";
     if (!isLoginPage) {
-      window.location.replace("/admin/login");
+      window.location.replace("/login");
     }
     return res;
   }

@@ -528,7 +528,7 @@ export default function EventDetail() {
       payment: {
         id: "PAY-TEMP", registrationId: "REG-TEMP", eventId: Number(event!.id),
         gateway: "Stripe" as const, method: "CreditCard" as const,
-        amount: totalPrice, currency, paymentStatus: "Pending" as const,
+        amount: totalPrice, currency, paymentStatus: "P" as const,
         createdAt: new Date().toISOString(), items: [],
       },
     };
@@ -954,7 +954,7 @@ export default function EventDetail() {
                         ))}
                         <div className="flex items-center justify-between py-5" style={{ borderTop: "1px solid var(--color-table-border)" }}>
                           <span className="font-bold text-lg">Total</span>
-                          <span className="font-bold text-xl" style={{ color: "var(--color-primary)" }}>{currency} ${totalPrice}</span>
+                          <span className="font-bold text-xl" style={{ color: "var(--color-primary)" }}>{currency} ${totalPrice.toFixed(2)}</span>
                         </div>
                         {/* Session restored banner — shown when user returns after payment cancel */}
                         {savedSession && (

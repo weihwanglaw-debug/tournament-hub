@@ -54,23 +54,17 @@ export type RegStatus = "Pending" | "Confirmed" | "Cancelled" | "Waitlisted";
 // These match the DB schema exactly. UI badge components translate to
 // human-readable labels (e.g. "Success" → "Paid", "FullyRefunded" → "Refunded").
 
-export type PaymentStatus =
-  | "Pending"            // DB: 'P'
-  | "Success"            // DB: 'S'   (display: "Paid")
-  | "PartiallyRefunded"  // DB: 'PR'  (display: "Partially Refunded")
-  | "FullyRefunded"      // DB: 'FR'  (display: "Refunded")
-  | "Failed"             // DB: 'F'
-  | "Cancelled";         // DB: 'X'
+export type PaymentStatus = "P" | "S" | "PR" | "FR" | "F" | "X";
 
 export type ItemStatus =
-  | "Pending"    // DB: 'P'
-  | "Success"    // DB: 'S'
-  | "Refunded";  // DB: 'R'
+  | "P"
+  | "S"
+  | "R";
 
 export type RefundStatus =
-  | "Pending"    // DB: 'P'
-  | "Success"    // DB: 'S'
-  | "Failed";    // DB: 'F'
+  | "P"
+  | "S"
+  | "F";
 
 export type PaymentMethod =
   | "CreditCard"    // DB: 'CreditCard'
@@ -86,18 +80,18 @@ export type PaymentGateway = "Stripe" | "PayNow" | "Manual";
 // Keep translation HERE so badge components don't each do their own mapping.
 
 export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
-  Pending:            "Pending",
-  Success:            "Paid",
-  PartiallyRefunded:  "Partially Refunded",
-  FullyRefunded:      "Refunded",
-  Failed:             "Failed",
-  Cancelled:          "Cancelled",
+  P:  "Pending",
+  S:  "Paid",
+  PR: "Partially Refunded",
+  FR: "Refunded",
+  F:  "Failed",
+  X:  "Cancelled",
 };
 
 export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
-  Pending:  "Pending",
-  Success:  "Paid",
-  Refunded: "Refunded",
+  P: "Pending",
+  S: "Paid",
+  R: "Refunded",
 };
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
@@ -280,7 +274,7 @@ export function totalFee(reg: Registration): number {
 /** Total confirmed-refunded amount for a registration (requires refunds to be fetched separately) */
 export function totalRefunded(refunds: Refund[]): number {
   return refunds
-    .filter(r => r.refundStatus === "Success")
+    .filter(r => r.refundStatus === "S")
     .reduce((s, r) => s + r.refundAmount, 0);
 }
 
@@ -291,9 +285,9 @@ export function allParticipantNames(reg: Registration): string[] {
 
 /** Whether a PaymentItem can have a new refund initiated */
 export function canRefundItem(item: PaymentItem, activeRefunds: Refund[]): boolean {
-  if (item.itemStatus !== "Success") return false;  // Only Success items are refundable
+  if (item.itemStatus !== "S") return false;  // Only successful items are refundable
   const hasPending = activeRefunds.some(
-    r => r.paymentItemId === item.id && r.refundStatus === "Pending"
+    r => r.paymentItemId === item.id && r.refundStatus === "P"
   );
   return !hasPending;  // DB constraint: one Pending refund per item at a time
 }
