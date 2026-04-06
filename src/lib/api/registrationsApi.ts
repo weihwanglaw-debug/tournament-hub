@@ -120,7 +120,7 @@ export async function apiInitiateCheckout(
     : {
         registrationId: Number(registrationId),
         paymentMethod,
-        successUrl: `${window.location.origin}/payment/result?reg=${registrationId}`,
+        successUrl: `${window.location.origin}/payment/result?status=success&reg=${registrationId}`,
         cancelUrl:  `${window.location.origin}/payment/result?status=cancel&reg=${registrationId}`,
       };
 
@@ -141,7 +141,7 @@ export async function apiInitiateCheckout(
 }
 
 /**
- * POST /api/registrations/confirm-session
+ * POST /api/Payment/confirm-session
  * Public: called by PaymentResult.tsx after Stripe redirects back with success.
  *
  * This is the ONLY point where Registration + Payment are written to the DB.

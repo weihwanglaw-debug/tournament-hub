@@ -10,7 +10,7 @@
  *   Payment Log        — per-payment-record view with receipt/refund actions
  */
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown,
@@ -20,7 +20,7 @@ import type { TournamentEvent } from "@/types/config";
 import type { Registration, ParticipantGroup, Payment, PaymentItem, Refund, PaymentMethod, PaymentStatus } from "@/types/registration";
 import { totalFee, PAYMENT_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/types/registration";
 import {
-  apiGetEvents, apiGetRegistrations,
+  apiGetEvents, apiGetRegistration, apiGetRegistrations,
   apiUpdateRegistrationStatus, apiUpdatePayment,
   apiGetRefunds, apiInitiateRefund,
 } from "@/lib/api";
@@ -89,6 +89,31 @@ function FG({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="block text-xs font-semibold mb-1.5 opacity-60">{label}</label>{children}</div>;
 }
 
+function getPayment(reg: Registration | null | undefined): Payment | null {
+  if (!reg) return null;
+  return ((reg as Registration & { payment?: Payment | null }).payment) ?? null;
+}
+
+function formatDate(value?: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-SG", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Sum of Success refunds for a registration/payment item list. */
@@ -102,7 +127,8 @@ function calcRefunded(refunds: Refund[], items: PaymentItem[]): number {
 // ── Expanded row — shows groups + participants ─────────────────────────────────
 
 function ExpandedRow({ reg, refunds }: { reg: Registration; refunds: Refund[] }) {
-  const refunded = calcRefunded(refunds, reg.payment.items);
+  const payment = getPayment(reg);
+  const refunded = calcRefunded(refunds, payment?.items ?? []);
   return (
     <tr>
       <td colSpan={8} style={{ padding: 0, backgroundColor: "var(--color-row-hover)" }}>
@@ -151,13 +177,13 @@ function ExpandedRow({ reg, refunds }: { reg: Registration; refunds: Refund[] })
 
           {/* Payment summary */}
           <div className="flex items-center gap-4 text-xs opacity-60 pt-1">
-            <span>Receipt: <strong className="font-mono">{reg.payment.receiptNo || "—"}</strong></span>
+            <span>Receipt: <strong className="font-mono">{payment?.receiptNo || "—"}</strong></span>
             <span>·</span>
-            <span>Method: {PAYMENT_METHOD_LABEL[reg.payment.method] ?? reg.payment.method}</span>
+            <span>Method: {payment ? (PAYMENT_METHOD_LABEL[payment.method] ?? payment.method) : "—"}</span>
             <span>·</span>
-            <span>Paid: {reg.payment.paidAt ? reg.payment.paidAt.slice(0, 10) : "—"}</span>
+            <span>Paid: {formatDate(payment?.paidAt)}</span>
             <span>·</span>
-            <span>Total: <strong style={{ color: "var(--color-primary)" }}>${totalFee(reg).toFixed(2)}</strong></span>
+            <span>Total: <strong style={{ color: "var(--color-primary)" }}>${payment ? totalFee(reg).toFixed(2) : "0.00"}</strong></span>
             {refunded > 0 && (
               <><span>·</span><span style={{ color: "var(--badge-open-text)" }}>Refunded: ${refunded.toFixed(2)}</span></>
             )}
@@ -180,6 +206,7 @@ export default function AdminRegistrations() {
   const [filterProgram, setFilterProgram] = useState(urlParams.get("program") || "");
   const [filterReg,     setFilterReg]     = useState("");
   const [filterPay,     setFilterPay]     = useState("");
+  const [filterSearchInput, setFilterSearchInput] = useState("");
   const [filterSearch,  setFilterSearch]  = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -189,9 +216,13 @@ export default function AdminRegistrations() {
   const [regs,        setRegs]        = useState<Registration[]>([]);
   const [regTotal,    setRegTotal]    = useState(0);
   const [regTotalPgs, setRegTotalPgs] = useState(1);
+  const [txnRegs,     setTxnRegs]     = useState<Registration[]>([]);
+  const [txnTotal,    setTxnTotal]    = useState(0);
+  const [txnTotalPgs, setTxnTotalPgs] = useState(1);
   const [refundsByReg, setRefundsByReg] = useState<Record<string, Refund[]>>({});
   const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
   const [loadingRegs, setLoadingRegs] = useState(true);
+  const [loadingTxns, setLoadingTxns] = useState(false);
   const [apiError,    setApiError]    = useState("");
 
   useEffect(() => {
@@ -222,13 +253,16 @@ export default function AdminRegistrations() {
   useEffect(() => {
     let active = true;
 
-    if (regs.length === 0) {
+    const allRegs = [...regs, ...txnRegs];
+    const uniqueRegs = Array.from(new Map(allRegs.map(reg => [reg.id, reg])).values());
+
+    if (uniqueRegs.length === 0) {
       setRefundsByReg({});
       return () => { active = false; };
     }
 
     Promise.all(
-      regs.map(async (reg) => {
+      uniqueRegs.map(async (reg) => {
         const result = await apiGetRefunds(reg.id);
         return [reg.id, result.data ?? []] as const;
       }),
@@ -238,7 +272,7 @@ export default function AdminRegistrations() {
     });
 
     return () => { active = false; };
-  }, [regs]);
+  }, [regs, txnRegs]);
 
   const programsForEvent = useMemo(() =>
     events.find(e => e.id === filterEvent)?.programs ?? [], [events, filterEvent]);
@@ -249,15 +283,23 @@ export default function AdminRegistrations() {
 
   // ── Action dropdown ───────────────────────────────────────────────────────
   const [openAction, setOpenAction] = useState<string | null>(null);
-  const actionRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!openAction) return;
     const h = (e: MouseEvent) => {
-      if (actionRef.current && !actionRef.current.contains(e.target as Node)) setOpenAction(null);
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest(`[data-action-menu="${openAction}"]`)) setOpenAction(null);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [openAction]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFilterSearch(filterSearchInput);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [filterSearchInput]);
 
   // ── Modals ────────────────────────────────────────────────────────────────
   const [markPaidModal,  setMarkPaidModal]  = useState<Registration | null>(null);
@@ -269,59 +311,89 @@ export default function AdminRegistrations() {
   const [markPaidRemark, setMarkPaidRemark] = useState("");
   const [cancelReason,   setCancelReason]   = useState("");
   const [refundSel,      setRefundSel]      = useState<Record<string, { checked: boolean; reason: string }>>({});
+  const [savingMarkPaid, setSavingMarkPaid] = useState(false);
+  const [savingCancel,   setSavingCancel]   = useState(false);
+  const [savingRefund,   setSavingRefund]   = useState(false);
 
   // ── Mutation helpers ──────────────────────────────────────────────────────
   const handleMarkPaid = async () => {
     if (!markPaidModal || !markPaidRemark.trim()) return;
+    setSavingMarkPaid(true);
+    try {
+      const payR = await apiUpdatePayment(markPaidModal.id, {
+        paymentStatus: "S",
+        method: markPaidMethod,
+        adminNote: markPaidRemark,
+      });
+      if (payR.error) {
+        setApiError(payR.error.message);
+        return;
+      }
 
-    // Step 1: record payment
-    const payR = await apiUpdatePayment(markPaidModal.id, {
-      paymentStatus: "S",
-      method: markPaidMethod,
-      adminNote: markPaidRemark,
-    });
-    if (payR.error) {
-      // Surface the error — do not proceed to status update
-      setApiError(payR.error.message);
-      return;
+      if (payR.data) {
+        setRegs(prev => prev.map(reg => reg.id === payR.data!.id ? payR.data! : reg));
+        setTxnRegs(prev => prev.map(reg => reg.id === payR.data!.id ? payR.data! : reg));
+      }
+      setMarkPaidModal(null);
+      setMarkPaidRemark("");
+      setMarkPaidMethod("PayNow");
+    } finally {
+      setSavingMarkPaid(false);
     }
-
-    // Step 2: confirm registration status
-    const regR = await apiUpdateRegistrationStatus(markPaidModal.id, "Confirmed");
-    if (regR.error) {
-      // Payment was recorded but status update failed — reflect payment change at minimum
-      if (payR.data) setRegs(prev => prev.map(reg => reg.id === payR.data!.id ? payR.data! : reg));
-      setApiError(`Payment recorded but registration status could not be updated: ${regR.error.message}`);
-      return;
-    }
-
-    // Both succeeded — use the final reg state returned from status update
-    if (regR.data) setRegs(prev => prev.map(reg => reg.id === regR.data!.id ? regR.data! : reg));
-    setMarkPaidModal(null); setMarkPaidRemark(""); setMarkPaidMethod("PayNow");
   };
 
   const handleCancel = async () => {
     if (!cancelModal || !cancelReason.trim()) return;
-    const wasPaid = cancelModal.payment.paymentStatus === "S";
-    const r = await apiUpdateRegistrationStatus(cancelModal.id, "Cancelled");
-    if (r.data) setRegs(prev => prev.map(reg => reg.id === r.data!.id ? r.data! : reg));
-    if (wasPaid) {
-      for (const item of cancelModal.payment.items) {
-          if (item.itemStatus === "S") {
-          await apiInitiateRefund(cancelModal.id, item.id, item.amount, `Cancelled: ${cancelReason}`, "admin");
+    const payment = getPayment(cancelModal);
+    const wasPaid = payment?.paymentStatus === "S";
+    setSavingCancel(true);
+    try {
+      const r = await apiUpdateRegistrationStatus(cancelModal.id, "Cancelled");
+      if (r.error) {
+        setApiError(r.error.message);
+        return;
+      }
+      if (r.data) {
+        setRegs(prev => prev.map(reg => reg.id === r.data!.id ? r.data! : reg));
+        setTxnRegs(prev => prev.map(reg => reg.id === r.data!.id ? r.data! : reg));
+      }
+
+      if (wasPaid && payment) {
+        const refundErrors: string[] = [];
+        for (const item of payment.items) {
+          if (item.itemStatus !== "S") continue;
+          const refundResult = await apiInitiateRefund(cancelModal.id, item.id, item.amount, `Cancelled: ${cancelReason}`, "admin");
+          if (refundResult.error) refundErrors.push(`${item.programName}: ${refundResult.error.message}`);
+        }
+
+        const [regR, refR] = await Promise.all([
+          apiGetRegistration(cancelModal.id),
+          apiGetRefunds(cancelModal.id),
+        ]);
+        if (regR.data) {
+          setRegs(prev => prev.map(reg => reg.id === regR.data!.id ? regR.data! : reg));
+          setTxnRegs(prev => prev.map(reg => reg.id === regR.data!.id ? regR.data! : reg));
+        }
+        if (refR.data) {
+          setRefundsByReg(prev => ({ ...prev, [cancelModal.id]: refR.data! }));
+        }
+        if (refundErrors.length > 0) {
+          setApiError(`Registration cancelled, but some refunds failed: ${refundErrors.join(" | ")}`);
+          return;
         }
       }
-      const refR = await apiGetRefunds(cancelModal.id);
-      if (refR.data) {
-        setRefundsByReg(prev => ({ ...prev, [cancelModal.id]: refR.data! }));
-      }
+
+      setCancelModal(null);
+      setCancelReason("");
+    } finally {
+      setSavingCancel(false);
     }
-    setCancelModal(null); setCancelReason("");
   };
 
   // ── Refund: check if removing a per-player item would drop group below minPlayers ──
   const getGroupMinPlayersWarning = (reg: Registration, itemId: string): string | null => {
-    const item = reg.payment.items.find(i => i.id === itemId);
+    const payment = getPayment(reg);
+    const item = payment?.items.find(i => i.id === itemId);
     if (!item?.participantId) return null;  // per_entry item — no player count check
     const group = reg.groups.find(g => g.id === item.participantGroupId);
     if (!group) return null;
@@ -330,7 +402,7 @@ export default function AdminRegistrations() {
       .find(p => p.id === group.programId);
     if (!eventProgram) return null;
     // Count remaining per-player items for this group that are not already refunded
-    const activeItems = reg.payment.items.filter(
+    const activeItems = (payment?.items ?? []).filter(
       i => i.participantGroupId === group.id
         && i.participantId
           && i.itemStatus !== "R"
@@ -345,24 +417,42 @@ export default function AdminRegistrations() {
 
   const handleRefund = async () => {
     if (!refundModal) return;
-    for (const [itemId, sel] of Object.entries(refundSel)) {
-      if (!sel.checked || !sel.reason.trim()) continue;
-      if (getGroupMinPlayersWarning(refundModal, itemId)) continue;
-      const item = refundModal.payment.items.find(i => i.id === itemId);
-      if (!item) continue;
-      await apiInitiateRefund(refundModal.id, itemId, item.amount, sel.reason, "admin");
+    const payment = getPayment(refundModal);
+    if (!payment) {
+      setApiError("This registration has no payment record to refund.");
+      return;
     }
-    const [regR, refR] = await Promise.all([
-      apiGetRegistrations({ search: refundModal.id }, { page: 1, pageSize: 1 }),
-      apiGetRefunds(refundModal.id),
-    ]);
-    if (regR.data?.items[0]) {
-      setRegs(prev => prev.map(r => r.id === refundModal.id ? regR.data!.items[0] : r));
+    setSavingRefund(true);
+    try {
+      const refundErrors: string[] = [];
+      for (const [itemId, sel] of Object.entries(refundSel)) {
+        if (!sel.checked || !sel.reason.trim()) continue;
+        if (getGroupMinPlayersWarning(refundModal, itemId)) continue;
+        const item = payment.items.find(i => i.id === itemId);
+        if (!item) continue;
+        const refundResult = await apiInitiateRefund(refundModal.id, itemId, item.amount, sel.reason, "admin");
+        if (refundResult.error) refundErrors.push(`${item.programName}: ${refundResult.error.message}`);
+      }
+      const [regR, refR] = await Promise.all([
+        apiGetRegistration(refundModal.id),
+        apiGetRefunds(refundModal.id),
+      ]);
+      if (regR.data) {
+        setRegs(prev => prev.map(r => r.id === refundModal.id ? regR.data! : r));
+        setTxnRegs(prev => prev.map(r => r.id === refundModal.id ? regR.data! : r));
+      }
+      if (refR.data) {
+        setRefundsByReg(prev => ({ ...prev, [refundModal.id]: refR.data! }));
+      }
+      if (refundErrors.length > 0) {
+        setApiError(`Some refunds failed: ${refundErrors.join(" | ")}`);
+        return;
+      }
+      setRefundModal(null);
+      setRefundSel({});
+    } finally {
+      setSavingRefund(false);
     }
-    if (refR.data) {
-      setRefundsByReg(prev => ({ ...prev, [refundModal.id]: refR.data! }));
-    }
-    setRefundModal(null); setRefundSel({});
   };
 
   const toggleExpand = (id: string) =>
@@ -375,16 +465,49 @@ export default function AdminRegistrations() {
   const [txnPage, setTxnPage] = useState(1);
   const [txnPerPage, setTxnPerPage] = useState(10);
 
-  const filteredTxns = useMemo(() => regs.filter(r => {
-    if (txnFilterEvent && !r.eventName.toLowerCase().includes(txnFilterEvent.toLowerCase())) return false;
-    if (txnFilterStatus && r.payment.paymentStatus !== txnFilterStatus) return false;
-    if (txnFilterMethod && r.payment.method !== txnFilterMethod) return false;
-    return true;
-  }), [regs, txnFilterEvent, txnFilterStatus, txnFilterMethod]);
+  useEffect(() => {
+    if (activeTab !== "payments") return;
 
-  const txnTotal    = filteredTxns.length;
-  const txnTotalPgs = Math.max(1, Math.ceil(txnTotal / txnPerPage));
-  const pagedTxns   = filteredTxns.slice((txnPage - 1) * txnPerPage, txnPage * txnPerPage);
+    let active = true;
+    setLoadingTxns(true);
+    apiGetRegistrations(
+      {
+        eventId: filterEvent || undefined,
+        programId: filterProgram || undefined,
+        regStatus: filterReg || undefined,
+        payStatus: txnFilterStatus || undefined,
+      },
+      { page: 1, pageSize: 5000 },
+    ).then((r) => {
+      if (!active || !r.data) return;
+      setTxnRegs(r.data.items);
+    }).finally(() => {
+      if (active) setLoadingTxns(false);
+    });
+
+    return () => { active = false; };
+  }, [activeTab, filterEvent, filterProgram, filterReg, txnFilterStatus]);
+
+  const filteredTxns = useMemo(() => txnRegs.filter(r => {
+    const payment = getPayment(r);
+    if (!payment) return false;
+    if (txnFilterEvent && !r.eventName.toLowerCase().includes(txnFilterEvent.toLowerCase())) return false;
+    if (txnFilterStatus && payment.paymentStatus !== txnFilterStatus) return false;
+    if (txnFilterMethod && payment.method !== txnFilterMethod) return false;
+    return true;
+  }), [txnRegs, txnFilterEvent, txnFilterStatus, txnFilterMethod]);
+
+  useEffect(() => {
+    const total = filteredTxns.length;
+    setTxnTotal(total);
+    setTxnTotalPgs(Math.max(1, Math.ceil(total / txnPerPage)));
+    if (txnPage > Math.max(1, Math.ceil(total / txnPerPage))) setTxnPage(1);
+  }, [filteredTxns, txnPerPage, txnPage]);
+
+  const pagedTxns = useMemo(
+    () => filteredTxns.slice((txnPage - 1) * txnPerPage, txnPage * txnPerPage),
+    [filteredTxns, txnPage, txnPerPage],
+  );
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -418,7 +541,7 @@ export default function AdminRegistrations() {
             <div className="flex flex-wrap items-end gap-3">
               <FG label="Search">
                 <input className="field-input w-52" placeholder="Name, ID, club…"
-                  value={filterSearch} onChange={e => { setFilterSearch(e.target.value); setPage(1); }} />
+                  value={filterSearchInput} onChange={e => setFilterSearchInput(e.target.value)} />
               </FG>
               <FG label="Event">
                 <select className="field-input w-56" value={filterEvent}
@@ -485,19 +608,20 @@ export default function AdminRegistrations() {
                   <tr><td colSpan={10} className="text-center py-10 opacity-40">No registrations found.</td></tr>
                 )}
                 {paged.map(reg => {
+                  const payment = getPayment(reg);
                   const isExpanded  = expanded.has(reg.id);
                   // canPay: payment is Pending and registration not cancelled
-    const canPay      = reg.payment.paymentStatus === "P" && reg.regStatus !== "Cancelled";
+                  const canPay      = payment?.paymentStatus === "P" && reg.regStatus !== "Cancelled";
                   // canRefund: payment is Success (paid) and registration not cancelled
-    const canRefund   = reg.payment.paymentStatus === "S" && reg.regStatus !== "Cancelled";
+                  const canRefund   = payment?.paymentStatus === "S" && reg.regStatus !== "Cancelled";
                   const canCancel   = reg.regStatus !== "Cancelled";
                   const programCount = reg.groups.length;
                   const regRefunds  = refundsByReg[reg.id] ?? [];
-                  const refunded    = calcRefunded(regRefunds, reg.payment.items);
+                  const refunded    = calcRefunded(regRefunds, payment?.items ?? []);
 
                   return (
                     <React.Fragment key={reg.id}>
-            <tr style={reg.regStatus === "Pending" || reg.payment.paymentStatus === "P"
+            <tr style={reg.regStatus === "Pending" || payment?.paymentStatus === "P"
                         ? { borderLeft: "3px solid var(--badge-soon-text)" } : undefined}>
                         {/* Expand toggle */}
                         <td>
@@ -526,9 +650,9 @@ export default function AdminRegistrations() {
                           </p>
                         </td>
                         <td><RegBadge status={reg.regStatus} /></td>
-                        <td><PayBadge status={reg.payment.paymentStatus} /></td>
+                        <td>{payment ? <PayBadge status={payment.paymentStatus} /> : <span className="opacity-40">No payment</span>}</td>
                         <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
-                          ${totalFee(reg).toFixed(2)}
+                          ${payment ? totalFee(reg).toFixed(2) : "0.00"}
                           {refunded > 0 && (
                             <span className="block text-xs font-normal" style={{ color: "var(--badge-open-text)" }}>
                               −${refunded.toFixed(2)} refunded
@@ -539,7 +663,7 @@ export default function AdminRegistrations() {
                           {new Date(reg.submittedAt).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
                         </td>
                         <td>
-                          <div className="relative" ref={openAction === reg.id ? actionRef : undefined}>
+                          <div className="relative" data-action-menu={reg.id}>
                             <button onClick={() => setOpenAction(openAction === reg.id ? null : reg.id)}
                               className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
                               <MoreVertical className="h-4 w-4" />
@@ -558,7 +682,7 @@ export default function AdminRegistrations() {
                                   }}>
                                   <RefreshCw className="h-4 w-4" /> Refund
                                 </button>
-                                {reg.payment.receiptNo && (
+                                {payment?.receiptNo && (
                                   <button onClick={() => { setReceiptModal(reg); setOpenAction(null); }}>
                                     <Receipt className="h-4 w-4" /> View Receipt
                                   </button>
@@ -639,16 +763,21 @@ export default function AdminRegistrations() {
                 </tr>
               </thead>
               <tbody>
-                {pagedTxns.length === 0 && (
+                {loadingTxns && (
+                  <tr><td colSpan={10} className="text-center py-6"><LoadingSpinner size="sm" label="Loading payments…" /></td></tr>
+                )}
+                {!loadingTxns && pagedTxns.length === 0 && (
                   <tr><td colSpan={10} className="text-center py-10 opacity-40">No transactions found.</td></tr>
                 )}
                 {pagedTxns.map(reg => {
-                  const refunded = calcRefunded(refundsByReg[reg.id] ?? [], reg.payment.items);
+                  const payment = getPayment(reg);
+                  if (!payment) return null;
+                  const refunded = calcRefunded(refundsByReg[reg.id] ?? [], payment.items);
                   const fee      = totalFee(reg);
                   return (
                     <tr key={reg.id}>
                       <td className="font-mono text-xs">
-                        {reg.payment.receiptNo || <span className="opacity-30">—</span>}
+                        {payment.receiptNo || <span className="opacity-30">—</span>}
                       </td>
                       <td>
                         <p className="font-mono text-xs">{reg.id}</p>
@@ -660,8 +789,8 @@ export default function AdminRegistrations() {
                       </td>
                       <td>
                         <span className="flex items-center gap-1.5 text-sm">
-                          <MethodIcon method={reg.payment.method} />
-                          {PAYMENT_METHOD_LABEL[reg.payment.method] ?? reg.payment.method}
+                          <MethodIcon method={payment.method} />
+                          {PAYMENT_METHOD_LABEL[payment.method] ?? payment.method}
                         </span>
                       </td>
                       <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
@@ -672,9 +801,9 @@ export default function AdminRegistrations() {
                           ? <span style={{ color: "var(--badge-open-text)" }}>${refunded.toFixed(2)}</span>
                           : <span className="opacity-30">—</span>}
                       </td>
-                      <td><PayBadge status={reg.payment.paymentStatus} /></td>
+                      <td><PayBadge status={payment.paymentStatus} /></td>
                       <td className="text-xs opacity-70">
-                        {reg.payment.paidAt ? reg.payment.paidAt.slice(0, 10) : "—"}
+                        {formatDate(payment.paidAt)}
                       </td>
                       <td>
                         <button onClick={() => setReceiptModal(reg)}
@@ -703,7 +832,7 @@ export default function AdminRegistrations() {
             <DialogTitle className="font-bold text-lg">Mark as Paid</DialogTitle>
             {markPaidModal && (
               <p className="text-xs opacity-50 mt-1">
-                {markPaidModal.id} · {markPaidModal.groups.map(g => g.programName).join(", ")} · Total: ${totalFee(markPaidModal).toFixed(2)}
+                {markPaidModal.id} · {markPaidModal.groups.map(g => g.programName).join(", ")} · Total: ${getPayment(markPaidModal) ? totalFee(markPaidModal).toFixed(2) : "0.00"}
               </p>
             )}
           </DialogHeader>
@@ -727,9 +856,9 @@ export default function AdminRegistrations() {
           </div>
           <DialogFooter className="p-7 pt-0">
             <button onClick={() => setMarkPaidModal(null)} className="btn-outline px-5 py-2.5 text-sm">Cancel</button>
-            <button onClick={handleMarkPaid} disabled={!markPaidRemark.trim()}
+            <button onClick={handleMarkPaid} disabled={!markPaidRemark.trim() || savingMarkPaid}
               className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
-              Confirm Payment
+              {savingMarkPaid ? "Saving..." : "Confirm Payment"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -743,7 +872,7 @@ export default function AdminRegistrations() {
           </DialogHeader>
           <div className="p-7 space-y-4">
             {/* Check "Success" (paid) not old "Paid" string */}
-            {cancelModal?.payment.paymentStatus === "S" && (
+            {getPayment(cancelModal as Registration)?.paymentStatus === "S" && (
               <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
                 ⚠ This registration has been paid. A full refund will be triggered for all items.
               </div>
@@ -756,10 +885,10 @@ export default function AdminRegistrations() {
           </div>
           <DialogFooter className="p-7 pt-0">
             <button onClick={() => setCancelModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
-            <button onClick={handleCancel} disabled={!cancelReason.trim()}
+            <button onClick={handleCancel} disabled={!cancelReason.trim() || savingCancel}
               className="px-5 py-2.5 text-sm font-semibold disabled:opacity-40"
               style={{ backgroundColor: "var(--badge-closed-text)", color: "white" }}>
-              Confirm Cancel
+              {savingCancel ? "Cancelling..." : "Confirm Cancel"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -774,7 +903,7 @@ export default function AdminRegistrations() {
           </DialogHeader>
           <div className="p-7 space-y-4">
             {/* Iterate payment items (was lineItems) */}
-            {refundModal?.payment.items.map(item => {
+            {(getPayment(refundModal as Registration)?.items ?? []).map(item => {
               // Already refunded = item has been confirmed refunded
               const alreadyRefunded = item.itemStatus === "R";
               const existingRefund  = (refundModal ? (refundsByReg[refundModal.id] ?? []) : [])
@@ -807,7 +936,7 @@ export default function AdminRegistrations() {
                       </div>
                       {alreadyRefunded && existingRefund && (
                         <p className="text-xs mt-0.5 opacity-60">
-                          Already refunded ${existingRefund.refundAmount.toFixed(2)} on {existingRefund.createdAt}
+                          Already refunded ${existingRefund.refundAmount.toFixed(2)} on {formatDateTime(existingRefund.createdAt)}
                         </p>
                       )}
                     </div>
@@ -834,9 +963,9 @@ export default function AdminRegistrations() {
                 if (!s.checked || !s.reason.trim()) return false;
                 if (refundModal && getGroupMinPlayersWarning(refundModal, id)) return false;
                 return true;
-              })}
+              }) || savingRefund}
               className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
-              Process Refund
+              {savingRefund ? "Processing..." : "Process Refund"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -847,27 +976,28 @@ export default function AdminRegistrations() {
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
           <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
             <DialogTitle className="font-bold text-lg">
-              {receiptModal?.payment.receiptNo ? `Receipt ${receiptModal.payment.receiptNo}` : "Payment Details"}
+              {getPayment(receiptModal)?.receiptNo ? `Receipt ${getPayment(receiptModal)?.receiptNo}` : "Payment Details"}
             </DialogTitle>
           </DialogHeader>
           {receiptModal && (() => {
+            const receiptPayment = getPayment(receiptModal);
             const receiptRefunds = refundsByReg[receiptModal.id] ?? [];
-            const receiptRefunded = calcRefunded(receiptRefunds, receiptModal.payment.items);
+            const receiptRefunded = calcRefunded(receiptRefunds, receiptPayment?.items ?? []);
             return (
               <div className="p-7 space-y-5">
                 {/* Info grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><p className="text-xs opacity-50 mb-0.5">Registration ID</p><p className="font-mono text-xs">{receiptModal.id}</p></div>
                   <div><p className="text-xs opacity-50 mb-0.5">Contact</p><p>{receiptModal.contactName}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Method</p><p>{PAYMENT_METHOD_LABEL[receiptModal.payment.method] ?? receiptModal.payment.method}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Paid Date</p><p>{receiptModal.payment.paidAt ? receiptModal.payment.paidAt.slice(0, 10) : "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Status</p><PayBadge status={receiptModal.payment.paymentStatus} /></div>
+                  <div><p className="text-xs opacity-50 mb-0.5">Method</p><p>{receiptPayment ? (PAYMENT_METHOD_LABEL[receiptPayment.method] ?? receiptPayment.method) : "—"}</p></div>
+                  <div><p className="text-xs opacity-50 mb-0.5">Paid Date</p><p>{formatDate(receiptPayment?.paidAt)}</p></div>
+                  <div><p className="text-xs opacity-50 mb-0.5">Status</p>{receiptPayment ? <PayBadge status={receiptPayment.paymentStatus} /> : <p className="opacity-50">No payment</p>}</div>
                 </div>
 
                 {/* Line items (payment.items) */}
                 <div style={{ borderTop: "1px solid var(--color-table-border)", paddingTop: 16 }}>
                   <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Programs / Line Items</p>
-                    {receiptModal.payment.items.map(item => {
+                    {(receiptPayment?.items ?? []).map(item => {
                       const group        = receiptModal.groups.find(g => g.id === item.participantGroupId);
                 const itemRefund   = receiptRefunds.find(r => r.paymentItemId === item.id && r.refundStatus === "S");
                     return (
@@ -886,7 +1016,7 @@ export default function AdminRegistrations() {
                         {/* Show refund info from the separate Refunds store */}
                         {itemRefund && (
                           <div className="mt-2 text-xs space-y-0.5" style={{ color: "var(--badge-open-text)" }}>
-                            <p>Refunded ${itemRefund.refundAmount.toFixed(2)} on {itemRefund.createdAt}</p>
+                            <p>Refunded ${itemRefund.refundAmount.toFixed(2)} on {formatDateTime(itemRefund.createdAt)}</p>
                             <p className="opacity-70">Reason: {itemRefund.refundReason}</p>
                           </div>
                         )}
@@ -897,7 +1027,7 @@ export default function AdminRegistrations() {
                   <div className="flex items-center justify-between pt-3 font-bold"
                     style={{ borderTop: "1px solid var(--color-table-border)" }}>
                     <span className="text-sm">Total</span>
-                    <span style={{ color: "var(--color-primary)" }}>${totalFee(receiptModal).toFixed(2)}</span>
+                    <span style={{ color: "var(--color-primary)" }}>${receiptPayment ? totalFee(receiptModal).toFixed(2) : "0.00"}</span>
                   </div>
                   {receiptRefunded > 0 && (
                     <div className="flex items-center justify-between pt-1 text-sm"

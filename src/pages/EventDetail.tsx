@@ -462,8 +462,13 @@ export default function EventDetail() {
     setErrors({}); setFormError(""); setOverrideOpen(false); setOverrideReason(""); addToCart();
   };
 
-  // ── Persist cart + contact to sessionStorage (survives gateway redirect) ──
-  const saveSession = (currentCart: CartEntry[], currentContact: { name: string; email: string; phone: string }) => {
+  // ── Persist checkout context to sessionStorage (survives gateway redirect) ──
+  const saveSession = (
+    currentCart: CartEntry[],
+    currentContact: { name: string; email: string; phone: string },
+    payload: object,
+    gatewaySessionId?: string,
+  ): boolean => {
     if (!SESSION_KEY) return;
     try {
       const serializable = {
@@ -472,9 +477,14 @@ export default function EventDetail() {
           participants: entry.participants.map(p => ({ ...p, documentFile: null })),
         })),
         contact: currentContact,
+        payload,
+        gatewaySessionId,
       };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(serializable));
-    } catch { /* storage full or private mode — silently skip */ }
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const clearSession = () => { if (SESSION_KEY) sessionStorage.removeItem(SESSION_KEY); };
@@ -558,38 +568,31 @@ export default function EventDetail() {
     setSubmitting(true);
     setSubmitError("");
     try {
-      const needsPayment = cart.some(e => {
-        const prog = event?.programs.find(p => p.id === e.programId);
-        return prog?.paymentRequired && e.fee > 0;
-      });
+      const registrationPayload = buildRegistrationPayload();
+      const needsPayment = cart.some(e => e.fee > 0);
 
       if (!needsPayment) {
         // Free registration — write to DB immediately, no gateway
-        const regResult = await apiCreateRegistration(buildRegistrationPayload());
+        const regResult = await apiCreateRegistration(registrationPayload);
         if (regResult.error) { setSubmitError(regResult.error.message); return; }
         clearSession();
         navigate(`/payment/result?status=success&reg=${regResult.data!.id}`);
         return;
       }
 
-      // Paid registration — save full cart + contact + payload to sessionStorage BEFORE leaving
-      saveSession(cart, contact);
-
       // Ask backend to create a Stripe session only — no DB write yet
-      const checkoutResult = await apiInitiateCheckout("", paymentMethod, buildRegistrationPayload(), event.id);
+      const checkoutResult = await apiInitiateCheckout("", paymentMethod, registrationPayload, event.id);
       if (checkoutResult.error) { setSubmitError(checkoutResult.error.message); return; }
 
-      // Also persist the gatewaySessionId so PaymentResult can call confirm-session
-      if (SESSION_KEY && checkoutResult.data?.gatewaySessionId) {
-        try {
-          const raw = sessionStorage.getItem(SESSION_KEY);
-          const existing = raw ? JSON.parse(raw) : {};
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-            ...existing,
-            gatewaySessionId: checkoutResult.data.gatewaySessionId,
-            payload: buildRegistrationPayload(),
-          }));
-        } catch { /* ignore */ }
+      const didSaveSession = saveSession(
+        cart,
+        contact,
+        registrationPayload,
+        checkoutResult.data?.gatewaySessionId,
+      );
+      if (!didSaveSession) {
+        setSubmitError("We couldn't save your registration details in this browser. Please enable storage and try again.");
+        return;
       }
 
       window.location.href = checkoutResult.data!.checkoutUrl;
@@ -1036,6 +1039,11 @@ export default function EventDetail() {
                                 </button>
                               ))}
                             </div>
+                            {paymentMethod === "paynow" && (
+                              <p className="mt-3 text-xs opacity-60">
+                                PayNow checkout expires in 30 minutes. Complete the transfer before the QR session times out.
+                              </p>
+                            )}
                           </div>
                         )}
 
