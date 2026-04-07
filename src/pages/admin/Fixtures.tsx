@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Loader2, Download, Search, X } from "lucide-react";
+import { Loader2, Download, Search, X, Shuffle } from "lucide-react";
 import type { TournamentEvent, SeedEntry, BracketState, MatchEntry, WizardConfig, SbaRanking } from "@/types/config";
 import { isBracketLocked, isPhaseComplete, getAllMatches, getCurrentHeatRound } from "@/lib/fixtureEngine";
 import {
@@ -26,7 +26,7 @@ import { groupsToSeedEntries } from "@/types/registration";
 import { computeProgramFixtureStatus } from "@/lib/fixtureStatus";
 
 import { exportParticipantsCsv } from "@/lib/exportCsv";
-import { apiGetEvents, apiGetSbaRankings, apiGetRegistrations } from "@/lib/api";
+import { apiGetEvents, apiGetSbaRankings, apiGetRegistrations, apiUpdateGroupSeed } from "@/lib/api";
 
 import { FixtureWizard } from "@/components/admin/fixtures/WizardSteps";
 import type { WizardResult } from "@/components/admin/fixtures/WizardSteps";
@@ -116,35 +116,65 @@ function ResultsBadge({ bracket }: { bracket: BracketState | null }) {
 
 // ── External seeding panel ────────────────────────────────────────────────────
 
-import { Shuffle } from "lucide-react";
-
-function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, programName }: {
+function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, programName, onSeedsSaved, toastSuccess, toastError }: {
   participants: SeedEntry[]; sbaRankings: SbaRanking[]; isBadminton: boolean;
   eventName: string; programName: string;
+  onSeedsSaved: () => Promise<void>;
+  toastSuccess: (message: string) => void;
+  toastError: (message: string) => void;
 }) {
   const [numSeeds, setNumSeeds] = useState(0);
-  const [seeds, setSeeds]       = useState<SeedEntry[]>(participants.map(p => ({ ...p, seed: null })));
+  const [seeds, setSeeds]       = useState<SeedEntry[]>(participants.map(p => ({ ...p })));
   const [seeding, setSeeding]   = useState(false);
+  const [saving, setSaving]     = useState(false);
 
   const sbaById = useMemo(() => { const m: Record<string, SbaRanking> = {}; for (const r of sbaRankings) m[r.sbaId] = r; return m; }, [sbaRankings]);
   const getSba  = (s: SeedEntry) => s.sbaId ? sbaById[s.sbaId] : null;
 
+  useEffect(() => {
+    setSeeds(participants.map(p => ({ ...p })));
+  }, [participants]);
+
   const autoSeed = () => {
     const withSba = seeds.filter(s => s.sbaId && sbaById[s.sbaId]);
-    if (!withSba.length) { alert("No participants have a registered SBA ID. Assign seeds manually."); return; }
+    if (!withSba.length) { alert('No participants have a registered SBA ID. Assign seeds manually.'); return; }
     const canAssign = Math.min(numSeeds, withSba.length);
     const sorted = [...withSba].sort((a, b) => (sbaById[b.sbaId!]?.accumulatedScore ?? 0) - (sbaById[a.sbaId!]?.accumulatedScore ?? 0));
     setSeeds(seeds.map(s => { const rank = sorted.findIndex(x => x.id === s.id); return { ...s, seed: rank >= 0 && rank < canAssign ? rank + 1 : null }; }));
-    if (canAssign < numSeeds) alert(`Only ${canAssign}/${numSeeds} seeds auto-assigned — ${numSeeds - canAssign} participants have no SBA ID.`);
+    if (canAssign < numSeeds) alert(`Only ${canAssign}/${numSeeds} seeds auto-assigned - ${numSeeds - canAssign} participants have no SBA ID.`);
   };
 
-  const setSeedVal = (id: string, v: string) => setSeeds(seeds.map(s => s.id === id ? { ...s, seed: v === "" ? null : +v } : s));
+  const setSeedVal = (id: string, v: string) => setSeeds(seeds.map(s => s.id === id ? { ...s, seed: v === '' ? null : +v } : s));
   const seedNums = seeds.filter(s => s.seed !== null).map(s => s.seed as number);
   const hasDups  = seedNums.length !== new Set(seedNums).size;
+  const outRange = seedNums.some(n => n < 1 || n > numSeeds);
+  const hasChange = seeds.some((s, idx) => s.seed !== (participants[idx]?.seed ?? null));
+
+  const persistSeeds = async (exportAfter: boolean) => {
+    if (hasDups || outRange || saving) return;
+    setSaving(true);
+    try {
+      for (const seed of seeds) {
+        if (!seed.registrationId || !seed.groupId) continue;
+        const original = participants.find(p => p.id === seed.id)?.seed ?? null;
+        if (seed.seed === original) continue;
+        const result = await apiUpdateGroupSeed(seed.registrationId, seed.groupId, seed.seed);
+        if (result.error) {
+          toastError(result.error.message);
+          return;
+        }
+      }
+      await onSeedsSaved();
+      toastSuccess('Seeds saved.');
+      if (exportAfter) exportParticipantsCsv(eventName, programName, seeds, isBadminton);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-5">
-      <div className="p-4" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+      <div className="p-4" style={{ border: '1px solid var(--color-table-border)', backgroundColor: 'var(--color-row-hover)' }}>
         <p className="font-bold text-sm mb-1">External Tournament Mode</p>
         <p className="text-xs opacity-60">Assign seeds then export the participant list for your external system.</p>
       </div>
@@ -156,18 +186,19 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
             <select className="field-input w-52" value={numSeeds} onChange={e => setNumSeeds(+e.target.value)}>
               <option value={0}>No seeding</option>
               {Array.from({ length: Math.min(participants.length, 8) }, (_, i) => i + 1).map(n => (
-                <option key={n} value={n}>Top {n} seed{n > 1 ? "s" : ""}</option>
+                <option key={n} value={n}>Top {n} seed{n > 1 ? 's' : ''}</option>
               ))}
             </select>
           </div>
           <div className="flex items-end gap-3">
             {numSeeds > 0 && (
               <button onClick={() => setSeeding(true)} className="btn-primary px-5 py-2.5 text-sm font-semibold">
-                Assign Seeds →
+                Assign Seeds
               </button>
             )}
             <button onClick={() => exportParticipantsCsv(eventName, programName, seeds, isBadminton)}
-              className="btn-outline flex items-center gap-2 px-4 py-2.5 text-sm">
+              disabled={saving}
+              className="btn-outline flex items-center gap-2 px-4 py-2.5 text-sm disabled:opacity-40">
               <Download className="h-4 w-4" /> Export (no seeding)
             </button>
           </div>
@@ -180,30 +211,35 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
               <button onClick={autoSeed} className="btn-outline flex items-center gap-1.5 px-3 py-2 text-xs">
                 <Shuffle className="h-3.5 w-3.5" /> Auto-fill
               </button>
-              <button onClick={() => setSeeding(false)} className="btn-outline px-3 py-2 text-xs">← Back</button>
+              <button onClick={() => setSeeding(false)} className="btn-outline px-3 py-2 text-xs">Back</button>
             </div>
           </div>
-          {hasDups && <p className="text-xs px-3 py-2 font-semibold" style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>⚠ Duplicate seed numbers.</p>}
-          <div className="overflow-auto" style={{ border: "1px solid var(--color-table-border)", maxHeight: 360 }}>
+          {(hasDups || outRange) && (
+            <p className="text-xs px-3 py-2 font-semibold" style={{ backgroundColor: 'var(--badge-closed-bg)', color: 'var(--badge-closed-text)' }}>
+              {hasDups ? 'Duplicate seed numbers.' : ''}
+              {outRange ? `${hasDups ? ' ' : ''}Seeds must be between 1 and ${numSeeds}.` : ''}
+            </p>
+          )}
+          <div className="overflow-auto" style={{ border: '1px solid var(--color-table-border)', maxHeight: 360 }}>
             <table className="trs-table">
-              <thead style={{ position: "sticky", top: 0 }}>
+              <thead style={{ position: 'sticky', top: 0 }}>
                 <tr><th>Club</th><th>Players</th>{isBadminton && <th>SBA ID</th>}{isBadminton && <th>SBA Score</th>}<th style={{ width: 120 }}>Seed</th></tr>
               </thead>
               <tbody>
                 {seeds.map(s => {
                   const sba = getSba(s); const isDup = s.seed !== null && seeds.filter(x => x.seed === s.seed).length > 1;
                   return (
-                    <tr key={s.id} style={isDup ? { backgroundColor: "var(--badge-closed-bg)" } : undefined}>
+                    <tr key={s.id} style={isDup ? { backgroundColor: 'var(--badge-closed-bg)' } : undefined}>
                       <td className="font-medium text-sm">{s.club}</td>
-                      <td className="text-xs opacity-60">{s.participants.join(" / ")}</td>
+                      <td className="text-xs opacity-60">{s.participants.join(' / ')}</td>
                       {isBadminton && <td className="font-mono text-xs">{s.sbaId || <span className="opacity-25 italic">No SBA ID</span>}</td>}
-                      {isBadminton && <td className="text-right font-mono text-xs">{sba ? <span style={{ color: "var(--color-primary)", fontWeight: 600 }}>{sba.accumulatedScore.toLocaleString()}</span> : <span className="opacity-25">—</span>}</td>}
+                      {isBadminton && <td className="text-right font-mono text-xs">{sba ? <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{sba.accumulatedScore.toLocaleString()}</span> : <span className="opacity-25">-</span>}</td>}
                       <td>
                         <div className="flex items-center gap-1">
                           <input type="number" min={1} max={numSeeds} className="field-input py-1 text-sm text-center"
-                            style={{ width: "4rem", borderColor: isDup ? "var(--badge-closed-text)" : undefined }}
-                            value={s.seed ?? ""} placeholder="—" onChange={e => setSeedVal(s.id, e.target.value)} />
-                          {s.seed !== null && <button onClick={() => setSeedVal(s.id, "")} className="text-xs opacity-30 hover:opacity-70">✕</button>}
+                            style={{ width: '4rem', borderColor: isDup ? 'var(--badge-closed-text)' : undefined }}
+                            value={s.seed ?? ''} placeholder="-" onChange={e => setSeedVal(s.id, e.target.value)} />
+                          {s.seed !== null && <button onClick={() => setSeedVal(s.id, '')} className="text-xs opacity-30 hover:opacity-70">x</button>}
                         </div>
                       </td>
                     </tr>
@@ -212,10 +248,16 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
               </tbody>
             </table>
           </div>
-          <button disabled={hasDups} onClick={() => exportParticipantsCsv(eventName, programName, seeds, isBadminton)}
-            className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
-            <Download className="h-4 w-4" /> Export with Seeds
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button disabled={hasDups || outRange || saving || !hasChange} onClick={() => persistSeeds(false)}
+              className="btn-outline px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
+              {saving ? 'Saving...' : 'Save Seeds'}
+            </button>
+            <button disabled={hasDups || outRange || saving} onClick={() => persistSeeds(true)}
+              className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
+              <Download className="h-4 w-4" /> {saving ? 'Saving...' : 'Export with Seeds'}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -289,6 +331,7 @@ export default function AdminFixtures() {
   const [showWizard,   setShowWizard]   = useState(false);
   const [activeTab,    setActiveTab]    = useState<Tab>("draw");
   const [loading,      setLoading]      = useState(false);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
 
   // ── Score modal ───────────────────────────────────────────────────────────
   const [scoreModal, setScoreModal] = useState<MatchEntry | null>(null);
@@ -325,19 +368,27 @@ export default function AdminFixtures() {
 
   // Load confirmed participant groups from registrations API when a program row is selected.
   // The event API always returns participantSeeds = [] — real seeds live in registrations.
-  useEffect(() => {
-    if (!selRow) { setSelRowParticipants([]); return; }
-    apiGetRegistrations(
-      { eventId: selRow.eventId, programId: selRow.programId },  // all non-cancelled
-      { page: 1, pageSize: 500 },
-    ).then(r => {
+  const loadSelectedProgramParticipants = useCallback(async (row: ProgramRow) => {
+    setLoadingParticipants(true);
+    try {
+      const r = await apiGetRegistrations(
+        { eventId: row.eventId, programId: row.programId },
+        { page: 1, pageSize: 500 },
+      );
       if (!r.data) return;
       const allGroups = r.data.items.flatMap(reg =>
-        reg.groups.filter(g => g.programId === selRow.programId)
+        reg.groups.filter(g => g.programId === row.programId)
       );
       setSelRowParticipants(groupsToSeedEntries(allGroups));
-    });
-  }, [selRow?.eventId, selRow?.programId]);
+    } finally {
+      setLoadingParticipants(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selRow) { setSelRowParticipants([]); return; }
+    loadSelectedProgramParticipants(selRow);
+  }, [selRow, loadSelectedProgramParticipants]);
 
 
   // ── Bracket cached results display in table — refresh on save ────────────
@@ -358,7 +409,7 @@ export default function AdminFixtures() {
     if (result.error) { apiErr(result.error); return; }
     setBracketState(result.data!);
     setShowWizard(false);
-    setActiveTab(isHeats ? "heats" : "draw");
+    setActiveTab(wizConfig.format === "heats" ? "heats" : "draw");
     setFixtureExists(prev => ({ ...prev, [selRow.programId]: true }));
     refreshTable();
     toast.success("Fixture saved.");
@@ -633,6 +684,9 @@ export default function AdminFixtures() {
             <ExternalPanel
               participants={selRowParticipants} sbaRankings={sbaRankings}
               isBadminton={isBadminton} eventName={selRow.eventName} programName={selRow.programName}
+              onSeedsSaved={() => loadSelectedProgramParticipants(selRow)}
+              toastSuccess={toast.success}
+              toastError={toast.error}
             />
           )}
 
@@ -644,7 +698,9 @@ export default function AdminFixtures() {
                 <div className="py-12 flex flex-col items-center gap-4"
                   style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
                   <p className="text-sm opacity-50">No fixture generated for this program.</p>
-                  {selRowParticipants.length >= 2
+                  {loadingParticipants ? (
+                    <p className="text-xs opacity-30">Loading registered entries...</p>
+                  ) : selRowParticipants.length >= 2
                     ? <button onClick={() => setShowWizard(true)} className="btn-primary px-6 py-2.5 text-sm font-semibold">Generate Fixture →</button>
                     : <p className="text-xs opacity-30">Need at least 2 registered entries.</p>}
                 </div>
@@ -704,3 +760,5 @@ export default function AdminFixtures() {
     </div>
   );
 }
+
+

@@ -48,7 +48,7 @@
  *     SOME items Refunded → Payment.paymentStatus = PartiallyRefunded
  */
 
-export type RegStatus = "Pending" | "Confirmed" | "Cancelled" | "Waitlisted";
+export type RegStatus = "Pending" | "Confirmed" | "Cancelled";
 
 // ── Payment / refund status codes ─────────────────────────────────────────────
 // These match the DB schema exactly. UI badge components translate to
@@ -249,7 +249,6 @@ export interface RegistrationStats {
   confirmed:          number;
   pending:            number;
   cancelled:          number;
-  waitlisted:         number;
   totalRevenue:       number;   // SUM of payments with paymentStatus = "Success"
   pendingPayments:    number;   // COUNT of payments with paymentStatus = "Pending"
 }
@@ -265,6 +264,8 @@ export function groupsToSeedEntries(groups: ParticipantGroup[]) {
       participants: g.participants.map(p => p.fullName),
       seed:         g.seed,
       sbaId:        g.participants[0]?.sbaId,
+      registrationId: g.registrationId,
+      groupId:        g.id,
     }));
 }
 

@@ -5,11 +5,6 @@
  */
 
 import type { SeedEntry, BracketState, MatchEntry, FixtureFormatConfig } from "@/types/config";
-import {
-  generateDraw, generateNextKnockoutRound,
-  generateKnockoutFromGroups, swapTeams,
-  advanceHeatsRound, saveHeatResult, assignHeatPlaces,
-} from "@/lib/fixtureEngine";
 import { API_BASE, adminHeaders, parseError, apiFetch } from "@/lib/api/_base";
 
 // ── Result types ──────────────────────────────────────────────────────────────
@@ -82,8 +77,17 @@ export async function apiGenerateDraw(
   const seedNums = seeds.map(s => s.seed).filter((s): s is number => s !== null);
   if (seedNums.length !== new Set(seedNums).size)
     return err("DUPLICATE_SEEDS", "Duplicate seed numbers — each must be unique.");
-  const state = prebuiltBracket ?? generateDraw(seeds, config);
-  return persist(eventId, programId, state);
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/generate`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      seeds,
+      config,
+      previewBracketJson: prebuiltBracket ? JSON.stringify(prebuiltBracket) : null,
+    }),
+  });
+  if (!res.ok) return err("GENERATE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── DELETE /api/fixtures/:eventId/:programId ──────────────────────────────────
@@ -104,22 +108,19 @@ export async function apiSaveScore(
   eventId: string, programId: string, matchId: string,
   updates: Partial<Pick<MatchEntry, "games" | "winner" | "walkover" | "walkoverWinner" | "officials">>,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  const state = r.data;
-
-  function patchMatches(matches: MatchEntry[]): MatchEntry[] {
-    return matches.map(m => m.id !== matchId ? m : {
-      ...m, ...updates, status: "Completed" as const, locked: true,
-    });
-  }
-  const next: BracketState = {
-    ...state, locked: true,
-    matches: patchMatches(state.matches),
-    groups:  state.groups.map(g => ({ ...g, matches: patchMatches(g.matches) })),
-  };
-  return persist(eventId, programId, next);
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/score/${matchId}`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      games: updates.games ?? [],
+      winner: updates.winner ?? null,
+      walkover: updates.walkover ?? false,
+      walkoverWinner: updates.walkoverWinner ?? "",
+      officials: updates.officials ?? [],
+    }),
+  });
+  if (!res.ok) return err("SAVE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── PATCH schedule ────────────────────────────────────────────────────────────
@@ -127,20 +128,13 @@ export async function apiUpdateSchedule(
   eventId: string, programId: string, matchId: string,
   s: { courtNo: string; matchDate: string; startTime: string; endTime: string },
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  const state = r.data;
-
-  function patch(matches: MatchEntry[]): MatchEntry[] {
-    return matches.map(m => m.id !== matchId ? m : { ...m, ...s });
-  }
-  const next: BracketState = {
-    ...state,
-    matches: patch(state.matches),
-    groups:  state.groups.map(g => ({ ...g, matches: patch(g.matches) })),
-  };
-  return persist(eventId, programId, next);
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/schedule/${matchId}`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify(s),
+  });
+  if (!res.ok) return err("SAVE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── POST advance to knockout ──────────────────────────────────────────────────
@@ -148,17 +142,12 @@ export async function apiAdvanceToKnockout(
   eventId: string,
   programId: string,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  const state = r.data;
-  if (state.phase !== "group") return err("WRONG_PHASE", "Already in knockout phase.");
-  const next: BracketState = {
-    ...state,
-    phase:   "knockout",
-    matches: generateKnockoutFromGroups(state.groups, state.config),
-  };
-  return persist(eventId, programId, next);
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/advance-to-knockout`, {
+    method: "POST",
+    headers: adminHeaders(),
+  });
+  if (!res.ok) return err("ADVANCE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── POST next knockout round ──────────────────────────────────────────────────
@@ -166,15 +155,12 @@ export async function apiAdvanceKnockoutRound(
   eventId: string,
   programId: string,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  const state = r.data;
-  const next: BracketState = {
-    ...state,
-    matches: [...state.matches, ...generateNextKnockoutRound(state.matches)],
-  };
-  return persist(eventId, programId, next);
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/advance-round`, {
+    method: "POST",
+    headers: adminHeaders(),
+  });
+  if (!res.ok) return err("ADVANCE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── POST swap teams ───────────────────────────────────────────────────────────
@@ -182,11 +168,13 @@ export async function apiSwapTeams(
   eventId: string, programId: string,
   idA: string, idB: string,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  if (r.data.locked) return err("LOCKED", "Cannot swap after results have been entered.");
-  return persist(eventId, programId, swapTeams(r.data, idA, idB));
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/swap`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ idA, idB }),
+  });
+  if (!res.ok) return err("SWAP_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 // ── Heats ─────────────────────────────────────────────────────────────────────
@@ -194,28 +182,37 @@ export async function apiSaveHeatResult(
   eventId: string, programId: string,
   roundNumber: number, teamId: string, result: string,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  return persist(eventId, programId, saveHeatResult(r.data, roundNumber, teamId, result));
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/heats/result`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({ roundNumber, teamId, result }),
+  });
+  if (!res.ok) return err("SAVE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 export async function apiAdvanceHeatsRound(
   eventId: string, programId: string,
   fromRound: number, advancingIds: string[],
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  return persist(eventId, programId, advanceHeatsRound(r.data, fromRound, advancingIds));
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/heats/advance`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ fromRound, advancingIds }),
+  });
+  if (!res.ok) return err("ADVANCE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }
 
 export async function apiAssignHeatPlaces(
   eventId: string, programId: string,
   places: Record<string, number>,
 ): Promise<ApiResult<BracketState>> {
-  const r = await apiGetFixture(eventId, programId);
-  if (r.error) return r as ApiResult<never>;
-  if (!r.data)  return err("NOT_FOUND", "Fixture not found.");
-  return persist(eventId, programId, assignHeatPlaces(r.data, places));
+  const res = await apiFetch(`${API_BASE}/api/fixtures/${eventId}/${programId}/heats/places`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ places }),
+  });
+  if (!res.ok) return err("SAVE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
 }

@@ -211,6 +211,8 @@ export interface SeedEntry {
   participants: string[];
   seed: number | null;
   sbaId?: string;
+  registrationId?: string;
+  groupId?: string;
 }
 
 export interface GroupStanding {

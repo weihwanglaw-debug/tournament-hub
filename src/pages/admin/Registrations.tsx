@@ -31,7 +31,7 @@ import LoadingSpinner from "@/components/ui/LoadingSpinner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type RegStatus = "Pending" | "Confirmed" | "Cancelled" | "Waitlisted";
+type RegStatus = "Pending" | "Confirmed" | "Cancelled";
 
 // Refunds use the shared Refund type from @/types/registration.
 
@@ -73,7 +73,6 @@ function RegBadge({ status }: { status: string }) {
     "Confirmed":  ["var(--badge-open-bg)",   "var(--badge-open-text)"],
     "Pending":    ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
     "Cancelled":  ["var(--badge-closed-bg)", "var(--badge-closed-text)"],
-    "Waitlisted": ["var(--badge-soon-bg)",   "var(--badge-soon-text)"],
   };
   const [bg, text] = m[status] ?? m["Pending"];
   return <span className="inline-flex px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: bg, color: text }}>{status}</span>;
@@ -562,9 +561,8 @@ export default function AdminRegistrations() {
                   onChange={e => { setFilterReg(e.target.value); setPage(1); }}>
                   <option value="">All</option>
                   <option value="Confirmed">Confirmed</option>
-              <option value="Pending">Pending</option>
-              <option value="Cancelled">Cancelled</option>
-                  <option value="Waitlisted">Waitlisted</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
               </FG>
               <FG label="Payment">

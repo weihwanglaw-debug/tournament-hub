@@ -7,7 +7,7 @@
  * SBA lookup: SBA ID only. Auto-fill only assigns participants that have an SBA ID.
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { ChevronRight, ChevronLeft, Shuffle, CheckCircle, ArrowLeftRight } from "lucide-react";
 import type { SeedEntry, WizardConfig, SbaRanking, BracketState, TeamEntry, HeatsConfig, StandingPoints } from "@/types/config";
 import { generateDraw, swapTeams, computeGroupStandings } from "@/lib/fixtureEngine";
@@ -50,7 +50,7 @@ function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCan
   const [advancePerGroup, setAdvancePerGroup] = useState(2);
   const [standingPoints, setStandingPoints]   = useState<StandingPoints>({ win: 2, draw: 1, loss: 0 });
   const [heatsConfig, setHeatsConfig]         = useState<HeatsConfig>({ numRounds: 2, advancePerRound: 4, resultLabel: "Result", placesAwarded: 3 });
-  const [seeds, setSeeds] = useState<SeedEntry[]>(participants.map(p => ({ ...p, seed: null })));
+  const [seeds, setSeeds] = useState<SeedEntry[]>(participants.map(p => ({ ...p })));
 
   const fmt      = FORMATS.find(f => f.value === format)!;
   const showSeeds = fmt.needsSeeds && numSeeds > 0;
@@ -64,10 +64,14 @@ function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCan
 
   const getSba = (s: SeedEntry) => s.sbaId ? sbaById[s.sbaId] : null;
 
+  useEffect(() => {
+    setSeeds(participants.map(p => ({ ...p })));
+  }, [participants]);
+
   const handleFormatChange = (f: WizardConfig["format"]) => {
     setFormat(f);
     setNumSeeds(0);
-    setSeeds(participants.map(p => ({ ...p, seed: null })));
+    setSeeds(participants.map(p => ({ ...p })));
   };
 
   const autoSeed = () => {
