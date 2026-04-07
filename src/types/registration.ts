@@ -69,6 +69,7 @@ export type RefundStatus =
 export type PaymentMethod =
   | "CreditCard"    // DB: 'CreditCard'
   | "PayNow"        // DB: 'PayNow'
+  | "Free"          // DB: 'Free'
   | "Cash"          // DB: 'Cash'
   | "BankTransfer"  // DB: 'BankTransfer'
   | "Others";       // DB: 'Others'
@@ -97,6 +98,7 @@ export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   CreditCard:  "Credit Card",
   PayNow:      "PayNow",
+  Free:        "Free",
   Cash:        "Cash",
   BankTransfer:"Bank Transfer",
   Others:      "Others",

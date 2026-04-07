@@ -469,7 +469,7 @@ export default function EventDetail() {
     payload: object,
     gatewaySessionId?: string,
   ): boolean => {
-    if (!SESSION_KEY) return;
+    if (!SESSION_KEY) return false;
     try {
       const serializable = {
         cart: currentCart.map(entry => ({
@@ -537,7 +537,7 @@ export default function EventDetail() {
       groups,
       payment: {
         id: "PAY-TEMP", registrationId: "REG-TEMP", eventId: Number(event!.id),
-        gateway: "Stripe" as const, method: "CreditCard" as const,
+        gateway: "Stripe" as const, method: totalPrice === 0 ? ("Free" as const) : ("CreditCard" as const),
         amount: totalPrice, currency, paymentStatus: "P" as const,
         createdAt: new Date().toISOString(), items: [],
       },
