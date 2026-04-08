@@ -57,7 +57,6 @@ export interface WizardConfig {
   // group_knockout
   numGroups?:      number;
   advancePerGroup?: number;
-  crossGroupPairing?: "standard" | "bwf";
   // round_robin standing points
   standingPoints?: StandingPoints;
   // heats

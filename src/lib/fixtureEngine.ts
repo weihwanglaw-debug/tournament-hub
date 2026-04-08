@@ -167,13 +167,11 @@ export function generateKnockoutFromGroups(
   });
 
   const paired: [TeamEntry, TeamEntry][] = [];
-  const pairing = config.crossGroupPairing ?? "standard";
 
-  if (pairing === "bwf" && groups.length === 2) {
+  if (groups.length === 2) {
     const [a, b] = advancers;
     for (let i = 0; i < advance; i++) paired.push([a[i], b[advance - 1 - i]]);
   } else {
-    // Standard: A1 vs B1, A2 vs B2 ...
     for (let i = 0; i < advance; i++) {
       for (let j = 0; j < groups.length - 1; j++) {
         const t1 = advancers[j]?.[i], t2 = advancers[j + 1]?.[i];
