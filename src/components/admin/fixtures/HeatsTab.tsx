@@ -5,7 +5,7 @@
  * then selects who advances. Final round: assigns places (1st, 2nd, 3rd...).
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import type { BracketState, HeatRound } from "@/types/config";
 
@@ -43,6 +43,14 @@ export function HeatsTab({ bracketState, eventName, programName, onSaveResult, o
     );
     const [saving, setSaving] = useState(false);
     const [open, setOpen]     = useState(isActive || round.isComplete);
+    const [error, setError]   = useState<string | null>(null);
+
+    // If the backend state changes (another admin, or after saves), resync editing values.
+    useEffect(() => {
+      setEditing(Object.fromEntries(round.results.map(r => [r.teamId, r.result])));
+      setAdvancing(new Set(round.results.filter(r => r.advanced).map(r => r.teamId)));
+      setPlaces(Object.fromEntries(round.results.filter(r => r.place != null).map(r => [r.teamId, r.place!])));
+    }, [round.roundNumber, round.results]);
 
     const toggleAdvance = (id: string) => {
       const s = new Set(advancing);
@@ -52,8 +60,14 @@ export function HeatsTab({ bracketState, eventName, programName, onSaveResult, o
 
     const handleSaveResults = async () => {
       setSaving(true);
+      setError(null);
       for (const [teamId, result] of Object.entries(editing)) {
-        await onSaveResult(round.roundNumber, teamId, result);
+        try {
+          await onSaveResult(round.roundNumber, teamId, result);
+        } catch {
+          setError("Save stopped due to an error. Some results may have been saved; refresh to confirm.");
+          break;
+        }
       }
       setSaving(false);
     };
@@ -105,6 +119,20 @@ export function HeatsTab({ bracketState, eventName, programName, onSaveResult, o
 
         {open && (
           <div className="border-t" style={{ borderColor: "var(--color-table-border)" }}>
+            {error && (
+              <div className="px-5 pt-4">
+                <div
+                  className="text-xs font-semibold px-3 py-2"
+                  style={{
+                    border: "1px solid var(--badge-closed-text)",
+                    color: "var(--badge-closed-text)",
+                    backgroundColor: "var(--badge-closed-bg)",
+                  }}
+                >
+                  {error}
+                </div>
+              </div>
+            )}
             <div className="overflow-auto">
               <table className="trs-table">
                 <thead>

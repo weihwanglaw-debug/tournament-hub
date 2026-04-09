@@ -7,7 +7,7 @@
  * - Print: Schedule Sheet (sorted by date+time)
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pencil, Check, X, Printer, ChevronDown, ChevronUp } from "lucide-react";
 import type { BracketState, MatchEntry } from "@/types/config";
 import { getAllMatches } from "@/lib/fixtureEngine";
@@ -79,15 +79,30 @@ function ScheduleRow({ match, onUpdate, onOpenScore }: {
   });
   const [saving, setSaving] = useState(false);
 
+  // If bracketState refreshes (e.g. from another tab action), keep the row inputs in sync.
+  useEffect(() => {
+    setSchedule({
+      courtNo:   match.courtNo,
+      matchDate: match.matchDate,
+      startTime: match.startTime,
+      endTime:   match.endTime,
+    });
+  }, [match.courtNo, match.matchDate, match.startTime, match.endTime]);
+
   const update = async (field: keyof ScheduleFields, value: string) => {
     const next = { ...schedule, [field]: value };
     setSchedule(next);
     setSaving(true);
-    await onUpdate(next);
-    setSaving(false);
+    try {
+      await onUpdate(next);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isDone = match.status === "Completed" || match.status === "Walkover";
+  const isBye  = match.team1.label === "BYE" || match.team2.label === "BYE"
+    || match.team1.id.startsWith("bye-") || match.team2.id.startsWith("bye-");
 
   const statusColor = isDone
     ? { bg: "var(--badge-open-bg)", text: "var(--badge-open-text)" }
@@ -131,9 +146,12 @@ function ScheduleRow({ match, onUpdate, onOpenScore }: {
         </span>
       </td>
       <td>
-        <button onClick={() => onOpenScore(match)}
-          className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-          {isDone ? "Edit Score" : "Enter Score"}
+        <button
+          onClick={() => onOpenScore(match)}
+          disabled={isBye}
+          title={isBye ? "BYE match has no score to enter." : undefined}
+          className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+          {isBye ? "BYE" : (isDone ? "Edit Score" : "Enter Score")}
         </button>
       </td>
     </tr>

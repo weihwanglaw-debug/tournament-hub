@@ -148,7 +148,10 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
   const seedNums = seeds.filter(s => s.seed !== null).map(s => s.seed as number);
   const hasDups  = seedNums.length !== new Set(seedNums).size;
   const outRange = seedNums.some(n => n < 1 || n > numSeeds);
-  const hasChange = seeds.some((s, idx) => s.seed !== (participants[idx]?.seed ?? null));
+  const hasChange = seeds.some(s => {
+    const original = participants.find(p => p.id === s.id);
+    return s.seed !== (original?.seed ?? null);
+  });
 
   const persistSeeds = async (exportAfter: boolean) => {
     if (hasDups || outRange || saving) return;
@@ -435,7 +438,13 @@ export default function AdminFixtures() {
   };
 
   // ── Score modal ───────────────────────────────────────────────────────────
-  const openScore  = (m: MatchEntry) => { setDraft({ ...m, games: m.games.map(g => ({ ...g })) }); setScoreModal(m); };
+  const openScore  = (m: MatchEntry) => {
+    const isBye = m.team1.label === "BYE" || m.team2.label === "BYE"
+      || m.team1.id.startsWith("bye-") || m.team2.id.startsWith("bye-");
+    if (isBye) { toast.error("BYE match has no score to enter."); return; }
+    setDraft({ ...m, games: m.games.map(g => ({ ...g })) });
+    setScoreModal(m);
+  };
   const closeScore = () => { setScoreModal(null); setDraft(null); };
   const saveScore  = async () => {
     if (!draft || !selRow) return;
@@ -467,7 +476,7 @@ export default function AdminFixtures() {
   const handleSaveHeatResult = async (roundNumber: number, teamId: string, result: string) => {
     if (!selRow) return;
     const r = await apiSaveHeatResult(selRow.eventId, selRow.programId, roundNumber, teamId, result);
-    if (r.error) { apiErr(r.error); return; }
+    if (r.error) { apiErr(r.error); throw new Error(r.error.message); }
     setBracketState(r.data!);
   };
   const handleAdvanceHeats = async (fromRound: number, advancingIds: string[]) => {
@@ -669,7 +678,7 @@ export default function AdminFixtures() {
                     Reset Draw
                   </button>
                 )}
-                {bracketState && showNextRound && (
+                {bracketState && showNextRound && !locked && (
                   <button onClick={handleNextRound} disabled={loading}
                     className="btn-primary px-5 py-2 text-sm font-semibold disabled:opacity-40">
                     {groupsDone ? "Generate KO Phase →" : "Next Round →"}

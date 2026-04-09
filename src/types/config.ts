@@ -195,6 +195,7 @@ export interface MatchEntry {
   winner: "team1" | "team2" | null;
   walkover: boolean;
   walkoverWinner: "team1" | "team2" | "";
+  remark?: string;
   matchDate: string;
   startTime: string;
   endTime: string;

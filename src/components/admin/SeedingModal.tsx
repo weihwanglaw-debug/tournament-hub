@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/ui/sonner";
 import { apiGetRegistrations, apiUpdateGroupSeed } from "@/lib/api";
 import type { ParticipantGroup } from "@/lib/api";
 
@@ -94,6 +95,7 @@ export default function SeedingModal({ open, onClose, eventId, programId }: Seed
           : r
         ));
       }
+      toast.success("Seeding saved.");
       onClose();
     } finally {
       setSaving(false);

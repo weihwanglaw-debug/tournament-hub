@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ScoreModal.tsx — Versus result entry
  *
  * Two big panels (Team 1 vs Team 2). Admin clicks one to mark as winner.
@@ -169,20 +169,9 @@ export function ScoreModal({ open, draft, isLocked, onClose, onSave, onChangeDra
                   ? set({ walkoverWinner: "team2" })
                   : selectWinner("team2")} />
             </div>
-            {/* Draw option */}
-            {!draft.walkover && (
-              <button
-                onClick={() => set({ winner: null })}
-                className="w-full mt-2 py-2 text-sm font-medium transition-colors"
-                style={{
-                  border: `1px solid ${draft.winner === null ? "var(--color-primary)" : "var(--color-table-border)"}`,
-                  backgroundColor: draft.winner === null ? "var(--color-row-hover)" : "transparent",
-                  color: draft.winner === null ? "var(--color-primary)" : undefined,
-                  opacity: draft.winner === null ? 1 : 0.4,
-                }}>
-                Draw / No Result
-              </button>
-            )}
+            {/* Intentionally no "Draw/No Result" button here.
+               A saved result requires a winner (or a walkover winner), so showing a draw option
+               is misleading and looks broken to admins. */}
           </div>
 
           {/* ── Walkover toggle ── */}
@@ -235,21 +224,6 @@ export function ScoreModal({ open, draft, isLocked, onClose, onSave, onChangeDra
               ))}
             </div>
           )}
-
-          {/* ── Remark ── */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide opacity-50 mb-2">
-              Remark <span className="font-normal opacity-60 normal-case">(optional)</span>
-            </label>
-            <textarea
-              className="field-input w-full resize-none"
-              rows={2}
-              placeholder="e.g. Match extended due to injury, disputed point in game 3…"
-              value={(draft as any).remark ?? ""}
-              onChange={e => set({ ...(draft as any), remark: e.target.value })}
-            />
-          </div>
-
           {/* ── Officials ── */}
           <div>
             <div className="flex items-center justify-between mb-2">

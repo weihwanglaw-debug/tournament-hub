@@ -129,6 +129,12 @@ function MatchCard({
   ].filter(Boolean).join(" · ") : "";
 
   const isNull = !match;
+  const isBye  = !!match && (
+    match.team1.label === "BYE" ||
+    match.team2.label === "BYE" ||
+    match.team1.id.startsWith("bye-") ||
+    match.team2.id.startsWith("bye-")
+  );
 
   const Slot = ({ team, isWinner, score }: {
     team?: MatchEntry["team1"]; isWinner: boolean; score: number | string | null;
@@ -195,7 +201,11 @@ function MatchCard({
   return (
     <foreignObject x={x} y={y} width={CARD_W} height={CARD_H}>
       <div
-        onClick={() => match && onOpenScore && onOpenScore(match)}
+        onClick={() => {
+          if (!match || !onOpenScore) return;
+          if (isBye) return;
+          onOpenScore(match);
+        }}
         style={{
           width:        CARD_W,
           height:       CARD_H,
@@ -206,7 +216,7 @@ function MatchCard({
           background:   isNull ? "#f8fafc" : "#fff",
           boxShadow:    isNull ? "none" : "0 1px 5px rgba(0,0,0,.07)",
           opacity:      isNull ? 0.4 : 1,
-          cursor:       match ? "pointer" : "default",
+          cursor:       match && !isBye ? "pointer" : "default",
           overflow:     "hidden",
           fontFamily:   "inherit",
         }}

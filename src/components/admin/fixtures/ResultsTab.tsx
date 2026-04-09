@@ -38,6 +38,8 @@ function ScoreStr({ match }: { match: MatchEntry }) {
 
 function ResultRow({ match, onOpenScore }: { match: MatchEntry; onOpenScore: (m: MatchEntry) => void }) {
   const isDone    = match.status === "Completed" || match.status === "Walkover";
+  const isBye     = match.team1.label === "BYE" || match.team2.label === "BYE"
+    || match.team1.id.startsWith("bye-") || match.team2.id.startsWith("bye-");
   const winner    = match.winner === "team1" ? match.team1
                   : match.winner === "team2" ? match.team2
                   : match.walkover && match.walkoverWinner ? (match.walkoverWinner === "team1" ? match.team1 : match.team2)
@@ -104,9 +106,12 @@ function ResultRow({ match, onOpenScore }: { match: MatchEntry; onOpenScore: (m:
         {match.startTime && <span> {match.startTime}</span>}
       </td>
       <td>
-        <button onClick={() => onOpenScore(match)}
-          className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap">
-          {isDone ? "Edit" : "Enter Score"}
+        <button
+          onClick={() => onOpenScore(match)}
+          disabled={isBye}
+          title={isBye ? "BYE match has no score to enter." : undefined}
+          className="btn-primary px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+          {isBye ? "BYE" : (isDone ? "Edit" : "Enter Score")}
         </button>
       </td>
     </tr>
