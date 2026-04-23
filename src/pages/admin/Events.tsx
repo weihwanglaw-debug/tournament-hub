@@ -1,9 +1,10 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TournamentEvent } from "@/types/config";
 import { apiGetEvents } from "@/lib/api";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
+import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import { Plus, Eye, Users, MoreVertical } from "lucide-react";
 
 export default function AdminEvents() {
@@ -14,8 +15,7 @@ export default function AdminEvents() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo,   setFilterDateTo]   = useState("");
   const [filterRegStatus,setFilterRegStatus]= useState("");
-  const [openAction,     setOpenAction]     = useState<string | null>(null);
-  const actionRef = useRef<HTMLDivElement | null>(null);
+  const [openAction,     setOpenAction]     = useState<{ id: string; anchorEl: HTMLElement } | null>(null);
 
   useEffect(() => {
     apiGetEvents({ includeInactive: true }).then(r => {
@@ -23,15 +23,7 @@ export default function AdminEvents() {
     }).finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!openAction) return;
-    const handler = (e: MouseEvent) => {
-      if (actionRef.current && !actionRef.current.contains(e.target as Node))
-        setOpenAction(null);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openAction]);
+  // close handled by ActionDropdownPortal
 
   const filtered = useMemo(() => events.filter(ev => {
     const regStatus =
@@ -111,21 +103,14 @@ export default function AdminEvents() {
                   <td><StatusBadge status={status} /></td>
                   <td className="text-sm">{event.programs.length}</td>
                   <td>
-                    <div className="relative" ref={openAction === event.id ? actionRef : undefined}>
-                      <button onClick={() => setOpenAction(openAction === event.id ? null : event.id)}
+                    <div className="relative">
+                      <button
+                        onClick={(e) =>
+                          setOpenAction(openAction?.id === event.id ? null : { id: event.id, anchorEl: e.currentTarget })
+                        }
                         className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openAction === event.id && (
-                        <div className="action-dropdown">
-                          <button onClick={() => { navigate(`/admin/events/${event.id}`); setOpenAction(null); }}>
-                            <Eye className="h-4 w-4" /> View / Edit
-                          </button>
-                          <button onClick={() => { navigate(`/admin/registrations?event=${event.id}`); setOpenAction(null); }}>
-                            <Users className="h-4 w-4" /> Registrations
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -152,23 +137,16 @@ export default function AdminEvents() {
                 <div className="flex items-center gap-2 ml-2">
                   <StatusBadge status={status} />
                   <div className="relative">
-                    <button onClick={() => setOpenAction(openAction === event.id ? null : event.id)} className="p-1.5 opacity-50 hover:opacity-100">
+                    <button
+                      onClick={(e) =>
+                        setOpenAction(openAction?.id === event.id ? null : { id: event.id, anchorEl: e.currentTarget })
+                      }
+                      className="p-1.5 opacity-50 hover:opacity-100"
+                    >
                       <MoreVertical className="h-4 w-4" />
                     </button>
-                    {openAction === event.id && (
-                      <div className="absolute right-0 top-full mt-1 w-44 shadow-lg z-20 py-1"
-                        style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-                        <button onClick={() => { navigate(`/admin/events/${event.id}`); setOpenAction(null); }}
-                          className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:opacity-70">
-                          <Eye className="h-4 w-4" /> View / Edit
-                        </button>
-                        <button onClick={() => { navigate(`/admin/registrations?event=${event.id}`); setOpenAction(null); }}
-                          className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:opacity-70">
-                          <Users className="h-4 w-4" /> Registrations
-                        </button>
-                      </div>
-                    )}
                   </div>
+
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs opacity-70">
@@ -180,6 +158,19 @@ export default function AdminEvents() {
         })}
         {filtered.length === 0 && <p className="text-center py-10 opacity-40">No events found.</p>}
       </div>
+
+      <ActionDropdownPortal
+        open={!!openAction}
+        anchorEl={openAction?.anchorEl ?? null}
+        onClose={() => setOpenAction(null)}
+      >
+        <button onClick={() => { if (!openAction) return; navigate(`/admin/events/${openAction.id}`); setOpenAction(null); }}>
+          <Eye className="h-4 w-4" /> View / Edit
+        </button>
+        <button onClick={() => { if (!openAction) return; navigate(`/admin/registrations?event=${openAction.id}`); setOpenAction(null); }}>
+          <Users className="h-4 w-4" /> Registrations
+        </button>
+      </ActionDropdownPortal>
     </div>
   );
 }

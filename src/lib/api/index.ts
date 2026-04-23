@@ -24,6 +24,9 @@ export * from "./configApi";
 // Events & programs
 export * from "./eventsApi";
 
+// File uploads
+export * from "./uploadsApi";
+
 // Registrations, payments, refunds, checkout, stats
 export * from "./registrationsApi";
 

@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import LoadingSpinner, { PageLoader, ButtonLoader } from "@/components/ui/LoadingSpinner";
+import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -301,20 +302,23 @@ function TabBarDemo() {
 }
 
 function ActionDropdownDemo() {
-  const [open, setOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const open = !!anchorEl;
   return (
-    <div className="relative inline-block">
-      <button onClick={() => setOpen(!open)} className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)", border: "1px solid var(--color-table-border)" }}>
+    <div className="inline-block">
+      <button
+        onClick={(e) => setAnchorEl(open ? null : e.currentTarget)}
+        className="p-2 hover:opacity-70"
+        style={{ color: "var(--color-primary)", border: "1px solid var(--color-table-border)" }}
+      >
         <MoreVertical className="h-4 w-4" />
       </button>
-      {open && (
-        <div className="action-dropdown" style={{ position: "absolute", left: 0 }}>
-          <button onClick={() => setOpen(false)}><Eye className="h-4 w-4" /> View</button>
-          <button onClick={() => setOpen(false)}><Edit2 className="h-4 w-4" /> Edit</button>
-          <button onClick={() => setOpen(false)}><Download className="h-4 w-4" /> Export</button>
-          <button disabled><Trash2 className="h-4 w-4" /> Delete (disabled)</button>
-        </div>
-      )}
+      <ActionDropdownPortal open={open} anchorEl={anchorEl} onClose={() => setAnchorEl(null)}>
+        <button onClick={() => setAnchorEl(null)}><Eye className="h-4 w-4" /> View</button>
+        <button onClick={() => setAnchorEl(null)}><Edit2 className="h-4 w-4" /> Edit</button>
+        <button onClick={() => setAnchorEl(null)}><Download className="h-4 w-4" /> Export</button>
+        <button disabled><Trash2 className="h-4 w-4" /> Delete (disabled)</button>
+      </ActionDropdownPortal>
     </div>
   );
 }

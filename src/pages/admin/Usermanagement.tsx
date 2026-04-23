@@ -1,7 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plus, Edit2, Key, Trash2, Eye, EyeOff, Check, MoreVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import {
   apiGetUsers, apiCreateUser, apiUpdateUser,
   apiDeleteUser, apiResetUserPassword,
@@ -24,18 +25,7 @@ export default function UserManagement() {
   const [modal, setModal] = useState<ModalMode>(null);
   const [target, setTarget] = useState<AdminUser | null>(null);
   const [delConf, setDelConf] = useState<string | null>(null);
-  const [openAction, setOpenAction] = useState<string | null>(null);
-  const actionRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!openAction) return;
-    const handler = (e: MouseEvent) => {
-      if (actionRef.current && !actionRef.current.contains(e.target as Node))
-        setOpenAction(null);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openAction]);
+  const [openAction, setOpenAction] = useState<{ user: AdminUser; anchorEl: HTMLElement } | null>(null);
 
   const [fName, setFName] = useState("");
   const [fEmail, setFEmail] = useState("");
@@ -153,25 +143,14 @@ export default function UserManagement() {
                   <td><span className="inline-flex px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: rb.bg, color: rb.text }}>{roleLabel(u.role)}</span></td>
                   <td className="text-xs opacity-50">{u.lastLogin || "Never"}</td>
                   <td>
-                    <div className="relative" ref={openAction === u.id ? actionRef : undefined}>
-                      <button onClick={() => setOpenAction(openAction === u.id ? null : u.id)}
+                    <div className="relative">
+                      <button
+                        onClick={(e) =>
+                          setOpenAction(openAction?.user.id === u.id ? null : { user: u, anchorEl: e.currentTarget })
+                        }
                         className="p-2 hover:opacity-70 transition-opacity" style={{ color: "var(--color-primary)" }}>
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openAction === u.id && (
-                        <div className="action-dropdown">
-                          <button onClick={() => { openEdit(u); setOpenAction(null); }}>
-                            <Edit2 className="h-4 w-4" /> Edit
-                          </button>
-                          <button onClick={() => { openReset(u); setOpenAction(null); }}>
-                            <Key className="h-4 w-4" /> Reset Password
-                          </button>
-                          <button disabled={isSelf(u)} onClick={() => { if (!isSelf(u)) { setDelConf(u.id); setOpenAction(null); } }}
-                            style={{ color: !isSelf(u) ? "var(--badge-open-text)" : undefined }}>
-                            <Trash2 className="h-4 w-4" /> {isSelf(u) ? "Cannot delete self" : "Delete"}
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -196,15 +175,14 @@ export default function UserManagement() {
                 <div className="flex items-center gap-2">
                   <span className="inline-flex px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: rb.bg, color: rb.text }}>{roleLabel(u.role)}</span>
                   <div className="relative">
-                    <button onClick={() => setOpenAction(openAction === u.id ? null : u.id)} className="p-1.5 opacity-50"><MoreVertical className="h-4 w-4" /></button>
-                    {openAction === u.id && (
-                      <div className="absolute right-0 top-full mt-1 w-44 shadow-lg z-20 py-1"
-                        style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-                        <button onClick={() => { openEdit(u); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70">Edit User</button>
-                        <button onClick={() => { openReset(u); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70">Reset Password</button>
-                        {!isSelf(u) && <button onClick={() => { setDelConf(u.id); setOpenAction(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:opacity-70" style={{ color: "var(--badge-open-text)" }}>Delete</button>}
-                      </div>
-                    )}
+                    <button
+                      onClick={(e) =>
+                        setOpenAction(openAction?.user.id === u.id ? null : { user: u, anchorEl: e.currentTarget })
+                      }
+                      className="p-1.5 opacity-50"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -213,6 +191,30 @@ export default function UserManagement() {
           );
         })}
       </div>
+
+      <ActionDropdownPortal
+        open={!!openAction}
+        anchorEl={openAction?.anchorEl ?? null}
+        onClose={() => setOpenAction(null)}
+      >
+        <button onClick={() => { if (!openAction) return; openEdit(openAction.user); setOpenAction(null); }}>
+          <Edit2 className="h-4 w-4" /> Edit
+        </button>
+        <button onClick={() => { if (!openAction) return; openReset(openAction.user); setOpenAction(null); }}>
+          <Key className="h-4 w-4" /> Reset Password
+        </button>
+        <button
+          disabled={!openAction || isSelf(openAction.user)}
+          onClick={() => {
+            if (!openAction) return;
+            if (!isSelf(openAction.user)) setDelConf(openAction.user.id);
+            setOpenAction(null);
+          }}
+          style={{ color: openAction && !isSelf(openAction.user) ? "var(--badge-open-text)" : undefined }}
+        >
+          <Trash2 className="h-4 w-4" /> {openAction && isSelf(openAction.user) ? "Cannot delete self" : "Delete"}
+        </button>
+      </ActionDropdownPortal>
 
       {/* Modals (same as before, condensed) */}
       <Dialog open={modal === "create" || modal === "edit"} onOpenChange={v => { if (!v) setModal(null); }}>

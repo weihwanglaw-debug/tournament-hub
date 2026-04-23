@@ -8,13 +8,20 @@ import ProgramModal from "@/components/admin/ProgramModal";
 import SeedingModal from "@/components/admin/SeedingModal";
 import { Switch } from "@/components/ui/switch";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
+import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
   apiAddProgram, apiUpdateProgram, apiDeleteProgram,
+  apiUploadFile,
 } from "@/lib/api";
 
 const MAX_IMAGE_MB = 2;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_PDF_MB = 8;
+
+function isBlobUrl(url: string) {
+  return url.startsWith("blob:");
+}
 
 
 export default function EventEdit() {
@@ -33,7 +40,11 @@ export default function EventEdit() {
       const ev = r.data!;
       setEvent(ev);
       setPrograms(ev.programs);
-      setGallery(ev.galleryUrls || []);
+      const safeGallery = (ev.galleryUrls || []).filter((u) => !isBlobUrl(u));
+      if (safeGallery.length !== (ev.galleryUrls || []).length) {
+        setGalleryError("Some previously selected images were temporary previews and can’t be loaded after refresh. Please re-upload them.");
+      }
+      setGallery(safeGallery);
       setForm({
         name:           ev.name,
         description:    ev.description || "",
@@ -60,11 +71,14 @@ export default function EventEdit() {
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
   const [seedingOpen, setSeedingOpen] = useState(false);
   const [seedingProgramId, setSeedingProgramId] = useState("");
-  const [openAction, setOpenAction] = useState<string | null>(null);
+  const [openAction, setOpenAction] = useState<{ prog: Program; anchorEl: HTMLElement } | null>(null);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [gallery, setGallery] = useState<string[]>([]);
   const [galleryError, setGalleryError] = useState("");
   const galleryRef = useRef<HTMLInputElement>(null);
+  const [prospectusName, setProspectusName] = useState("");
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [uploadingProspectus, setUploadingProspectus] = useState(false);
 
   const [form, setForm] = useState({
     name: "", description: "", venue: "", venueAddress: "",
@@ -83,14 +97,24 @@ export default function EventEdit() {
     setGalleryError("");
     const files = Array.from(e.target.files || []);
     const errs: string[] = [];
-    const newUrls: string[] = [];
+    const newUrls: Array<Promise<string | null>> = [];
     files.forEach(f => {
       if (!ALLOWED_TYPES.includes(f.type)) { errs.push(`${f.name}: only JPG, PNG, WEBP allowed`); return; }
       if (f.size > MAX_IMAGE_MB * 1024 * 1024) { errs.push(`${f.name}: exceeds ${MAX_IMAGE_MB}MB limit`); return; }
-      newUrls.push(URL.createObjectURL(f));
+      newUrls.push(
+        apiUploadFile(f, "events/gallery").then((r) => {
+          if (r.error) { errs.push(`${f.name}: ${r.error.message}`); return null; }
+          return r.data;
+        }),
+      );
     });
     if (errs.length) setGalleryError(errs.join(" · "));
-    setGallery(prev => [...prev, ...newUrls]);
+    setUploadingGallery(true);
+    void Promise.all(newUrls).then((urls) => {
+      const good = urls.filter(Boolean) as string[];
+      if (errs.length) setGalleryError(errs.join(" Â· "));
+      if (good.length) setGallery(prev => [...prev, ...good]);
+    }).finally(() => setUploadingGallery(false));
     if (galleryRef.current) galleryRef.current.value = "";
   };
 
@@ -258,14 +282,47 @@ export default function EventEdit() {
           </div>
           <FF label="Prospectus PDF">
             {editing ? (
-              <label className="flex items-center gap-3 cursor-pointer px-4 py-3 text-sm font-medium transition-colors hover:opacity-80"
+              <label className={`flex items-center gap-3 cursor-pointer px-4 py-3 text-sm font-medium transition-colors hover:opacity-80 ${uploadingProspectus ? "opacity-60 pointer-events-none" : ""}`}
                 style={{ border: "1px solid var(--color-table-border)", color: "var(--color-body-text)", display: "inline-flex" }}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                {form.prospectusUrl ? form.prospectusUrl : "Choose PDF file…"}
-                <input type="file" accept=".pdf" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) set("prospectusUrl", file.name); }} />
+                {prospectusName || (form.prospectusUrl ? "Prospectus selected" : "Choose PDF file…")}
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  disabled={uploadingProspectus}
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > MAX_PDF_MB * 1024 * 1024) {
+                      setApiError(`Prospectus PDF exceeds ${MAX_PDF_MB}MB. Please upload a smaller file or host it and paste a URL.`);
+                      return;
+                    }
+                    setUploadingProspectus(true);
+                    const up = await apiUploadFile(file, "events/prospectus");
+                    setUploadingProspectus(false);
+                    if (up.error) { setApiError(up.error.message); return; }
+                    setProspectusName(file.name);
+                    set("prospectusUrl", up.data);
+                  }}
+                />
               </label>
             ) : (
-              <p className="text-sm opacity-60">{form.prospectusUrl || "No prospectus uploaded"}</p>
+              <>
+                {form.prospectusUrl ? (
+                  <a
+                    href={form.prospectusUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm hover:opacity-80 underline"
+                    style={{ color: "var(--color-primary)" }}
+                  >
+                    {prospectusName || "View Prospectus"}
+                  </a>
+                ) : (
+                  <p className="text-sm opacity-60">No prospectus uploaded</p>
+                )}
+              </>
             )}
           </FF>
         </div>
@@ -331,8 +388,8 @@ export default function EventEdit() {
         <p className="text-xs opacity-60 mb-4">Upload multiple images (JPG, PNG, WEBP · max {MAX_IMAGE_MB}MB each)</p>
         {editing && (
           <>
-            <label className="inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3">
-              <Image className="h-4 w-4" /> Upload Images
+            <label className={`inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3 ${uploadingGallery ? "opacity-60 pointer-events-none" : ""}`}>
+              <Image className="h-4 w-4" /> {uploadingGallery ? "Uploadingâ€¦" : "Upload Images"}
               <input ref={galleryRef} type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleGalleryUpload} />
             </label>
             {galleryError && <p className="text-xs mb-3" style={{ color: "var(--badge-open-text)" }}>{galleryError}</p>}
@@ -407,26 +464,13 @@ export default function EventEdit() {
                       </td>
                       <td>
                         <div className="relative">
-                          <button onClick={() => setOpenAction(openAction === prog.id ? null : prog.id)}
+                          <button
+                            onClick={(e) =>
+                              setOpenAction(openAction?.prog.id === prog.id ? null : { prog, anchorEl: e.currentTarget })
+                            }
                             className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
                             <MoreVertical className="h-4 w-4" />
                           </button>
-                          {openAction === prog.id && (
-                            <div className="action-dropdown">
-                              <button onClick={() => { setEditingProgram(prog); setProgramModalOpen(true); setOpenAction(null); }}>
-                                <Edit2 className="h-4 w-4" /> Edit Program
-                              </button>
-                              {/* Seeding only available once the event is saved (has a real ID) */}
-                              {!isNew && (
-                                <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>
-                                  <Scissors className="h-4 w-4" /> Seeding
-                                </button>
-                              )}
-                              <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${prog.id}`); setOpenAction(null); }}>
-                                <Users className="h-4 w-4" /> Registrations
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -445,19 +489,14 @@ export default function EventEdit() {
                       <p className="text-xs opacity-60">{prog.type} · {prog.gender} · {prog.minAge}–{prog.maxAge}yrs</p>
                     </div>
                     <div className="relative">
-                      <button onClick={() => setOpenAction(openAction === prog.id ? null : prog.id)} className="p-1.5 opacity-50 hover:opacity-100">
+                      <button
+                        onClick={(e) =>
+                          setOpenAction(openAction?.prog.id === prog.id ? null : { prog, anchorEl: e.currentTarget })
+                        }
+                        className="p-1.5 opacity-50 hover:opacity-100"
+                      >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openAction === prog.id && (
-                        <div className="action-dropdown">
-                          <button onClick={() => { setEditingProgram(prog); setProgramModalOpen(true); setOpenAction(null); }}>Edit</button>
-                          {/* Seeding only available once the event is saved (has a real ID) */}
-                          {!isNew && (
-                            <button onClick={() => { setSeedingProgramId(prog.id); setSeedingOpen(true); setOpenAction(null); }}>Seeding</button>
-                          )}
-                          <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${prog.id}`); setOpenAction(null); }}>Registrations</button>
-                        </div>
-                      )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -467,6 +506,24 @@ export default function EventEdit() {
                 </div>
               ))}
             </div>
+
+            <ActionDropdownPortal
+              open={!!openAction}
+              anchorEl={openAction?.anchorEl ?? null}
+              onClose={() => setOpenAction(null)}
+            >
+              <button onClick={() => { if (!openAction) return; setEditingProgram(openAction.prog); setProgramModalOpen(true); setOpenAction(null); }}>
+                <Edit2 className="h-4 w-4" /> Edit Program
+              </button>
+              {!isNew && (
+                <button onClick={() => { if (!openAction) return; setSeedingProgramId(openAction.prog.id); setSeedingOpen(true); setOpenAction(null); }}>
+                  <Scissors className="h-4 w-4" /> Seeding
+                </button>
+              )}
+              <button onClick={() => { if (!openAction) return; navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`); setOpenAction(null); }}>
+                <Users className="h-4 w-4" /> Registrations
+              </button>
+            </ActionDropdownPortal>
           </>
         )}
       </div>

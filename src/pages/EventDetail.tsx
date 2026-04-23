@@ -280,15 +280,24 @@ export default function EventDetail() {
   const [submitError,   setSubmitError]   = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"card" | "paynow">("card");
 
-  const bannerImage = event?.bannerUrl || FALLBACK_BANNERS[eventIndex % FALLBACK_BANNERS.length];
+  const bannerImage =
+    event?.bannerUrl && !event.bannerUrl.startsWith("blob:")
+      ? event.bannerUrl
+      : FALLBACK_BANNERS[eventIndex % FALLBACK_BANNERS.length];
 
   const galleryImages = useMemo(() => {
-    if (event?.galleryUrls && event.galleryUrls.length > 0) return event.galleryUrls;
+    const safe = (event?.galleryUrls ?? []).filter((u) => u && !u.startsWith("blob:"));
+    if (safe.length > 0) return safe;
     return FALLBACK_BANNERS;
   }, [event]);
 
   // ── Program selection with scroll ──
-  const handleSelectProgram = (prog: Program) => {
+  // Re-fetches the event before opening the form so that currentParticipants
+  // reflects the latest count — prevents showing a stale "Register" button
+  // for a program that filled up while the user was browsing.
+  const handleSelectProgram = async (prog: Program) => {
+    if (!id) return;
+    // Optimistically open the form immediately with the data we have
     setSelectedProgram(prog);
     const initial = Array.from({ length: prog.minPlayers }, () => blankParticipant());
     setParticipants(initial);
@@ -300,6 +309,14 @@ export default function EventDetail() {
     setTimeout(() => {
       registrationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
+    // Refresh event data in background — if the program is now full,
+    // the refreshed selectedProgram will cause validate() to catch it.
+    const fresh = await apiGetEvent(id);
+    if (fresh.data) {
+      setEvent(fresh.data);
+      const freshProg = fresh.data.programs.find(p => p.id === prog.id);
+      if (freshProg) setSelectedProgram(freshProg);
+    }
   };
 
   // ── Participant field updates ──
@@ -413,15 +430,11 @@ export default function EventDetail() {
       });
       if (dupe) errs[`${px}.fullName`] = "Already registered in this program";
     });
-    if (
-        selectedProgram.gender === "Mixed" &&
-        selectedProgram.maxPlayers === 2 &&
-        participants.length === 2 &&
-        participants.every(p => p.gender)
-      ) {
-      const genders = participants.map((p) => p.gender);
-      if (!(genders.includes("Male") && genders.includes("Female")))
-        formErr = "Mixed Doubles requires exactly 1 Male and 1 Female player.";
+    if (selectedProgram.gender === "Mixed" && participants.length >= 2 && participants.every(p => p.gender)) {
+      const hasMale   = participants.some(p => p.gender === "Male");
+      const hasFemale = participants.some(p => p.gender === "Female");
+      if (!hasMale || !hasFemale)
+        formErr = "Mixed program requires at least 1 Male and 1 Female player.";
     }
     setErrors(errs); setFormError(formErr);
     return Object.keys(errs).length === 0 && !formErr;

@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Pagination } from "@/components/ui/TableControls";
 import { Switch } from "@/components/ui/switch";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -281,16 +282,7 @@ export default function AdminRegistrations() {
   const paged    = sorted;
 
   // ── Action dropdown ───────────────────────────────────────────────────────
-  const [openAction, setOpenAction] = useState<string | null>(null);
-  useEffect(() => {
-    if (!openAction) return;
-    const h = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target?.closest(`[data-action-menu="${openAction}"]`)) setOpenAction(null);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [openAction]);
+  const [openAction, setOpenAction] = useState<{ reg: Registration; anchorEl: HTMLElement } | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -661,37 +653,14 @@ export default function AdminRegistrations() {
                           {new Date(reg.submittedAt).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
                         </td>
                         <td>
-                          <div className="relative" data-action-menu={reg.id}>
-                            <button onClick={() => setOpenAction(openAction === reg.id ? null : reg.id)}
+                          <div className="relative">
+                            <button
+                              onClick={(e) =>
+                                setOpenAction(openAction?.reg.id === reg.id ? null : { reg, anchorEl: e.currentTarget })
+                              }
                               className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
                               <MoreVertical className="h-4 w-4" />
                             </button>
-                            {openAction === reg.id && (
-                              <div className="action-dropdown">
-                                <button disabled={!canPay}
-                                  onClick={() => { setMarkPaidModal(reg); setOpenAction(null); }}>
-                                  <CheckCircle className="h-4 w-4" /> Mark as Paid
-                                </button>
-                                <button disabled={!canRefund}
-                                  onClick={() => {
-                                    setRefundSel({});
-                                    setRefundModal(reg);
-                                    setOpenAction(null);
-                                  }}>
-                                  <RefreshCw className="h-4 w-4" /> Refund
-                                </button>
-                                {payment?.receiptNo && (
-                                  <button onClick={() => { setReceiptModal(reg); setOpenAction(null); }}>
-                                    <Receipt className="h-4 w-4" /> View Receipt
-                                  </button>
-                                )}
-                                <button disabled={!canCancel}
-                                  onClick={() => { setCancelModal(reg); setOpenAction(null); }}
-                                  style={{ color: canCancel ? "var(--badge-closed-text)" : undefined }}>
-                                  <XCircle className="h-4 w-4" /> Cancel
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -822,6 +791,42 @@ export default function AdminRegistrations() {
       )}
 
       {/* ══════════ MODALS ══════════ */}
+
+      <ActionDropdownPortal
+        open={!!openAction}
+        anchorEl={openAction?.anchorEl ?? null}
+        onClose={() => setOpenAction(null)}
+      >
+        <button
+          disabled={!(openAction && getPayment(openAction.reg)?.paymentStatus === "P" && openAction.reg.regStatus !== "Cancelled")}
+          onClick={() => { if (!openAction) return; setMarkPaidModal(openAction.reg); setOpenAction(null); }}
+        >
+          <CheckCircle className="h-4 w-4" /> Mark as Paid
+        </button>
+        <button
+          disabled={!(openAction && getPayment(openAction.reg)?.paymentStatus === "S" && openAction.reg.regStatus !== "Cancelled")}
+          onClick={() => {
+            if (!openAction) return;
+            setRefundSel({});
+            setRefundModal(openAction.reg);
+            setOpenAction(null);
+          }}
+        >
+          <RefreshCw className="h-4 w-4" /> Refund
+        </button>
+        {openAction && getPayment(openAction.reg)?.receiptNo && (
+          <button onClick={() => { setReceiptModal(openAction.reg); setOpenAction(null); }}>
+            <Receipt className="h-4 w-4" /> View Receipt
+          </button>
+        )}
+        <button
+          disabled={!(openAction && openAction.reg.regStatus !== "Cancelled")}
+          onClick={() => { if (!openAction) return; setCancelModal(openAction.reg); setOpenAction(null); }}
+          style={{ color: openAction && openAction.reg.regStatus !== "Cancelled" ? "var(--badge-closed-text)" : undefined }}
+        >
+          <XCircle className="h-4 w-4" /> Cancel
+        </button>
+      </ActionDropdownPortal>
 
       {/* Mark as Paid */}
       <Dialog open={!!markPaidModal} onOpenChange={v => { if (!v) { setMarkPaidModal(null); setMarkPaidRemark(""); } }}>
