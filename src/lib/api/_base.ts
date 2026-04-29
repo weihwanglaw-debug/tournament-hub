@@ -21,6 +21,17 @@
 export const API_BASE: string =
   (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? "";
 
+/**
+ * Converts a relative upload path (e.g. /uploads/events/gallery/file.jpg)
+ * into a full URL pointing at the backend (e.g. https://localhost:7183/uploads/...).
+ * Absolute URLs (http/https/blob/data) are returned unchanged.
+ */
+export function assetUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (/^(https?:|blob:|data:)/i.test(path)) return path;
+  return `${API_BASE}${path}`;
+}
+
 // ── Result envelope ───────────────────────────────────────────────────────────
 
 export interface ApiError {

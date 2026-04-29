@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
-import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout } from "@/lib/api";
+import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout, assetUrl } from "@/lib/api";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
 import StatusBadge, { getProgramCapacityStatus } from "@/components/events/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
@@ -282,11 +282,11 @@ export default function EventDetail() {
 
   const bannerImage =
     event?.bannerUrl && !event.bannerUrl.startsWith("blob:")
-      ? event.bannerUrl
+      ? assetUrl(event.bannerUrl)
       : FALLBACK_BANNERS[eventIndex % FALLBACK_BANNERS.length];
 
   const galleryImages = useMemo(() => {
-    const safe = (event?.galleryUrls ?? []).filter((u) => u && !u.startsWith("blob:"));
+    const safe = (event?.galleryUrls ?? []).filter((u) => u && !u.startsWith("blob:")).map(assetUrl);
     if (safe.length > 0) return safe;
     return FALLBACK_BANNERS;
   }, [event]);
@@ -693,7 +693,7 @@ export default function EventDetail() {
             </div>
             <div className="flex flex-col gap-4">
               {event.prospectusUrl && (
-                <a href={event.prospectusUrl} target="_blank" rel="noopener noreferrer"
+                <a href={assetUrl(event.prospectusUrl)} target="_blank" rel="noopener noreferrer"
                   className="btn-primary inline-flex items-center gap-2 px-6 py-3 font-semibold text-sm w-fit">
                   <Download className="h-4 w-4" /> Download Prospectus
                 </a>

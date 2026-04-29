@@ -10,7 +10,7 @@
 
 // Shared types & helpers
 export type { ApiResult, ApiError, PageParams, PagedResult } from "./_base";
-export { ok, err } from "./_base";
+export { ok, err, assetUrl } from "./_base";
 
 // Auth
 export * from "./authApi";

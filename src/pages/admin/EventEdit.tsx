@@ -12,7 +12,7 @@ import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
   apiAddProgram, apiUpdateProgram, apiDeleteProgram,
-  apiUploadFile,
+  apiUploadFile, assetUrl,
 } from "@/lib/api";
 
 const MAX_IMAGE_MB = 2;
@@ -311,7 +311,7 @@ export default function EventEdit() {
               <>
                 {form.prospectusUrl ? (
                   <a
-                    href={form.prospectusUrl}
+                    href={assetUrl(form.prospectusUrl)}
                     target="_blank"
                     rel="noreferrer"
                     className="text-sm hover:opacity-80 underline"
@@ -399,7 +399,7 @@ export default function EventEdit() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {gallery.map((url, i) => (
               <div key={i} className="relative group aspect-video overflow-hidden" style={{ border: "1px solid var(--color-table-border)" }}>
-                <img src={url} alt={`Gallery ${i + 1}`} className="w-full h-full object-cover" />
+                <img src={assetUrl(url)} alt={`Gallery ${i + 1}`} className="w-full h-full object-cover" />
                 {editing && (
                   <button onClick={() => removeGalleryImage(i)}
                     className="absolute top-1 right-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
