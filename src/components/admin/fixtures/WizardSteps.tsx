@@ -11,6 +11,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { ChevronRight, ChevronLeft, Shuffle, CheckCircle, ArrowLeftRight } from "lucide-react";
 import type { SeedEntry, WizardConfig, SbaRanking, BracketState, TeamEntry, HeatsConfig, StandingPoints } from "@/types/config";
 import { generateDraw, swapTeams, computeGroupStandings } from "@/lib/fixtureEngine";
+import { NoticeDialog } from "@/components/ui/NoticeDialog";
 
 export interface WizardResult {
   config:  WizardConfig;
@@ -35,6 +36,17 @@ const FORMATS: { value: WizardConfig["format"]; label: string; desc: string; nee
   { value: "heats",          label: "Heats",            desc: "Individual rounds — no head-to-head. Results decide who advances.", needsSeeds: false },
 ];
 
+function matchSbaRanking(seed: SeedEntry, rankings: SbaRanking[]) {
+  const ids = (seed.sbaIds?.length ? seed.sbaIds : seed.sbaId ? [seed.sbaId] : [])
+    .map(id => id.toUpperCase());
+  if (ids.length === 0) return null;
+  if (ids.length === 1) {
+    return rankings.find(r => r.player1.sbaId.toUpperCase() === ids[0] && !r.player2) ?? null;
+  }
+  const set = new Set(ids);
+  return rankings.find(r => r.player2 && set.has(r.player1.sbaId.toUpperCase()) && set.has(r.player2.sbaId.toUpperCase())) ?? null;
+}
+
 // ── Screen 1: Configure ───────────────────────────────────────────────────────
 
 function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCancel }: {
@@ -51,18 +63,13 @@ function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCan
   const [standingPoints, setStandingPoints]   = useState<StandingPoints>({ win: 2, draw: 1, loss: 0 });
   const [heatsConfig, setHeatsConfig]         = useState<HeatsConfig>({ numRounds: 2, advancePerRound: 4, resultLabel: "Result", placesAwarded: 3 });
   const [seeds, setSeeds] = useState<SeedEntry[]>(participants.map(p => ({ ...p })));
+  const [notice, setNotice] = useState<{ title: string; description: string } | null>(null);
 
   const fmt      = FORMATS.find(f => f.value === format)!;
   const showSeeds = fmt.needsSeeds && numSeeds > 0;
   const count    = participants.length;
 
-  const sbaById = useMemo(() => {
-    const m: Record<string, SbaRanking> = {};
-    for (const r of sbaRankings) m[r.sbaId] = r;
-    return m;
-  }, [sbaRankings]);
-
-  const getSba = (s: SeedEntry) => s.sbaId ? sbaById[s.sbaId] : null;
+  const getSba = (s: SeedEntry) => matchSbaRanking(s, sbaRankings);
 
   useEffect(() => {
     setSeeds(participants.map(p => ({ ...p })));
@@ -75,19 +82,22 @@ function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCan
   };
 
   const autoSeed = () => {
-    const withSba = seeds.filter(s => s.sbaId && sbaById[s.sbaId]);
+    const withSba = seeds.filter(s => getSba(s));
     if (withSba.length === 0) {
-      alert("None of the participants have a registered SBA ID. Please assign seeds manually.");
+      setNotice({ title: "Auto Seed Unavailable", description: "None of the participants have a registered SBA ID. Please assign seeds manually." });
       return;
     }
     const canAssign = Math.min(numSeeds, withSba.length);
-    const sorted = [...withSba].sort((a, b) => (sbaById[b.sbaId!]?.accumulatedScore ?? 0) - (sbaById[a.sbaId!]?.accumulatedScore ?? 0));
+    const sorted = [...withSba].sort((a, b) => (getSba(b)?.accumulatedScore ?? 0) - (getSba(a)?.accumulatedScore ?? 0));
     setSeeds(seeds.map(s => {
       const rank = sorted.findIndex(x => x.id === s.id);
       return { ...s, seed: rank >= 0 && rank < canAssign ? rank + 1 : null };
     }));
     if (canAssign < numSeeds) {
-      alert(`Only ${canAssign} of ${numSeeds} seeds could be auto-assigned (${numSeeds - canAssign} participant${numSeeds - canAssign > 1 ? "s have" : " has"} no SBA ID).`);
+      setNotice({
+        title: "Partial Auto Seed",
+        description: `Only ${canAssign} of ${numSeeds} seeds could be auto-assigned (${numSeeds - canAssign} participant${numSeeds - canAssign > 1 ? "s have" : " has"} no SBA ID).`,
+      });
     }
   };
 
@@ -334,6 +344,12 @@ function ScreenConfigure({ participants, sbaRankings, isBadminton, onNext, onCan
           Preview Draw <ChevronRight className="h-4 w-4" />
         </button>
       </div>
+      <NoticeDialog
+        open={!!notice}
+        onOpenChange={(open) => !open && setNotice(null)}
+        title={notice?.title ?? ""}
+        description={notice?.description ?? ""}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type Placement = {
@@ -24,7 +24,7 @@ export default function ActionDropdownPortal({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
 
-  const computePlacement = () => {
+  const computePlacement = useCallback(() => {
     if (!anchorEl) return;
     const rect = anchorEl.getBoundingClientRect();
     const menu = menuRef.current;
@@ -54,13 +54,15 @@ export default function ActionDropdownPortal({
     }
 
     setPlacement({ left, top, translateX, translateY });
-  };
+  }, [anchorEl]);
 
   useLayoutEffect(() => {
     if (!open) return;
+    setPlacement(null);
     computePlacement();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, anchorEl]);
+    const raf = window.requestAnimationFrame(computePlacement);
+    return () => window.cancelAnimationFrame(raf);
+  }, [open, anchorEl, computePlacement]);
 
   useEffect(() => {
     if (!open) return;
@@ -84,8 +86,7 @@ export default function ActionDropdownPortal({
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, anchorEl, onClose]);
+  }, [open, anchorEl, onClose, computePlacement]);
 
   if (!open || !anchorEl) return null;
 
@@ -108,10 +109,14 @@ export default function ActionDropdownPortal({
       } as const);
 
   return createPortal(
-    <div ref={menuRef} className={className} style={style} role="menu">
+    <div
+      ref={menuRef}
+      className={className}
+      style={{ ...style, visibility: placement ? "visible" : "hidden" }}
+      role="menu"
+    >
       {children}
     </div>,
     body,
   );
 }
-

@@ -76,7 +76,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
                 <input type={showPw ? "text" : "password"} className="field-input pr-10"
                   value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-80"
+                  className="field-input-icon absolute right-3 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-90"
                   onClick={() => setShowPw(!showPw)}>
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

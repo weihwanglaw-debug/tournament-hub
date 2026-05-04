@@ -1,73 +1,81 @@
 /**
- * sbaApi.ts — SBA (Singapore Badminton Association) rankings & member lookup.
- *
- * Real backend:
- *   GET /sba/rankings?category=          full rankings list (filterable by category)
- *   GET /sba/members/:sbaId              lookup a single member by SBA ID
- *   GET /sba/members?name=               search members by name
- *
- * Note: In production this may be a read-only proxy to the SBA's own API
- *       rather than data your own backend maintains.
- *
- * Mock: reads from sba-rankings.json (static file).
- * Swap: replace function bodies with fetch() calls.
- *
- * Consumers: Fixtures.tsx (seeding panel), EventDetail.tsx (SBA ID autofill)
+ * sbaApi.ts - SBA rankings, member lookup, and ranking import.
  */
 
-import { ok, err, delay, API_BASE, publicHeaders, parseError, apiFetch } from "./_base";
-import type { ApiResult }   from "./_base";
-import type { SbaRanking }  from "@/types/config";
+import { ok, err, delay, API_BASE, publicHeaders, getToken, parseError, apiFetch } from "./_base";
+import type { ApiResult } from "./_base";
+import type { SbaRanking, SbaRankingType } from "@/types/config";
 
-// ── SBA member shape (superset of SbaRanking; used for autofill) ──────────────
 export interface SbaMember {
-  sbaId:    string;
-  name:     string;
-  dob:      string;   // "YYYY-MM-DD"
-  gender:   string;
-  club:     string;
+  sbaId: string;
+  name: string;
+  dob: string;
+  club: string;
+  rankingType?: string;
+  ranking?: number;
+  accumulatedScore?: number;
 }
 
-// ── API functions ─────────────────────────────────────────────────────────────
+export interface SbaImportResult {
+  importedRows: number;
+  categories: Array<{ rankingType: string; rows: number }>;
+  skippedSheets: string[];
+}
 
-/**
- * GET /sba/rankings
- * Returns the full SBA rankings list (sorted by ranking ASC).
- * Used in the fixture seeding panel to auto-suggest seeds.
- */
 export async function apiGetSbaRankings(filters?: {
-  category?: string;   // e.g. "MS", "WS", "MD" — future use
+  type?: string;
 }): Promise<ApiResult<SbaRanking[]>> {
   await delay();
 
   const params = new URLSearchParams();
-  if (filters?.category) params.set("category", filters.category);
+  if (filters?.type) params.set("type", filters.type);
   const res = await apiFetch(`${API_BASE}/api/sba/rankings?${params}`, { headers: publicHeaders() });
   if (!res.ok) return err("FETCH_FAILED", "Failed to load SBA rankings.");
   return ok(await res.json());
 }
 
-/**
- * GET /sba/members/:sbaId
- * Looks up a registered SBA member by ID.
- * Used in EventDetail.tsx to autofill participant name/dob/club.
- */
-export async function apiGetSbaMember(sbaId: string): Promise<ApiResult<SbaMember>> {
+export async function apiGetSbaRankingTypes(): Promise<ApiResult<SbaRankingType[]>> {
   await delay();
 
-  const res = await apiFetch(`${API_BASE}/api/sba/members/${sbaId}`, { headers: publicHeaders() });
+  const res = await apiFetch(`${API_BASE}/api/sba/types`, { headers: publicHeaders() });
+  if (!res.ok) return err("FETCH_FAILED", "Failed to load SBA ranking types.");
+  return ok(await res.json());
+}
+
+export async function apiGetSbaMember(sbaId: string, type?: string): Promise<ApiResult<SbaMember>> {
+  await delay();
+
+  const normalizedSbaId = sbaId.trim().toUpperCase();
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  const res = await apiFetch(`${API_BASE}/api/sba/members/${encodeURIComponent(normalizedSbaId)}?${params}`, {
+    headers: publicHeaders(),
+  });
   if (!res.ok) return err("NOT_FOUND", "SBA member not found.");
   return ok(await res.json());
 }
 
-/**
- * GET /sba/members?name=
- * Searches for SBA members by name (for autocomplete).
- */
-export async function apiSearchSbaMembers(name: string): Promise<ApiResult<SbaMember[]>> {
+export async function apiSearchSbaMembers(name: string, type?: string): Promise<ApiResult<SbaMember[]>> {
   await delay();
 
-  const res = await apiFetch(`${API_BASE}/api/sba/members?name=${encodeURIComponent(name)}`, { headers: publicHeaders() });
+  const params = new URLSearchParams({ name });
+  if (type) params.set("type", type);
+  const res = await apiFetch(`${API_BASE}/api/sba/members?${params}`, { headers: publicHeaders() });
   if (!res.ok) return err("SEARCH_FAILED", "SBA member search failed.");
+  return ok(await res.json());
+}
+
+export async function apiImportSbaRankings(file: File): Promise<ApiResult<SbaImportResult>> {
+  await delay();
+
+  const form = new FormData();
+  form.append("file", file);
+  const token = getToken();
+  const res = await apiFetch(`${API_BASE}/api/sba/import`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) return err("IMPORT_FAILED", (await parseError(res, "Failed to import SBA rankings.")).message);
   return ok(await res.json());
 }

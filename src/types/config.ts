@@ -68,11 +68,23 @@ export type FixtureFormatConfig = WizardConfig;
 // ── SBA ranking ───────────────────────────────────────────────────────────────
 
 export interface SbaRanking {
-  sbaId: string;
-  name: string;
-  club: string;
+  id: number;
+  rankingType: string;
+  player1: { sbaId: string; name: string; club: string; dob: string };
+  player2: { sbaId: string; name: string; club: string; dob: string } | null;
   accumulatedScore: number;
   ranking: number;
+  tournaments: number;
+  yearOfBirth?: number | null;
+}
+
+export interface SbaRankingType {
+  value: string;
+  label: string;
+  players: number;
+  gender: string;
+  minAge: number;
+  maxAge: number;
 }
 
 // ── Program ───────────────────────────────────────────────────────────────────
@@ -81,6 +93,7 @@ export interface Program {
   id: string;
   name: string;
   type: string;
+  sbaRankingType?: string | null;
   minAge: number;
   maxAge: number;
   gender: string;
@@ -211,6 +224,7 @@ export interface SeedEntry {
   participants: string[];
   seed: number | null;
   sbaId?: string;
+  sbaIds?: string[];
   registrationId?: string;
   groupId?: string;
 }

@@ -181,10 +181,26 @@
   border: 1px solid var(--color-table-border);
   background-color: var(--color-page-bg);
   color: var(--color-body-text);
+  accent-color: var(--color-primary);
   font-size: 0.875rem;
   font-family: 'Roboto', system-ui, sans-serif;
   outline: none;
   transition: border-color 0.2s;
+}
+[data-theme="a"] .field-input,
+[data-theme="a"] input,
+[data-theme="a"] select,
+[data-theme="a"] textarea {
+  color-scheme: light;
+}
+[data-theme="b"] .field-input,
+[data-theme="b"] input,
+[data-theme="b"] select,
+[data-theme="b"] textarea {
+  color-scheme: dark;
+}
+.field-input-icon {
+  color: var(--color-body-text);
 }
 .field-input:focus {
   border-color: var(--color-primary);

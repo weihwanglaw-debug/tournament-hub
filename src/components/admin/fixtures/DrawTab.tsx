@@ -11,6 +11,7 @@ import type { BracketState, MatchEntry, TeamEntry } from "@/types/config";
 import { isBracketLocked, computeGroupStandings } from "@/lib/fixtureEngine";
 import { BracketView } from "./BracketView";
 import { buildBracketPrintSvg } from "./bracketPrintSvg";
+import { NoticeDialog } from "@/components/ui/NoticeDialog";
 
 interface Props {
   bracketState:     BracketState;
@@ -227,10 +228,11 @@ window.addEventListener("load", function() {
 </body></html>`;
 
   const w = window.open("", "_blank");
-  if (!w) { alert("Pop-up blocked. Please allow pop-ups for this site and try again."); return; }
+  if (!w) return "Pop-up blocked. Please allow pop-ups for this site and try again.";
   w.document.open();
   w.document.write(html);
   w.document.close();
+  return null;
 }
 
 // ── Player swap panel ─────────────────────────────────────────────────────────
@@ -419,6 +421,7 @@ export function DrawTab({
   const showSwap   = readOnly || !isBracketLocked(bracketState);
   const bracketRef = useRef<HTMLDivElement | null>(null);
   const groupsRef  = useRef<HTMLDivElement | null>(null);
+  const [notice, setNotice] = useState("");
 
   // Determine if bracket is large enough to warrant split printing (16+ players = 8+ QF matches)
   const firstRoundCount = bracketState.matches.length > 0
@@ -472,7 +475,8 @@ export function DrawTab({
       }
     }
 
-    openPrintWindow(eventName, programName, groupHtml, svgHtml, autoPrint, split);
+    const message = openPrintWindow(eventName, programName, groupHtml, svgHtml, autoPrint, split);
+    if (message) setNotice(message);
   };
 
   return (
@@ -506,6 +510,12 @@ export function DrawTab({
           readOnly={readOnly}
         />
       )}
+      <NoticeDialog
+        open={!!notice}
+        onOpenChange={(open) => !open && setNotice("")}
+        title="Print Window Blocked"
+        description={notice}
+      />
 
       {/* Groups */}
       {hasGroups && (

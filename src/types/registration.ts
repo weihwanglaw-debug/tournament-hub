@@ -258,15 +258,16 @@ export interface RegistrationStats {
 export function groupsToSeedEntries(groups: ParticipantGroup[]) {
   return groups
     .filter(g => g.groupStatus !== "Cancelled")
-    .map(g => ({
-      id:           g.id,          // ParticipantGroup.id IS the SeedEntry.id
-      club:         g.clubDisplay,
-      participants: g.participants.map(p => p.fullName),
-      seed:         g.seed,
-      sbaId:        g.participants[0]?.sbaId,
-      registrationId: g.registrationId,
-      groupId:        g.id,
-    }));
+      .map(g => ({
+        id:           g.id,          // ParticipantGroup.id IS the SeedEntry.id
+        club:         g.clubDisplay,
+        participants: g.participants.map(p => p.fullName),
+        seed:         g.seed,
+        sbaId:        g.participants[0]?.sbaId,
+        sbaIds:       g.participants.map(p => p.sbaId).filter((id): id is string => !!id),
+        registrationId: g.registrationId,
+        groupId:        g.id,
+      }));
 }
 
 /** Total fee for a registration */

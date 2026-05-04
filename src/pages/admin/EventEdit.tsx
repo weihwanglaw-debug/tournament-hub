@@ -9,6 +9,7 @@ import SeedingModal from "@/components/admin/SeedingModal";
 import { Switch } from "@/components/ui/switch";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
 import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
   apiAddProgram, apiUpdateProgram, apiDeleteProgram,
@@ -72,6 +73,7 @@ export default function EventEdit() {
   const [seedingOpen, setSeedingOpen] = useState(false);
   const [seedingProgramId, setSeedingProgramId] = useState("");
   const [openAction, setOpenAction] = useState<{ prog: Program; anchorEl: HTMLElement } | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [gallery, setGallery] = useState<string[]>([]);
   const [galleryError, setGalleryError] = useState("");
@@ -139,7 +141,6 @@ export default function EventEdit() {
 
   const handleDeleteEvent = async () => {
     if (!eventId || isNew) return;
-    if (!window.confirm("Delete this event permanently? This cannot be undone.")) return;
     setSaving(true);
     const r = await apiDeleteEvent(eventId);
     setSaving(false);
@@ -205,7 +206,7 @@ export default function EventEdit() {
           <div className="flex gap-3">
             {!isNew && !editing && (
               <>
-                <button onClick={handleDeleteEvent} disabled={saving}
+                <button onClick={() => setDeleteConfirmOpen(true)} disabled={saving}
                   className="btn-outline flex items-center gap-2 px-5 py-2.5 text-sm font-medium"
                   style={{ color: "var(--badge-closed-text)", borderColor: "var(--badge-closed-text)" }}>
                   <Trash2 className="h-4 w-4" /> Delete Event
@@ -563,6 +564,16 @@ export default function EventEdit() {
       />
       {/* SeedingModal only mounts with a real saved eventId — isNew guard above prevents opening */}
       <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} eventId={eventId ?? ""} programId={seedingProgramId} />
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Event"
+        description="Delete this event permanently? This cannot be undone."
+        confirmLabel="Delete Event"
+        loading={saving}
+        destructive
+        onConfirm={handleDeleteEvent}
+      />
     </div>
   );
 }

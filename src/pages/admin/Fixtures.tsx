@@ -36,6 +36,7 @@ import { ResultsTab }  from "@/components/admin/fixtures/ResultsTab";
 import { ScoreModal }  from "@/components/admin/fixtures/ScoreModal";
 import { HeatsTab }    from "@/components/admin/fixtures/HeatsTab";
 import { FG }          from "@/components/admin/fixtures/shared";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ interface ProgramRow {
   eventName:   string;
   programId:   string;
   programName: string;
+  sbaRankingType?: string | null;
   mode:        string;
   sportType:   string;
   startDate:   string;
@@ -128,20 +130,24 @@ function ExternalPanel({ participants, sbaRankings, isBadminton, eventName, prog
   const [seeding, setSeeding]   = useState(false);
   const [saving, setSaving]     = useState(false);
 
-  const sbaById = useMemo(() => { const m: Record<string, SbaRanking> = {}; for (const r of sbaRankings) m[r.sbaId] = r; return m; }, [sbaRankings]);
-  const getSba  = (s: SeedEntry) => s.sbaId ? sbaById[s.sbaId] : null;
+  const getSba  = (s: SeedEntry) => {
+    const ids = (s.sbaIds?.length ? s.sbaIds : s.sbaId ? [s.sbaId] : []).map(id => id.toUpperCase());
+    if (ids.length === 1) return sbaRankings.find(r => r.player1.sbaId.toUpperCase() === ids[0] && !r.player2) ?? null;
+    const set = new Set(ids);
+    return sbaRankings.find(r => r.player2 && set.has(r.player1.sbaId.toUpperCase()) && set.has(r.player2.sbaId.toUpperCase())) ?? null;
+  };
 
   useEffect(() => {
     setSeeds(participants.map(p => ({ ...p })));
   }, [participants]);
 
   const autoSeed = () => {
-    const withSba = seeds.filter(s => s.sbaId && sbaById[s.sbaId]);
-    if (!withSba.length) { alert('No participants have a registered SBA ID. Assign seeds manually.'); return; }
+    const withSba = seeds.filter(s => getSba(s));
+    if (!withSba.length) { toastError("No participants have a registered SBA ID. Assign seeds manually."); return; }
     const canAssign = Math.min(numSeeds, withSba.length);
-    const sorted = [...withSba].sort((a, b) => (sbaById[b.sbaId!]?.accumulatedScore ?? 0) - (sbaById[a.sbaId!]?.accumulatedScore ?? 0));
+    const sorted = [...withSba].sort((a, b) => (getSba(b)?.accumulatedScore ?? 0) - (getSba(a)?.accumulatedScore ?? 0));
     setSeeds(seeds.map(s => { const rank = sorted.findIndex(x => x.id === s.id); return { ...s, seed: rank >= 0 && rank < canAssign ? rank + 1 : null }; }));
-    if (canAssign < numSeeds) alert(`Only ${canAssign}/${numSeeds} seeds auto-assigned - ${numSeeds - canAssign} participants have no SBA ID.`);
+    if (canAssign < numSeeds) toastError(`Only ${canAssign}/${numSeeds} seeds auto-assigned - ${numSeeds - canAssign} participants have no SBA ID.`);
   };
 
   const setSeedVal = (id: string, v: string) => setSeeds(seeds.map(s => s.id === id ? { ...s, seed: v === '' ? null : +v } : s));
@@ -277,7 +283,7 @@ export default function AdminFixtures() {
   const [fixtureExists,      setFixtureExists]      = useState<Record<string, boolean>>({});
   const [selRowParticipants, setSelRowParticipants] = useState<SeedEntry[]>([]);
 
-  // Load events + SBA rankings from real API on mount
+  // Load events from real API on mount
   useEffect(() => {
     apiGetEvents({ includeInactive: false }).then(async r => {
       const evs = (r.data ?? []).filter(e => e.isSports);
@@ -289,7 +295,6 @@ export default function AdminFixtures() {
         if (fxR.data) setFixtureExists(fxR.data);
       }
     });
-    apiGetSbaRankings().then(r => { if (r.data) setSbaRankings(r.data); });
   }, []);
   const { toast, Toasts } = useToasts();
 
@@ -301,6 +306,7 @@ export default function AdminFixtures() {
         eventName:    ev.name,
         programId:    p.id,
         programName:  p.name,
+        sbaRankingType: p.sbaRankingType,
         mode:         ev.fixtureMode,
         sportType:    ev.sportType,
         startDate:    ev.eventStartDate,
@@ -335,6 +341,7 @@ export default function AdminFixtures() {
   const [activeTab,    setActiveTab]    = useState<Tab>("draw");
   const [loading,      setLoading]      = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   // ── Score modal ───────────────────────────────────────────────────────────
   const [scoreModal, setScoreModal] = useState<MatchEntry | null>(null);
@@ -368,6 +375,13 @@ export default function AdminFixtures() {
     });
     return () => { cancelled = true; };
   }, [selRow?.eventId, selRow?.programId]);
+
+  useEffect(() => {
+    if (!selRow?.sbaRankingType) { setSbaRankings([]); return; }
+    apiGetSbaRankings({ type: selRow.sbaRankingType }).then(r => {
+      if (r.data) setSbaRankings(r.data);
+    });
+  }, [selRow?.sbaRankingType]);
 
   // Load confirmed participant groups from registrations API when a program row is selected.
   // The event API always returns participantSeeds = [] — real seeds live in registrations.
@@ -420,8 +434,9 @@ export default function AdminFixtures() {
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   const handleReset = async () => {
-    if (!selRow || !window.confirm("Reset this fixture? All match data will be lost.")) return;
+    if (!selRow) return;
     await withLoading(() => apiResetFixture(selRow.eventId, selRow.programId));
+    setResetConfirmOpen(false);
     setBracketState(null); setShowWizard(false); setFixtureExists(prev => ({ ...prev, [selRow.programId]: false })); refreshTable(); toast.success("Fixture reset.");
   };
 
@@ -672,7 +687,7 @@ export default function AdminFixtures() {
                   <Download className="h-3.5 w-3.5" /> Export Participants
                 </button>
                 {bracketState && !locked && (
-                  <button onClick={handleReset}
+                  <button onClick={() => setResetConfirmOpen(true)}
                     className="btn-outline px-4 py-2 text-xs"
                     style={{ color: "var(--badge-closed-text)", borderColor: "var(--badge-closed-text)" }}>
                     Reset Draw
@@ -766,6 +781,16 @@ export default function AdminFixtures() {
 
       <ScoreModal open={!!scoreModal} draft={draft} isLocked={locked}
         onClose={closeScore} onSave={saveScore} onChangeDraft={setDraft} />
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        title="Reset Fixture"
+        description="Reset this fixture? All match data will be lost."
+        confirmLabel="Reset Fixture"
+        loading={loading}
+        destructive
+        onConfirm={handleReset}
+      />
     </div>
   );
 }

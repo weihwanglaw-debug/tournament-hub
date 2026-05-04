@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import type { Program } from "@/types/config";
+import { apiGetSbaRankingTypes } from "@/lib/api";
+import type { Program, SbaRankingType } from "@/types/config";
 
 const FIELD_TYPES = [
   { value: "text",   label: "Text" },
@@ -25,7 +26,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
   const isEdit = !!program;
 
   const [form, setForm] = useState({
-    name: "", gender: "Mixed", minAge: 18, maxAge: 45,
+    name: "", sbaRankingType: "", gender: "Mixed", minAge: 18, maxAge: 45,
     fee: "0.00", paymentRequired: true,
     feeStructure: "per_entry" as "per_entry" | "per_player",
     minPlayers: 1, maxPlayers: 1,
@@ -34,12 +35,19 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
     enableGuardianInfo: false, enableRemark: false, enableTshirt: true, customFields: [] as CF[],
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [sbaTypes, setSbaTypes] = useState<SbaRankingType[]>([]);
+
+  useEffect(() => {
+    if (!open || !isBadminton) return;
+    apiGetSbaRankingTypes().then(r => { if (r.data) setSbaTypes(r.data); });
+  }, [open, isBadminton]);
 
   useEffect(() => {
     if (!open) return;
     if (program) {
       setForm({
         name:            program.name,
+        sbaRankingType:  program.sbaRankingType ?? program.name,
         gender:          program.gender,
         minAge:          program.minAge,
         maxAge:          program.maxAge,
@@ -61,7 +69,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
       });
     } else {
       setForm({
-        name: "", gender: "Mixed", minAge: 18, maxAge: 45,
+        name: "", sbaRankingType: "", gender: "Mixed", minAge: 18, maxAge: 45,
         fee: "0.00", paymentRequired: true,
         feeStructure: "per_entry" as "per_entry" | "per_player",
         minPlayers: 1, maxPlayers: 1,
@@ -74,6 +82,20 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
   }, [program, open, isBadminton]);
 
   const s      = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }));
+  const selectSbaType = (value: string) => {
+    const selected = sbaTypes.find(t => t.value === value);
+    setForm(p => ({
+      ...p,
+      sbaRankingType: value,
+      name: value,
+      gender: selected?.gender ?? p.gender,
+      minAge: selected?.minAge ?? p.minAge,
+      maxAge: selected?.maxAge ?? p.maxAge,
+      minPlayers: selected?.players ?? p.minPlayers,
+      maxPlayers: selected?.players ?? p.maxPlayers,
+      enableSbaId: true,
+    }));
+  };
   const addCF  = () => s("customFields", [...form.customFields, { label: "", type: "text", mandatory: false, options: "" }]);
   const upCF   = (i: number, k: string, v: unknown) =>
     s("customFields", form.customFields.map((cf, idx) => idx === i ? { ...cf, [k]: v } : cf));
@@ -82,6 +104,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
   const handleSave = () => {
     const errs: Record<string, string> = {};
     if (!form.name.trim())                           errs.name     = "Program name is required";
+    if (isBadminton && !form.sbaRankingType.trim())  errs.sbaType  = "SBA ranking type is required";
     if (form.minAge > form.maxAge)                   errs.ageRange = "Min age must be ≤ max age";
     if (form.minPlayers > form.maxPlayers)           errs.players  = "Min players must be ≤ max players";
     if (form.minParticipants > form.maxParticipants) errs.parts    = "Min participants must be ≤ max";
@@ -93,6 +116,7 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
       id:   program?.id || "",
       name: form.name,
       type: form.name,
+      sbaRankingType: form.sbaRankingType || null,
       gender: form.gender, minAge: form.minAge, maxAge: form.maxAge,
       fee: parseFloat(form.fee) || 0,
       paymentRequired: form.paymentRequired,
@@ -133,8 +157,16 @@ export default function ProgramModal({ open, onClose, onSave, program, isBadmint
             <div className="grid sm:grid-cols-2 gap-5">
               <div className="sm:col-span-2">
                 <Lbl>Program Name *</Lbl>
-                <input className="field-input" value={form.name} onChange={e => s("name", e.target.value)} />
+                {isBadminton ? (
+                  <select className="field-input" value={form.sbaRankingType} onChange={e => selectSbaType(e.target.value)}>
+                    <option value="">Select SBA ranking type</option>
+                    {sbaTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                ) : (
+                  <input className="field-input" value={form.name} onChange={e => s("name", e.target.value)} />
+                )}
                 {formErrors.name && <Err>{formErrors.name}</Err>}
+                {formErrors.sbaType && <Err>{formErrors.sbaType}</Err>}
               </div>
               <div>
                 <Lbl>Gender</Lbl>
