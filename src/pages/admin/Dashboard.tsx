@@ -8,11 +8,11 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TournamentEvent } from "@/types/config";
 import type { RegistrationStats } from "@/lib/api";
-import { apiGetEvents, apiGetRegistrationStats, apiExportRegistrations, apiImportSbaRankings } from "@/lib/api";
+import { apiGetEvents, apiGetRegistrationStats, apiExportRegistrations } from "@/lib/api";
 import { exportRegistrationsCsv } from "@/lib/exportCsv";
 import { apiGetFixtureStatus } from "@/lib/fixtureApi";
 import { computeFixtureDashboardStats, FixtureDashboardStats } from "@/lib/fixtureStatus";
-import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown, FileUp, Loader2 } from "lucide-react";
+import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown, Loader2 } from "lucide-react";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
 
 export default function Dashboard() {
@@ -22,10 +22,6 @@ export default function Dashboard() {
   const [stats,   setStats]   = useState<RegistrationStats | null>(null);
   const [fx,      setFx]      = useState<FixtureDashboardStats>({ pendingPayments: 0, pendingFixture: 0, pendingResults: 0 });
   const [loading, setLoading] = useState(true);
-  const [importingSba, setImportingSba] = useState(false);
-  const [sbaImportMessage, setSbaImportMessage] = useState("");
-  const [sbaImportError, setSbaImportError] = useState("");
-  const sbaFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     Promise.all([apiGetEvents({ includeInactive: false }), apiGetRegistrationStats()])
@@ -113,18 +109,6 @@ export default function Dashboard() {
     exportRegistrationsCsv("All Events", "", r.data);
   };
 
-  const handleSbaImport = async (file: File | null | undefined) => {
-    if (!file) return;
-    setImportingSba(true);
-    setSbaImportMessage("");
-    setSbaImportError("");
-    const r = await apiImportSbaRankings(file);
-    setImportingSba(false);
-    if (sbaFileRef.current) sbaFileRef.current.value = "";
-    if (r.error) { setSbaImportError(r.error.message); return; }
-    const cats = r.data.categories.map(c => `${c.rankingType}: ${c.rows}`).join(", ");
-    setSbaImportMessage(`Imported ${r.data.importedRows} SBA ranking rows. ${cats}`);
-  };
 
   const reports = [
     "Event Summary",
@@ -170,30 +154,6 @@ export default function Dashboard() {
             <div key={m.label}>{inner}</div>
           );
         })}
-      </div>
-
-      {/* SBA Import */}
-      <h2 className="font-heading font-bold text-lg mb-4">SBA Rankings</h2>
-      <div className="p-5 mb-10" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold">Import SBA Ranking Workbook</p>
-            <p className="text-xs opacity-60 mt-1">Uploads .xlsx sheets and replaces only the matching ranking categories in the workbook.</p>
-          </div>
-          <label className={`btn-primary flex items-center gap-2 px-5 py-2.5 text-sm font-semibold cursor-pointer ${importingSba ? "opacity-60 pointer-events-none" : ""}`}>
-            {importingSba ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-            {importingSba ? "Importing..." : "Import XLSX"}
-            <input
-              ref={sbaFileRef}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="hidden"
-              onChange={e => handleSbaImport(e.target.files?.[0])}
-            />
-          </label>
-        </div>
-        {sbaImportMessage && <p className="text-xs mt-3" style={{ color: "var(--badge-open-text)" }}>{sbaImportMessage}</p>}
-        {sbaImportError && <p className="text-xs mt-3" style={{ color: "var(--badge-closed-text)" }}>{sbaImportError}</p>}
       </div>
 
       {/* Reports */}

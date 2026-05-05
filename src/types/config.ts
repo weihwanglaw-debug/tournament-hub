@@ -76,6 +76,7 @@ export interface SbaRanking {
   ranking: number;
   tournaments: number;
   yearOfBirth?: number | null;
+  updatedAt?: string;
 }
 
 export interface SbaRankingType {

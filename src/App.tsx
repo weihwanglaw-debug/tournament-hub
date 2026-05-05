@@ -19,8 +19,8 @@ import AdminRegistrations from "@/pages/admin/Registrations";
 import AdminFixtures from "@/pages/admin/Fixtures";
 import MasterConfig from "@/pages/admin/Masterconfig";
 import UserManagement from "@/pages/admin/Usermanagement";
+import SbaRankingsPage from "@/pages/admin/SbaRankings";
 import ChangePassword from "@/pages/admin/ChangePassword";
-import UIElements from "@/pages/UIElements";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,13 +39,13 @@ const App = () => (
                 <Route path="/event/:id" element={<EventDetail />} />
                 <Route path="/payment/result" element={<PaymentResult />} />
                 <Route path="/login" element={<Login />} />
-                <Route path="/ui-elements" element={<UIElements />} />
                 <Route path="/admin" element={<AdminLayout />}>
                   <Route index element={<Dashboard />} />
                   <Route path="events" element={<AdminEvents />} />
                   <Route path="events/:eventId" element={<EventEdit />} />
                   <Route path="registrations" element={<AdminRegistrations />} />
                   <Route path="fixtures" element={<AdminFixtures />} />
+                  <Route path="sba-rankings" element={<SbaRankingsPage />} />
                   <Route path="config" element={<MasterConfig />} />
                   <Route path="users" element={<UserManagement />} />
                   <Route path="change-password" element={<ChangePassword />} />

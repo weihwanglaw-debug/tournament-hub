@@ -80,6 +80,9 @@ export default function EventEdit() {
   const galleryRef = useRef<HTMLInputElement>(null);
   const [prospectusName, setProspectusName] = useState("");
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [bannerError,    setBannerError]    = useState("");
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const bannerRef = useRef<HTMLInputElement>(null);
   const [uploadingProspectus, setUploadingProspectus] = useState(false);
 
   const [form, setForm] = useState({
@@ -93,7 +96,11 @@ export default function EventEdit() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) => setForm(p => ({ ...p, [k]: v }));
-  const isBadminton = form.isSports && form.sportType === "Badminton";
+  const RACKET_SPORTS = ["Badminton", "Tennis", "Squash", "Table Tennis", "Pickleball"];
+  const TEAM_SPORTS   = ["Basketball", "Football", "Volleyball", "Rugby", "Hockey", "Netball"];
+  const isRacketSport = form.isSports && RACKET_SPORTS.includes(form.sportType);
+  const isTeamSport   = form.isSports && TEAM_SPORTS.includes(form.sportType);
+  const isBadminton   = form.isSports && form.sportType === "Badminton";
 
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     setGalleryError("");
@@ -121,6 +128,19 @@ export default function EventEdit() {
   };
 
   const removeGalleryImage = (idx: number) => setGallery(prev => prev.filter((_, i) => i !== idx));
+
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBannerError("");
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) { setBannerError(`Banner image must be under ${MAX_IMAGE_MB}MB.`); return; }
+    setUploadingBanner(true);
+    apiUploadFile(file, "events/banner").then(r => {
+      if (r.data) set("bannerUrl", r.data);
+      else setBannerError(r.error?.message ?? "Upload failed.");
+    }).finally(() => { setUploadingBanner(false); if (bannerRef.current) bannerRef.current.value = ""; });
+  };
+
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -342,16 +362,38 @@ export default function EventEdit() {
           {form.isSports && (
             <div className="grid sm:grid-cols-2 gap-6">
               <FF label="Sport Type">
-                <label className="flex items-center gap-3 text-sm cursor-pointer py-2">
-                  <Switch
-                    checked={form.sportType === "Badminton"}
-                    disabled={!editing}
-                    onCheckedChange={checked => set("sportType", checked ? "Badminton" : "Other")}
-                  />
-                  <span className="font-medium">
-                    {form.sportType === "Badminton" ? "Badminton" : "Non-Badminton"}
-                  </span>
-                </label>
+                <select
+                  className="field-input"
+                  value={form.sportType}
+                  disabled={!editing}
+                  onChange={e => set("sportType", e.target.value)}
+                >
+                  <optgroup label="Racket Sports">
+                    <option value="Badminton">Badminton</option>
+                    <option value="Tennis">Tennis</option>
+                    <option value="Squash">Squash</option>
+                    <option value="Table Tennis">Table Tennis</option>
+                    <option value="Pickleball">Pickleball</option>
+                  </optgroup>
+                  <optgroup label="Team Sports">
+                    <option value="Basketball">Basketball</option>
+                    <option value="Football">Football</option>
+                    <option value="Volleyball">Volleyball</option>
+                    <option value="Rugby">Rugby</option>
+                    <option value="Hockey">Hockey</option>
+                    <option value="Netball">Netball</option>
+                  </optgroup>
+                  <optgroup label="Individual Sports">
+                    <option value="Swimming">Swimming</option>
+                    <option value="Athletics">Athletics</option>
+                    <option value="Gymnastics">Gymnastics</option>
+                    <option value="Cycling">Cycling</option>
+                    <option value="Archery">Archery</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="Other">Other</option>
+                  </optgroup>
+                </select>
               </FF>
               <FF label="Fixture Management Mode">
                 {editing ? (
@@ -381,6 +423,35 @@ export default function EventEdit() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── Banner ── */}
+      <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
+        <SectionTitle>Event Banner</SectionTitle>
+        <p className="text-xs opacity-60 mb-4">This image is shown as the hero background on the event page (JPG, PNG, WEBP · max {MAX_IMAGE_MB}MB)</p>
+        {editing && (
+          <>
+            <label className={`inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3 ${uploadingBanner ? "opacity-60 pointer-events-none" : ""}`}>
+              <Image className="h-4 w-4" /> {uploadingBanner ? "Uploading\u2026" : form.bannerUrl ? "Replace Banner" : "Upload Banner"}
+              <input ref={bannerRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleBannerUpload} />
+            </label>
+            {bannerError && <p className="text-xs mb-3" style={{ color: "var(--badge-open-text)" }}>{bannerError}</p>}
+          </>
+        )}
+        {form.bannerUrl ? (
+          <div className="relative group" style={{ maxWidth: 640 }}>
+            <img src={assetUrl(form.bannerUrl)} alt="Event banner" className="w-full object-cover" style={{ maxHeight: 220, border: "1px solid var(--color-table-border)" }} />
+            {editing && (
+              <button onClick={() => { set("bannerUrl", ""); setBannerError(""); }}
+                className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm opacity-40">No banner uploaded. A default banner will be used.</p>
+        )}
       </div>
 
       {/* ── Gallery ── */}
@@ -561,6 +632,9 @@ export default function EventEdit() {
         }}
         program={editingProgram}
         isBadminton={isBadminton}
+        isRacketSport={isRacketSport}
+        isTeamSport={isTeamSport}
+        sportType={form.sportType}
       />
       {/* SeedingModal only mounts with a real saved eventId — isNew guard above prevents opening */}
       <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} eventId={eventId ?? ""} programId={seedingProgramId} />

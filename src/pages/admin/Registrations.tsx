@@ -14,7 +14,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown,
-  ChevronsUpDown, Receipt, MoreVertical, ChevronRight, Users
+  ChevronsUpDown, Receipt, MoreVertical, ChevronRight, Users, FileDown
 } from "lucide-react";
 import type { TournamentEvent } from "@/types/config";
 import type { Registration, ParticipantGroup, Payment, PaymentItem, Refund, PaymentMethod, PaymentStatus } from "@/types/registration";
@@ -22,7 +22,7 @@ import { totalFee, PAYMENT_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/types/re
 import {
   apiGetEvents, apiGetRegistration, apiGetRegistrations,
   apiUpdateRegistrationStatus, apiUpdatePayment,
-  apiGetRefunds, apiInitiateRefund,
+  apiGetRefunds, apiInitiateRefund, assetUrl,
 } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/TableControls";
@@ -157,19 +157,66 @@ function ExpandedRow({ reg, refunds }: { reg: Registration; refunds: Refund[] })
                     <th>Club / School</th>
                     <th>SBA ID</th>
                     <th>Contact</th>
+                    <th>T-Shirt</th>
+                    <th>Document</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {group.participants.map(p => (
-                    <tr key={p.id}>
-                      <td className="font-medium text-sm">{p.fullName}</td>
-                      <td className="text-xs opacity-60">{p.dob || "—"}</td>
-                      <td className="text-xs opacity-60">{p.gender}</td>
-                      <td className="text-xs opacity-70">{p.clubSchoolCompany}</td>
-                      <td className="font-mono text-xs">{p.sbaId || <span className="opacity-25">—</span>}</td>
-                      <td className="text-xs opacity-60">{p.contactNumber || p.email || "—"}</td>
-                    </tr>
-                  ))}
+                  {group.participants.map(p => {
+                    const hasExtra = !!(p.guardianName || p.remark ||
+                      (p.customFieldValues && Object.keys(p.customFieldValues).length > 0));
+                    return (
+                      <>
+                        <tr key={p.id}>
+                          <td className="font-medium text-sm">{p.fullName}</td>
+                          <td className="text-xs opacity-60">{p.dob || "—"}</td>
+                          <td className="text-xs opacity-60">{p.gender}</td>
+                          <td className="text-xs opacity-70">{p.clubSchoolCompany}</td>
+                          <td className="font-mono text-xs">{p.sbaId || <span className="opacity-25">—</span>}</td>
+                          <td className="text-xs opacity-60">{p.contactNumber || p.email || "—"}</td>
+                          <td className="text-xs opacity-60">{p.tshirtSize || <span className="opacity-25">—</span>}</td>
+                          <td className="text-xs">
+                            {p.documentUrl
+                              ? (
+                                <a href={assetUrl(p.documentUrl)} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 font-medium"
+                                  style={{ color: "var(--color-primary)" }}
+                                  download>
+                                  <FileDown className="h-3.5 w-3.5" /> Download
+                                </a>
+                              )
+                              : <span className="opacity-25">—</span>}
+                          </td>
+                        </tr>
+                        {hasExtra && (
+                          <tr key={`${p.id}-extra`} style={{ backgroundColor: "var(--color-row-hover)" }}>
+                            <td colSpan={8} className="px-4 py-2">
+                              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                                {p.guardianName && (
+                                  <span>
+                                    <span className="opacity-50 font-semibold uppercase tracking-wide mr-1">Guardian</span>
+                                    {p.guardianName}{p.guardianContact ? ` · ${p.guardianContact}` : ""}
+                                  </span>
+                                )}
+                                {p.remark && (
+                                  <span>
+                                    <span className="opacity-50 font-semibold uppercase tracking-wide mr-1">Remark</span>
+                                    {p.remark}
+                                  </span>
+                                )}
+                                {p.customFieldValues && Object.entries(p.customFieldValues).map(([label, val]) => (
+                                  <span key={label}>
+                                    <span className="opacity-50 font-semibold uppercase tracking-wide mr-1">{label}</span>
+                                    {val || <span className="opacity-30">—</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

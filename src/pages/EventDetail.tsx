@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar, MapPin, Users, Download, ArrowLeft,
   ShoppingCart, Plus, Trash2, AlertCircle, Edit2,
-  Search, CheckCircle, XCircle, ChevronLeft, ChevronRight, X,
+  Search, CheckCircle, XCircle, ChevronLeft, ChevronRight, X, Trophy,
 } from "lucide-react";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
@@ -411,7 +411,9 @@ export default function EventDetail() {
   const retrieveBySbaId = async (idx: number, sbaId: string) => {
     if (!sbaId.trim()) return;
     setSbaStatus((prev) => ({ ...prev, [idx]: "loading" }));
-    const r = await apiGetSbaMember(sbaId.trim(), selectedProgram?.sbaRankingType ?? undefined);
+    // Registration lookup: match by SBA ID only — no ranking type filter.
+    // Ranking type is only applied during fixture seeding, not here.
+    const r = await apiGetSbaMember(sbaId.trim());
     if (r.data) {
       const found = r.data;
       const [year, month, day] = found.dob.split("-");
@@ -736,7 +738,15 @@ export default function EventDetail() {
               <InfoRow icon={MapPin} label="Venue" value={`${event.venue}, ${event.venueAddress}`} />
               <InfoRow icon={Users} label="Max Participants" value={String(event.maxParticipants)} />
               <InfoRow icon={Calendar} label="Registration Period" value={`${formatDate(event.openDate)} – ${formatDate(event.closeDate)}`} />
-              {event.sponsorInfo && <p className="text-sm opacity-70 italic">{event.sponsorInfo}</p>}
+              {event.sponsorInfo && (
+                <div className="flex items-start gap-3">
+                  <Trophy className="h-5 w-5 mt-0.5 opacity-60 flex-shrink-0" style={{ color: "var(--color-primary)" }} />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide opacity-50">Sponsored By</p>
+                    <p className="text-sm mt-0.5">{event.sponsorInfo}</p>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex flex-col gap-4">
               {event.prospectusUrl && (
@@ -793,7 +803,16 @@ export default function EventDetail() {
                       </div>
                     </div>
                     <div className="mt-auto flex items-center justify-between pt-4" style={{ borderTop: "1px solid var(--color-table-border)" }}>
-                      <span className="font-bold text-lg" style={{ color: "var(--color-primary)" }}>{currency} ${prog.fee}</span>
+                      <div>
+                        <span className="font-bold text-lg" style={{ color: "var(--color-primary)" }}>
+                          {prog.paymentRequired ? `${currency} $${prog.fee}` : "Free"}
+                        </span>
+                        {prog.paymentRequired && (
+                          <p className="text-xs opacity-50 leading-tight">
+                            {prog.feeStructure === "per_player" ? "per player" : "per entry"}
+                          </p>
+                        )}
+                      </div>
                       <button disabled={!canRegister} onClick={() => handleSelectProgram(prog)}
                         className="btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
                         {isFull ? "Full" : "Register"}
@@ -961,8 +980,25 @@ export default function EventDetail() {
                             </Field>
                           )}
                           {selectedProgram.fields.customFields.map((cf) => (
-                            <Field key={cf.label} label={cf.label} error={errors[`p${idx}.custom.${cf.label}`]}>
-                              <input className="field-input" value={p.customFieldValues[cf.label] || ""} onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
+                            <Field key={cf.label} label={`${cf.label}${cf.required ? " *" : ""}`} error={errors[`p${idx}.custom.${cf.label}`]}>
+                              {cf.type === "select" && cf.options ? (
+                                <select className="field-input" value={p.customFieldValues[cf.label] || ""}
+                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)}>
+                                  <option value="">Select…</option>
+                                  {cf.options.split(",").map((o: string) => o.trim()).filter(Boolean).map((o: string) => (
+                                    <option key={o} value={o}>{o}</option>
+                                  ))}
+                                </select>
+                              ) : cf.type === "date" ? (
+                                <input type="date" className="field-input" value={p.customFieldValues[cf.label] || ""}
+                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
+                              ) : cf.type === "number" ? (
+                                <input type="number" className="field-input" value={p.customFieldValues[cf.label] || ""}
+                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
+                              ) : (
+                                <input className="field-input" value={p.customFieldValues[cf.label] || ""}
+                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
+                              )}
                             </Field>
                           ))}
                           {selectedProgram.fields.enableRemark && (

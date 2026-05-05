@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useEffect, useState } from "react";
 import {
-  LayoutDashboard, CalendarDays, Users, GitBranch,
+  LayoutDashboard, CalendarDays, Users, GitBranch, ListOrdered,
   LogOut, Trophy, Shield, Settings, ChevronLeft, Menu, Sun, Moon,
 } from "lucide-react";
 
@@ -28,6 +28,7 @@ export default function AdminLayout() {
     { to: "/admin/events",         label: "Events & Programs",  icon: CalendarDays,    end: false },
     { to: "/admin/registrations",  label: "Registrations",      icon: Users,           end: false },
     { to: "/admin/fixtures",       label: "Fixtures",           icon: GitBranch,       end: false },
+    { to: "/admin/sba-rankings",   label: "SBA Rankings",       icon: ListOrdered,     end: false },
     ...(isSuperAdmin ? [
       { to: "/admin/users",  label: "User Management",    icon: Shield,    end: false },
       { to: "/admin/config", label: "Master Config",      icon: Settings,  end: false },

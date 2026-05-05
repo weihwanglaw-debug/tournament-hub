@@ -47,8 +47,13 @@ export default function ChangePassword() {
     setSaving(false);
     if (r.error) { setApiError(r.error.message); return; }
     setSuccess(true);
-    // Re-login after password change to get fresh session with mustChangePassword=false
-    setTimeout(() => navigate("/admin"), 2000);
+    // Force full logout so mustChangePassword flag is cleared from the session.
+    // navigate("/admin") alone keeps the stale user object in AuthContext state —
+    // only apiGetMe() on boot re-reads the flag, so we must go through login again.
+    setTimeout(async () => {
+      await logout();
+      navigate("/login", { replace: true });
+    }, 2000);
   };
 
   return (
@@ -68,7 +73,7 @@ export default function ChangePassword() {
       {success ? (
         <div className="p-4 text-sm"
           style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
-          Password changed successfully. Redirecting…
+          Password changed successfully. Please log in again…
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-5">
