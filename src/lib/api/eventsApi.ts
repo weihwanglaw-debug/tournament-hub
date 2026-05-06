@@ -31,6 +31,24 @@ import { ok, err, delay, API_BASE, publicHeaders, adminHeaders, parseError, apiF
 import type { ApiResult } from "./_base";
 import type { TournamentEvent, Program } from "@/types/config";
 
+/** Remap frontend CustomField shape (type/required) → backend DTO shape (fieldType/isRequired). */
+function remapProgram<T extends { fields?: { customFields?: any[] } }>(p: T): T {
+  if (!p.fields?.customFields) return p;
+  return {
+    ...p,
+    fields: {
+      ...p.fields,
+      customFields: p.fields.customFields.map((cf: any) => ({
+        label:      cf.label,
+        fieldType:  cf.fieldType ?? cf.type ?? "text",
+        isRequired: cf.isRequired ?? cf.required ?? false,
+        options:    cf.options,
+      })),
+    },
+  };
+}
+
+
 // ── API functions ─────────────────────────────────────────────────────────────
 
 /**
@@ -136,7 +154,7 @@ export async function apiAddProgram(
   const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs`, {
     method: "POST",
     headers: adminHeaders(),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(remapProgram(payload)),
   });
   if (!res.ok) return err("CREATE_FAILED", "Failed to add program.");
   return ok(await res.json());
@@ -157,7 +175,7 @@ export async function apiUpdateProgram(
   const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}`, {
     method: "PUT",
     headers: adminHeaders(),
-    body: JSON.stringify(patch),
+    body: JSON.stringify(remapProgram(patch as any)),
   });
   if (!res.ok) return err("UPDATE_FAILED", "Failed to update program.");
   return ok(await res.json());

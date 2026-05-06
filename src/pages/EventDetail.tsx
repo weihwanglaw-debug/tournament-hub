@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
-import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout, assetUrl } from "@/lib/api";
+import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout, apiUploadFile, assetUrl } from "@/lib/api";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
 import StatusBadge, { getProgramCapacityStatus } from "@/components/events/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
@@ -552,7 +552,8 @@ export default function EventDetail() {
   const clearSession = () => { if (SESSION_KEY) sessionStorage.removeItem(SESSION_KEY); };
 
   // ── Build registration payload from cart + contact ────────────────────────
-  const buildRegistrationPayload = () => {
+  // documentUrlMap: keyed by "entryIndex-participantIndex" → uploaded URL
+  const buildRegistrationPayload = (documentUrlMap: Record<string, string> = {}) => {
     const groups = cart.map((entry, i) => {
       const groupId = `PG-TEMP-${i}`;
       const isPerPlayer = entry.feeStructure === "per_player";
@@ -568,6 +569,7 @@ export default function EventDetail() {
           email: p.email, contactNumber: p.contactNumber, tshirtSize: p.tshirtSize,
           sbaId: p.sbaId || undefined, guardianName: p.guardianName || undefined,
           guardianContact: p.guardianContact || undefined, remark: p.remark || undefined,
+          documentUrl: documentUrlMap[`${i}-${pi}`] || undefined,
           customFieldValues: p.customFieldValues ?? {},
         };
       });
@@ -630,7 +632,26 @@ export default function EventDetail() {
     setSubmitting(true);
     setSubmitError("");
     try {
-      const registrationPayload = buildRegistrationPayload();
+      // ── Upload documents before building the payload ──────────────────────
+      // Collect all participants across all cart entries that have a documentFile.
+      // Upload each in parallel, build a map of "entryIdx-participantIdx" → URL.
+      const docUploads: Promise<void>[] = [];
+      const documentUrlMap: Record<string, string> = {};
+      cart.forEach((entry, ei) => {
+        entry.participants.forEach((p, pi) => {
+          if (p.documentFile) {
+            docUploads.push(
+              apiUploadFile(p.documentFile, "registrations/documents").then(r => {
+                if (r.data) documentUrlMap[`${ei}-${pi}`] = r.data;
+                // Non-fatal: if upload fails we still submit; admin can note missing doc.
+              })
+            );
+          }
+        });
+      });
+      if (docUploads.length) await Promise.all(docUploads);
+
+      const registrationPayload = buildRegistrationPayload(documentUrlMap);
       const needsPayment = cart.some(e => e.fee > 0);
 
       if (!needsPayment) {
@@ -885,7 +906,9 @@ export default function EventDetail() {
                           <Field label="Full Name (as per NRIC/Passport)" error={errors[`p${idx}.fullName`]}>
                             <div className="relative">
                               <input className="field-input" value={p.fullName}
-                                onChange={(e) => updateParticipant(idx, "fullName", e.target.value)} autoComplete="off" />
+                                readOnly={sbaStatus[idx] === "found"}
+                                style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1, cursor: sbaStatus[idx] === "found" ? "not-allowed" : undefined }}
+                                onChange={(e) => { if (sbaStatus[idx] !== "found") updateParticipant(idx, "fullName", e.target.value); }} autoComplete="off" />
                               {suggestions?.idx === idx && suggestions.matches.length > 0 && (
                                 <div className="absolute z-20 w-full shadow-lg"
                                   style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)", top: "100%" }}>
@@ -906,16 +929,25 @@ export default function EventDetail() {
                               <select className="field-input flex-1" value={p.dobDay} onChange={(e) => updateParticipant(idx, "dobDay", e.target.value)}>
                                 <option value="">Day</option>{DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
                               </select>
-                              <select className="field-input flex-1" value={p.dobMonth} onChange={(e) => updateParticipant(idx, "dobMonth", e.target.value)}>
+                              <select className="field-input flex-1" value={p.dobMonth}
+                              disabled={sbaStatus[idx] === "found"}
+                              style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1 }}
+                              onChange={(e) => updateParticipant(idx, "dobMonth", e.target.value)}>
                                 <option value="">Month</option>{MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
                               </select>
-                              <select className="field-input flex-1" value={p.dobYear} onChange={(e) => updateParticipant(idx, "dobYear", e.target.value)}>
+                              <select className="field-input flex-1" value={p.dobYear}
+                              disabled={sbaStatus[idx] === "found"}
+                              style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1 }}
+                              onChange={(e) => updateParticipant(idx, "dobYear", e.target.value)}>
                                 <option value="">Year</option>{YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
                               </select>
                             </div>
                           </Field>
                           <Field label="Gender" error={errors[`p${idx}.gender`]}>
-                            <select className="field-input" value={p.gender} onChange={(e) => updateParticipant(idx, "gender", e.target.value)}>
+                            <select className="field-input" value={p.gender}
+                              disabled={sbaStatus[idx] === "found"}
+                              style={sbaStatus[idx] === "found" ? { opacity: 0.6 } : {}}
+                              onChange={(e) => updateParticipant(idx, "gender", e.target.value)}>
                               <option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option>
                             </select>
                           </Field>
@@ -950,7 +982,11 @@ export default function EventDetail() {
                               <Field label="SBA ID">
                                 <div className="flex gap-2">
                                   <input className="field-input flex-1" value={p.sbaId || ""}
-                                    onChange={(e) => { updateParticipant(idx, "sbaId", e.target.value); setSbaStatus((prev) => ({ ...prev, [idx]: "idle" })); }}
+                                    onChange={(e) => {
+                                      updateParticipant(idx, "sbaId", e.target.value);
+                                      // Clear lock when user empties the SBA ID field
+                                      setSbaStatus((prev) => ({ ...prev, [idx]: e.target.value.trim() ? prev[idx] : "idle" }));
+                                    }}
                                     placeholder="e.g. SBA-001" />
                                   <button type="button" onClick={() => retrieveBySbaId(idx, p.sbaId || "")}
                                     disabled={sbaStatus[idx] === "loading"}
@@ -958,7 +994,11 @@ export default function EventDetail() {
                                     {sbaStatus[idx] === "loading" ? "Loading…" : "Retrieve →"}
                                   </button>
                                 </div>
-                                {sbaStatus[idx] === "found" && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--badge-open-text)" }}><CheckCircle className="h-3 w-3" /> Details retrieved ✓</p>}
+                                {sbaStatus[idx] === "found" && (
+                                  <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--badge-open-text)" }}>
+                                    <CheckCircle className="h-3 w-3" /> Details auto-filled. Clear the SBA ID to edit manually.
+                                  </p>
+                                )}
                                 {sbaStatus[idx] === "not_found" && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--badge-open-text)" }}><XCircle className="h-3 w-3" /> SBA ID not found.</p>}
                               </Field>
                             </div>
@@ -1163,7 +1203,13 @@ export default function EventDetail() {
                           </div>
                         )}
                         <div className="flex flex-wrap gap-3">
-                          <button onClick={() => setStep(1)} className="btn-outline px-6 py-2.5 text-sm font-medium">Add More</button>
+                          <button onClick={() => {
+                            setStep(1);
+                            setSelectedProgram(null);
+                            setParticipants([]);
+                            setErrors({});
+                            setTimeout(() => registrationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                          }} className="btn-outline px-6 py-2.5 text-sm font-medium">Add More</button>
                           <button
                             disabled={!consentChecked || submitting}
                             onClick={handleCheckout}

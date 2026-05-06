@@ -4,7 +4,7 @@ import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight, MapPin, Calendar } from "lucide-react";
 import { motion } from "framer-motion";
 import type { TournamentEvent } from "@/types/config";
-import { apiGetEvents } from "@/lib/api";
+import { apiGetEvents, assetUrl } from "@/lib/api";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import eventBanner1 from "@/assets/event-banner-1.jpg";
@@ -115,7 +115,7 @@ export default function EventCarousel() {
               <div className="flex gap-6">
                 {visibleEvents.map((event, i) => {
                   const status = getEventStatus(event);
-                  const bannerImage = event.bannerUrl || FALLBACK_BANNERS[i % FALLBACK_BANNERS.length];
+                  const bannerImage = event.bannerUrl ? assetUrl(event.bannerUrl) : FALLBACK_BANNERS[i % FALLBACK_BANNERS.length];
                   return (
                     <motion.div
                       key={event.id}

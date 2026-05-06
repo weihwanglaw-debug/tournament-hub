@@ -58,8 +58,12 @@ export async function apiGetFixture(
   });
   if (res.status === 404) return ok(null);
   if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
-  const data = await res.json();
-  if (!data) return ok(null);
+  // .NET Ok(null) returns an empty body (not "null" JSON) — guard against that
+  const text = await res.text();
+  if (!text || text.trim() === "" || text.trim() === "null") return ok(null);
+  let data: any;
+  try { data = JSON.parse(text); } catch { return ok(null); }
+  if (!data?.bracketStateJson) return ok(null);
   try {
     return ok(JSON.parse(data.bracketStateJson) as BracketState);
   } catch {

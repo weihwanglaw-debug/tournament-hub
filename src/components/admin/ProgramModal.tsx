@@ -152,7 +152,10 @@ export default function ProgramModal({
         enableRemark:         program.fields.enableRemark ?? false,
         enableTshirt:         program.fields.enableTshirt ?? true,
         customFields: program.fields.customFields.map(cf => ({
-          label: cf.label, type: cf.type, mandatory: cf.required, options: cf.options || "",
+          label:     cf.label,
+          type:      (cf as any).fieldType ?? cf.type,     // backend may return fieldType
+          mandatory: (cf as any).isRequired ?? cf.required, // backend may return isRequired
+          options:   cf.options || "",
         })),
       });
     } else {
@@ -245,7 +248,10 @@ export default function ProgramModal({
         enableRemark:         form.enableRemark,
         enableTshirt:         form.enableTshirt,
         customFields: form.customFields.map(cf => ({
-          label: cf.label, type: cf.type, required: cf.mandatory, options: cf.options || undefined,
+          label:    cf.label,
+          type:     cf.type,
+          required: cf.mandatory,
+          options:  cf.options || undefined,
         })),
       },
     });
