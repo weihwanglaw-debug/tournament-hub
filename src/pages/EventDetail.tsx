@@ -450,6 +450,8 @@ export default function EventDetail() {
       if (!p.nationality.trim()) errs[`${px}.nationality`] = "Required";
       if (!p.clubSchoolCompany.trim()) errs[`${px}.clubSchoolCompany`] = "Required";
       if (selectedProgram.fields.enableTshirt && !p.tshirtSize) errs[`${px}.tshirtSize`] = "Required";
+      if (selectedProgram.fields.enableSbaId && selectedProgram.sbaRequired && !p.sbaId?.trim())
+        errs[`${px}.sbaId`] = "SBA ID is required for this program";
       if (p.dobDay && p.dobMonth && p.dobYear) {
         const monthIdx = MONTHS.indexOf(p.dobMonth);
         const dob = new Date(+p.dobYear, monthIdx, +p.dobDay);
@@ -460,9 +462,16 @@ export default function EventDetail() {
         if (age < selectedProgram.minAge || age > selectedProgram.maxAge)
           errs[`${px}.dob`] = `Age must be ${selectedProgram.minAge}–${selectedProgram.maxAge}`;
       }
-      if (p.gender && selectedProgram.gender !== "Mixed") {
-        if (selectedProgram.gender === "Male" && p.gender !== "Male") errs[`${px}.gender`] = "Male players only";
-        if (selectedProgram.gender === "Female" && p.gender !== "Female") errs[`${px}.gender`] = "Female players only";
+      // Gender per-participant check:
+      //   Male   → each player must be Male
+      //   Female → each player must be Female
+      //   Mixed  → composition checked after the loop (needs all participants)
+      //   Open   → no restriction
+      if (p.gender) {
+        if (selectedProgram.gender === "Male"   && p.gender !== "Male")
+          errs[`${px}.gender`] = "This program is for Male players only.";
+        if (selectedProgram.gender === "Female" && p.gender !== "Female")
+          errs[`${px}.gender`] = "This program is for Female players only.";
       }
       if (selectedProgram.fields.enableGuardianInfo) {
         if (!p.guardianName?.trim()) errs[`${px}.guardianName`] = "Required";
@@ -479,11 +488,18 @@ export default function EventDetail() {
       });
       if (dupe) errs[`${px}.fullName`] = "Already registered in this program";
     });
-    if (selectedProgram.gender === "Mixed" && participants.length >= 2 && participants.every(p => p.gender)) {
-      const hasMale   = participants.some(p => p.gender === "Male");
-      const hasFemale = participants.some(p => p.gender === "Female");
-      if (!hasMale || !hasFemale)
-        formErr = "Mixed program requires at least 1 Male and 1 Female player.";
+    if (selectedProgram.gender === "Mixed") {
+      // All participants must have gender filled before we can check composition
+      const allFilled = participants.every(p => p.gender);
+      if (!allFilled) {
+        formErr = "Please select the gender for all participants.";
+      } else {
+        const males   = participants.filter(p => p.gender === "Male").length;
+        const females = participants.filter(p => p.gender === "Female").length;
+        // Mixed doubles = exactly 1 Male + 1 Female (minPlayers=maxPlayers=2 enforced at setup)
+        if (males !== 1 || females !== 1)
+          formErr = "Mixed program requires exactly 1 Male and 1 Female player.";
+      }
     }
     setErrors(errs); setFormError(formErr);
     return Object.keys(errs).length === 0 && !formErr;
@@ -805,7 +821,8 @@ export default function EventDetail() {
             {event.programs.map((prog) => {
               const capStatus = getProgramCapacityStatus(prog);
               const isFull = capStatus === "full";
-              const canRegister = status === "open" && !isFull;
+              const progClosed = prog.status === "closed";
+              const canRegister = status === "open" && !isFull && !progClosed;
               return (
                 <div key={prog.id} className="flex flex-col"
                   style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
@@ -836,7 +853,7 @@ export default function EventDetail() {
                       </div>
                       <button disabled={!canRegister} onClick={() => handleSelectProgram(prog)}
                         className="btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
-                        {isFull ? "Full" : "Register"}
+                        {isFull ? "Full" : progClosed ? "Closed" : "Register"}
                       </button>
                     </div>
                   </div>

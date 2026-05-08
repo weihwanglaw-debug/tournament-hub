@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2, Scissors, MoreVertical } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2, Scissors, MoreVertical, ExternalLink, Lock, Unlock } from "lucide-react";
 import type { TournamentEvent, Program } from "@/types/config";
 import { formatDate, getEventStatus } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
@@ -12,7 +12,7 @@ import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
-  apiAddProgram, apiUpdateProgram, apiDeleteProgram,
+  apiAddProgram, apiUpdateProgram, apiDeleteProgram, apiUpdateProgramStatus,
   apiUploadFile, assetUrl,
 } from "@/lib/api";
 
@@ -524,6 +524,15 @@ export default function EventEdit() {
                       <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
                         {prog.fee > 0 ? `$${prog.fee.toFixed(2)}` : "Free"}
                       </td>
+                      <td>
+                        <span className="text-xs font-semibold px-2 py-0.5"
+                          style={{
+                            backgroundColor: prog.status === "closed" ? "var(--badge-closed-bg, #fee2e2)" : "var(--badge-open-bg)",
+                            color:           prog.status === "closed" ? "var(--badge-closed-text, #dc2626)" : "var(--badge-open-text)",
+                          }}>
+                          {prog.status === "closed" ? "Closed" : "Open"}
+                        </span>
+                      </td>
                       <td className="text-sm">{prog.minParticipants} / {prog.maxParticipants}</td>
                       <td className="text-sm">
                         <span>{prog.currentParticipants} / {prog.maxParticipants}</span>
@@ -595,6 +604,35 @@ export default function EventEdit() {
               <button onClick={() => { if (!openAction) return; navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`); setOpenAction(null); }}>
                 <Users className="h-4 w-4" /> Registrations
               </button>
+              {!isNew && eventId && (
+                <button onClick={async () => {
+                  if (!openAction) return;
+                  const prog = openAction.prog;
+                  const newStatus = prog.status === "closed" ? "open" : "closed";
+                  const r = await apiUpdateProgramStatus(eventId, prog.id, newStatus);
+                  if (r.data) {
+                    setPrograms(prev => prev.map(p =>
+                      p.id === prog.id ? { ...p, status: newStatus } : p
+                    ));
+                  }
+                  setOpenAction(null);
+                }}>
+                  {openAction.prog.status === "closed"
+                    ? <><Unlock className="h-4 w-4" /> Reopen Program</>
+                    : <><Lock   className="h-4 w-4" /> Close Program</>}
+                </button>
+              )}
+              {!isNew && (
+                <button onClick={() => {
+                  if (!openAction) return;
+                  // Navigate to registrations filtered by this program,
+                  // then user can drill into any registration's participants
+                  navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`);
+                  setOpenAction(null);
+                }}>
+                  <ExternalLink className="h-4 w-4" /> View Participants
+                </button>
+              )}
             </ActionDropdownPortal>
           </>
         )}

@@ -181,6 +181,26 @@ export async function apiUpdateProgram(
   return ok(await res.json());
 }
 
+
+/**
+ * PATCH /events/:eid/programs/:pid/status
+ * Toggle a program open or closed without editing the full program.
+ */
+export async function apiUpdateProgramStatus(
+  eventId: string,
+  programId: string,
+  status: "open" | "closed",
+): Promise<ApiResult<{ programId: number; status: string }>> {
+  await delay();
+  const res = await apiFetch(`${API_BASE}/api/events/${eventId}/programs/${programId}/status`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) return err("UPDATE_FAILED", "Failed to update program status.");
+  return ok(await res.json());
+}
+
 /**
  * DELETE /events/:id/programs/:pid
  * Removes a program. Backend should reject if confirmed registrations exist.

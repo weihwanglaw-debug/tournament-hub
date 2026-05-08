@@ -20,6 +20,7 @@ import AdminFixtures from "@/pages/admin/Fixtures";
 import MasterConfig from "@/pages/admin/Masterconfig";
 import UserManagement from "@/pages/admin/Usermanagement";
 import SbaRankingsPage from "@/pages/admin/SbaRankings";
+import ParticipantDetails from "@/pages/admin/ParticipantDetails";
 import ChangePassword from "@/pages/admin/ChangePassword";
 import NotFound from "@/pages/NotFound";
 
@@ -44,6 +45,7 @@ const App = () => (
                   <Route path="events" element={<AdminEvents />} />
                   <Route path="events/:eventId" element={<EventEdit />} />
                   <Route path="registrations" element={<AdminRegistrations />} />
+                  <Route path="registrations/:regId/participants" element={<ParticipantDetails />} />
                   <Route path="fixtures" element={<AdminFixtures />} />
                   <Route path="sba-rankings" element={<SbaRankingsPage />} />
                   <Route path="config" element={<MasterConfig />} />

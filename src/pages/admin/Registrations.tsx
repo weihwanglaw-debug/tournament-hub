@@ -11,10 +11,10 @@
  */
 
 import React, { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   CreditCard, CheckCircle, XCircle, RefreshCw, ChevronUp, ChevronDown,
-  ChevronsUpDown, Receipt, MoreVertical, ChevronRight, Users, FileDown
+  ChevronsUpDown, Receipt, MoreVertical, ChevronRight, Users, FileDown, ExternalLink
 } from "lucide-react";
 import type { TournamentEvent } from "@/types/config";
 import type { Registration, ParticipantGroup, Payment, PaymentItem, Refund, PaymentMethod, PaymentStatus } from "@/types/registration";
@@ -127,6 +127,7 @@ function calcRefunded(refunds: Refund[], items: PaymentItem[]): number {
 // ── Expanded row — shows groups + participants ─────────────────────────────────
 
 function ExpandedRow({ reg, refunds }: { reg: Registration; refunds: Refund[] }) {
+  const navigate = useNavigate();
   const payment = getPayment(reg);
   const refunded = calcRefunded(refunds, payment?.items ?? []);
   return (
@@ -143,9 +144,17 @@ function ExpandedRow({ reg, refunds }: { reg: Registration; refunds: Refund[] })
                   <span className="font-semibold text-sm">{group.programName}</span>
                   <RegBadge status={group.groupStatus} />
                 </div>
-                <span className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>
-                  ${group.fee.toFixed(2)}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>
+                    ${group.fee.toFixed(2)}
+                  </span>
+                  <button
+                    onClick={() => navigate(`/admin/registrations/${reg.id}/participants?programId=${group.programId}`)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1"
+                    style={{ border: "1px solid var(--color-primary)", color: "var(--color-primary)" }}>
+                    <ExternalLink className="h-3 w-3" /> Participants
+                  </button>
+                </div>
               </div>
               {/* Participants */}
               <table className="trs-table">

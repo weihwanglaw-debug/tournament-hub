@@ -216,6 +216,8 @@ export default function ProgramModal({
     if (!form.name.trim())                           errs.name     = "Program name is required";
     if (isBadminton && !form.sbaRankingType.trim())  errs.sbaType  = "SBA ranking type is required";
     if (!form.type)                                  errs.type     = "Program type is required";
+    if (form.gender === "Mixed" && (form.minPlayers !== 2 || form.maxPlayers !== 2))
+                               errs.players  = "Mixed gender requires exactly 2 players per entry (1 Male + 1 Female).";
     if (form.minAge > form.maxAge)                   errs.ageRange = "Min age must be ≤ max age";
     if (form.minPlayers > form.maxPlayers)           errs.players  = "Min players must be ≤ max players";
     if (form.minParticipants > form.maxParticipants) errs.parts    = "Min participants must be ≤ max";
@@ -318,11 +320,20 @@ export default function ProgramModal({
               {/* Gender */}
               <div>
                 <Lbl>Gender</Lbl>
-                <select className="field-input" value={form.gender} onChange={e => s("gender", e.target.value)}>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Mixed">Mixed</option>
-                  <option value="Open">Open</option>
+                <select className="field-input" value={form.gender} onChange={e => {
+                    const g = e.target.value;
+                    setForm(p => ({
+                      ...p,
+                      gender:     g,
+                      // Mixed doubles must be exactly 2 players — enforce immediately
+                      minPlayers: g === "Mixed" ? 2 : p.minPlayers,
+                      maxPlayers: g === "Mixed" ? 2 : p.maxPlayers,
+                    }));
+                  }}>
+                  <option value="Male">Male only</option>
+                  <option value="Female">Female only</option>
+                  <option value="Mixed">Mixed (1 Male + 1 Female, doubles only)</option>
+                  <option value="Open">Open (no gender restriction)</option>
                 </select>
               </div>
             </div>
