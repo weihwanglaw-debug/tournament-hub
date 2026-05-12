@@ -45,7 +45,6 @@ export default function UserManagement() {
       if (!fName.trim()) e.name = "Required";
       if (!fEmail.trim()) e.email = "Required";
       else if (!/\S+@\S+\.\S+/.test(fEmail)) e.email = "Invalid email";
-      // Duplicate email check is done server-side; API returns EMAIL_TAKEN error code
     }
     if (mode === "create" || mode === "reset") {
       if (!fPass.trim()) e.pass = "Required";
@@ -192,31 +191,38 @@ export default function UserManagement() {
         })}
       </div>
 
+      {/* FIX: wrap children in openAction guard — same pattern as EventEdit.tsx fix.
+          disabled/style props that access openAction.user evaluate on every render,
+          including the render triggered when onClose() sets openAction → null.
+          Without this guard they crash with "Cannot read properties of null (reading 'user')". */}
       <ActionDropdownPortal
         open={!!openAction}
         anchorEl={openAction?.anchorEl ?? null}
         onClose={() => setOpenAction(null)}
       >
-        <button onClick={() => { if (!openAction) return; openEdit(openAction.user); setOpenAction(null); }}>
-          <Edit2 className="h-4 w-4" /> Edit
-        </button>
-        <button onClick={() => { if (!openAction) return; openReset(openAction.user); setOpenAction(null); }}>
-          <Key className="h-4 w-4" /> Reset Password
-        </button>
-        <button
-          disabled={!openAction || isSelf(openAction.user)}
-          onClick={() => {
-            if (!openAction) return;
-            if (!isSelf(openAction.user)) setDelConf(openAction.user.id);
-            setOpenAction(null);
-          }}
-          style={{ color: openAction && !isSelf(openAction.user) ? "var(--badge-open-text)" : undefined }}
-        >
-          <Trash2 className="h-4 w-4" /> {openAction && isSelf(openAction.user) ? "Cannot delete self" : "Delete"}
-        </button>
+        {openAction && (
+          <>
+            <button onClick={() => { openEdit(openAction.user); setOpenAction(null); }}>
+              <Edit2 className="h-4 w-4" /> Edit
+            </button>
+            <button onClick={() => { openReset(openAction.user); setOpenAction(null); }}>
+              <Key className="h-4 w-4" /> Reset Password
+            </button>
+            <button
+              disabled={isSelf(openAction.user)}
+              onClick={() => {
+                if (!isSelf(openAction.user)) setDelConf(openAction.user.id);
+                setOpenAction(null);
+              }}
+              style={{ color: !isSelf(openAction.user) ? "var(--badge-open-text)" : undefined }}
+            >
+              <Trash2 className="h-4 w-4" /> {isSelf(openAction.user) ? "Cannot delete self" : "Delete"}
+            </button>
+          </>
+        )}
       </ActionDropdownPortal>
 
-      {/* Modals (same as before, condensed) */}
+      {/* Modals */}
       <Dialog open={modal === "create" || modal === "edit"} onOpenChange={v => { if (!v) setModal(null); }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
           <DialogHeader className="p-8 pb-0"><DialogTitle className="font-bold text-xl">{modal === "create" ? "Add User" : `Edit User — ${target?.name}`}</DialogTitle></DialogHeader>

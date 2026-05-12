@@ -43,7 +43,7 @@ export default function EventEdit() {
       setPrograms(ev.programs);
       const safeGallery = (ev.galleryUrls || []).filter((u) => !isBlobUrl(u));
       if (safeGallery.length !== (ev.galleryUrls || []).length) {
-        setGalleryError("Some previously selected images were temporary previews and can’t be loaded after refresh. Please re-upload them.");
+        setGalleryError("Some previously selected images were temporary previews and can't be loaded after refresh. Please re-upload them.");
       }
       setGallery(safeGallery);
       setForm({
@@ -121,7 +121,7 @@ export default function EventEdit() {
     setUploadingGallery(true);
     void Promise.all(newUrls).then((urls) => {
       const good = urls.filter(Boolean) as string[];
-      if (errs.length) setGalleryError(errs.join(" Â· "));
+      if (errs.length) setGalleryError(errs.join(" · "));
       if (good.length) setGallery(prev => [...prev, ...good]);
     }).finally(() => setUploadingGallery(false));
     if (galleryRef.current) galleryRef.current.value = "";
@@ -432,7 +432,7 @@ export default function EventEdit() {
         {editing && (
           <>
             <label className={`inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3 ${uploadingBanner ? "opacity-60 pointer-events-none" : ""}`}>
-              <Image className="h-4 w-4" /> {uploadingBanner ? "Uploading\u2026" : form.bannerUrl ? "Replace Banner" : "Upload Banner"}
+              <Image className="h-4 w-4" /> {uploadingBanner ? "Uploading…" : form.bannerUrl ? "Replace Banner" : "Upload Banner"}
               <input ref={bannerRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleBannerUpload} />
             </label>
             {bannerError && <p className="text-xs mb-3" style={{ color: "var(--badge-open-text)" }}>{bannerError}</p>}
@@ -461,7 +461,7 @@ export default function EventEdit() {
         {editing && (
           <>
             <label className={`inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3 ${uploadingGallery ? "opacity-60 pointer-events-none" : ""}`}>
-              <Image className="h-4 w-4" /> {uploadingGallery ? "Uploadingâ€¦" : "Upload Images"}
+              <Image className="h-4 w-4" /> {uploadingGallery ? "Uploading…" : "Upload Images"}
               <input ref={galleryRef} type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleGalleryUpload} />
             </label>
             {galleryError && <p className="text-xs mb-3" style={{ color: "var(--badge-open-text)" }}>{galleryError}</p>}
@@ -588,50 +588,56 @@ export default function EventEdit() {
               ))}
             </div>
 
+            {/* ── FIX: wrap children in openAction guard so JSX label expressions
+                  never evaluate openAction.prog when openAction is already null.
+                  The onClose callback sets openAction → null, which triggers a
+                  re-render before the portal unmounts; without this guard the
+                  {openAction.prog.status === "closed" ? ...} expression on the
+                  Close/Reopen button crashes with "Cannot read properties of null". ── */}
             <ActionDropdownPortal
               open={!!openAction}
               anchorEl={openAction?.anchorEl ?? null}
               onClose={() => setOpenAction(null)}
             >
-              <button onClick={() => { if (!openAction) return; setEditingProgram(openAction.prog); setProgramModalOpen(true); setOpenAction(null); }}>
-                <Edit2 className="h-4 w-4" /> Edit Program
-              </button>
-              {!isNew && (
-                <button onClick={() => { if (!openAction) return; setSeedingProgramId(openAction.prog.id); setSeedingOpen(true); setOpenAction(null); }}>
-                  <Scissors className="h-4 w-4" /> Seeding
-                </button>
-              )}
-              <button onClick={() => { if (!openAction) return; navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`); setOpenAction(null); }}>
-                <Users className="h-4 w-4" /> Registrations
-              </button>
-              {!isNew && eventId && (
-                <button onClick={async () => {
-                  if (!openAction) return;
-                  const prog = openAction.prog;
-                  const newStatus = prog.status === "closed" ? "open" : "closed";
-                  const r = await apiUpdateProgramStatus(eventId, prog.id, newStatus);
-                  if (r.data) {
-                    setPrograms(prev => prev.map(p =>
-                      p.id === prog.id ? { ...p, status: newStatus } : p
-                    ));
-                  }
-                  setOpenAction(null);
-                }}>
-                  {openAction.prog.status === "closed"
-                    ? <><Unlock className="h-4 w-4" /> Reopen Program</>
-                    : <><Lock   className="h-4 w-4" /> Close Program</>}
-                </button>
-              )}
-              {!isNew && (
-                <button onClick={() => {
-                  if (!openAction) return;
-                  // Navigate to registrations filtered by this program,
-                  // then user can drill into any registration's participants
-                  navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`);
-                  setOpenAction(null);
-                }}>
-                  <ExternalLink className="h-4 w-4" /> View Participants
-                </button>
+              {openAction && (
+                <>
+                  <button onClick={() => { setEditingProgram(openAction.prog); setProgramModalOpen(true); setOpenAction(null); }}>
+                    <Edit2 className="h-4 w-4" /> Edit Program
+                  </button>
+                  {!isNew && (
+                    <button onClick={() => { setSeedingProgramId(openAction.prog.id); setSeedingOpen(true); setOpenAction(null); }}>
+                      <Scissors className="h-4 w-4" /> Seeding
+                    </button>
+                  )}
+                  <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`); setOpenAction(null); }}>
+                    <Users className="h-4 w-4" /> Registrations
+                  </button>
+                  {!isNew && eventId && (
+                    <button onClick={async () => {
+                      const prog = openAction.prog;
+                      const newStatus = prog.status === "closed" ? "open" : "closed";
+                      const r = await apiUpdateProgramStatus(eventId, prog.id, newStatus);
+                      if (r.data) {
+                        setPrograms(prev => prev.map(p =>
+                          p.id === prog.id ? { ...p, status: newStatus } : p
+                        ));
+                      }
+                      setOpenAction(null);
+                    }}>
+                      {openAction.prog.status === "closed"
+                        ? <><Unlock className="h-4 w-4" /> Reopen Program</>
+                        : <><Lock   className="h-4 w-4" /> Close Program</>}
+                    </button>
+                  )}
+                  {!isNew && (
+                    <button onClick={() => {
+                      navigate(`/admin/registrations/participants?eventId=${eventId}&programId=${openAction.prog.id}`);
+                      setOpenAction(null);
+                    }}>
+                      <ExternalLink className="h-4 w-4" /> View Participants
+                    </button>
+                  )}
+                </>
               )}
             </ActionDropdownPortal>
           </>

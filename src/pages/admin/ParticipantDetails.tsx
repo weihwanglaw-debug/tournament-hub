@@ -1,25 +1,26 @@
 /**
  * ParticipantDetails.tsx
  *
- * Drill-down view for a single registration's participants.
- * Accessible from:
- *   • Registrations list  → "View Participants" on an expanded row
- *   • EventEdit program row → "Participants" action in the dropdown
+ * Supports two modes determined by URL params:
  *
- * Route: /admin/registrations/:regId
- * Optional query param: ?programId=xxx  — pre-filters to one program
+ * MODE A — Single registration  (from Registrations list → "View Participants")
+ *   Route:  /admin/registrations/:regId/participants
+ *   Fetches: GET /api/registrations/:regId
+ *   Shows:  all groups/participants for that one registration
  *
- * Data source: GET /api/registrations/:id (already includes full participant
- * data: custom fields, document URLs, guardian info, SBA IDs, etc.)
+ * MODE B — Program aggregate  (from EventEdit program row → "View Participants")
+ *   Route:  /admin/registrations/participants?eventId=X&programId=Y
+ *   Fetches: GET /api/registrations?eventId=X&programId=Y&pageSize=500
+ *   Shows:  all groups/participants across every registration for that program
  */
 
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Download, FileDown, User, Users,
-  Search, X, ChevronDown, ChevronUp, Filter,
+  Search, X, ChevronDown, ChevronUp, Filter, Loader2,
 } from "lucide-react";
-import { apiGetRegistration, assetUrl } from "@/lib/api";
+import { apiGetRegistration, apiGetRegistrations, assetUrl } from "@/lib/api";
 import type { Registration, RegistrationParticipant, ParticipantGroup } from "@/types/registration";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -33,12 +34,13 @@ function fmt(d: string) {
 
 function exportGroupCsv(group: ParticipantGroup, regId: string) {
   const headers = [
-    "Name", "DOB", "Gender", "Nationality", "Club / School",
+    "Registration ID", "Contact Name", "Name", "DOB", "Gender", "Nationality", "Club / School",
     "Email", "Contact", "SBA ID", "T-Shirt", "Guardian", "Guardian Contact", "Remark",
     "Document",
     ...Object.keys(group.participants[0]?.customFieldValues ?? {}),
   ];
   const rows = group.participants.map(p => [
+    regId, group.registrationId ?? regId,
     p.fullName, p.dob, p.gender, p.nationality, p.clubSchoolCompany,
     p.email ?? "", p.contactNumber ?? "", p.sbaId ?? "",
     p.tshirtSize ?? "", p.guardianName ?? "", p.guardianContact ?? "", p.remark ?? "",
@@ -54,18 +56,17 @@ function exportGroupCsv(group: ParticipantGroup, regId: string) {
   a.click();
 }
 
-function exportAllCsv(reg: Registration) {
+function exportAllCsv(groups: ParticipantGroup[], filename: string) {
   const allRows: string[][] = [];
   const headers = [
-    "Program", "Group ID", "Name", "DOB", "Gender", "Nationality", "Club / School",
+    "Registration ID", "Program", "Group ID", "Name", "DOB", "Gender", "Nationality", "Club / School",
     "Email", "Contact", "SBA ID", "T-Shirt", "Guardian", "Guardian Contact", "Remark", "Document",
   ];
-  reg.groups.forEach(group => {
+  groups.forEach(group => {
     group.participants.forEach(p => {
-      const customCols = Object.entries(p.customFieldValues ?? {})
-        .map(([, v]) => v);
+      const customCols = Object.entries(p.customFieldValues ?? {}).map(([, v]) => v);
       allRows.push([
-        group.programName, group.id,
+        group.registrationId ?? "", group.programName, group.id,
         p.fullName, p.dob, p.gender, p.nationality, p.clubSchoolCompany,
         p.email ?? "", p.contactNumber ?? "", p.sbaId ?? "",
         p.tshirtSize ?? "", p.guardianName ?? "", p.guardianContact ?? "", p.remark ?? "",
@@ -79,7 +80,7 @@ function exportAllCsv(reg: Registration) {
     .join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = `registration-${reg.id}-participants.csv`;
+  a.download = filename;
   a.click();
 }
 
@@ -90,43 +91,31 @@ function ParticipantCard({ p, customFieldKeys }: {
   customFieldKeys: string[];
 }) {
   const [open, setOpen] = useState(false);
-  const hasExtra = !!(
-    p.guardianName || p.remark || p.nationality ||
-    customFieldKeys.length > 0
-  );
+  const hasExtra = !!(p.guardianName || p.remark || p.nationality || customFieldKeys.length > 0);
 
   return (
     <div style={{ border: "1px solid var(--color-table-border)" }}>
-      {/* Primary row */}
       <div className="grid gap-3 px-4 py-3 text-sm"
         style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr auto" }}>
-        {/* Name + SBA */}
         <div>
           <p className="font-semibold leading-tight">{p.fullName}</p>
-          {p.sbaId && (
-            <p className="font-mono text-xs opacity-60 mt-0.5">{p.sbaId}</p>
-          )}
+          {p.sbaId && <p className="font-mono text-xs opacity-60 mt-0.5">{p.sbaId}</p>}
         </div>
-        {/* DOB + Gender */}
         <div className="text-xs opacity-70">
           <p>{p.dob ? fmt(p.dob) : "—"}</p>
           <p className="mt-0.5">{p.gender || "—"}</p>
         </div>
-        {/* Club */}
         <div className="text-xs opacity-70 truncate">
           <p>{p.clubSchoolCompany || "—"}</p>
           {p.tshirtSize && <p className="mt-0.5 opacity-60">👕 {p.tshirtSize}</p>}
         </div>
-        {/* Contact */}
         <div className="text-xs opacity-70">
           <p>{p.email || "—"}</p>
           <p className="mt-0.5">{p.contactNumber || "—"}</p>
         </div>
-        {/* Actions */}
         <div className="flex items-start gap-2">
           {p.documentUrl && (
-            <a href={assetUrl(p.documentUrl)} target="_blank" rel="noopener noreferrer"
-              download
+            <a href={assetUrl(p.documentUrl)} target="_blank" rel="noopener noreferrer" download
               className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1"
               style={{ border: "1px solid var(--color-primary)", color: "var(--color-primary)" }}
               title="Download document">
@@ -144,7 +133,6 @@ function ParticipantCard({ p, customFieldKeys }: {
         </div>
       </div>
 
-      {/* Expanded extra row */}
       {open && hasExtra && (
         <div className="px-4 pb-3 pt-0"
           style={{ borderTop: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
@@ -180,7 +168,11 @@ function ParticipantCard({ p, customFieldKeys }: {
   );
 }
 
-function GroupSection({ group, search }: { group: ParticipantGroup; search: string }) {
+function GroupSection({ group, search, showRegId }: {
+  group: ParticipantGroup;
+  search: string;
+  showRegId: boolean;
+}) {
   const q = search.trim().toLowerCase();
   const participants = q
     ? group.participants.filter(p =>
@@ -192,9 +184,7 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
     : group.participants;
 
   const customFieldKeys = useMemo(() =>
-    Array.from(new Set(
-      group.participants.flatMap(p => Object.keys(p.customFieldValues ?? {}))
-    )),
+    Array.from(new Set(group.participants.flatMap(p => Object.keys(p.customFieldValues ?? {})))),
     [group.participants]
   );
 
@@ -205,7 +195,6 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
 
   return (
     <div className="mb-6">
-      {/* Group header */}
       <div className="flex items-center justify-between px-4 py-3 mb-1"
         style={{ backgroundColor: "var(--color-row-hover)", border: "1px solid var(--color-table-border)" }}>
         <div className="flex items-center gap-3">
@@ -214,7 +203,12 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
             : <User  className="h-4 w-4 opacity-40 flex-shrink-0" />}
           <div>
             <p className="font-semibold text-sm">{group.programName}</p>
-            <p className="text-xs opacity-50 font-mono">{group.id}</p>
+            <p className="text-xs opacity-50 font-mono">
+              {group.id}
+              {showRegId && group.registrationId && (
+                <span className="ml-2 opacity-60">· Reg {group.registrationId}</span>
+              )}
+            </p>
           </div>
           <span className="text-xs px-2 py-0.5 font-medium"
             style={{
@@ -228,7 +222,7 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
           <span className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>
             ${group.fee.toFixed(2)}
           </span>
-          <button onClick={() => exportGroupCsv(group, group.registrationId)}
+          <button onClick={() => exportGroupCsv(group, group.registrationId ?? group.id)}
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5"
             style={{ border: "1px solid var(--color-table-border)" }}
             title="Export this group to CSV">
@@ -237,7 +231,6 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
         </div>
       </div>
 
-      {/* Column headers */}
       <div className="grid gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wide opacity-50"
         style={{
           gridTemplateColumns: "1fr 1fr 1fr 1fr auto",
@@ -251,7 +244,6 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
         <span>Doc</span>
       </div>
 
-      {/* Participant cards */}
       <div className="space-y-px">
         {participants.map(p => (
           <ParticipantCard key={p.id} p={p} customFieldKeys={customFieldKeys} />
@@ -271,37 +263,79 @@ function GroupSection({ group, search }: { group: ParticipantGroup; search: stri
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ParticipantDetails() {
-  const { regId }         = useParams<{ regId: string }>();
-  const [searchParams]    = useSearchParams();
-  const navigate          = useNavigate();
-  const filterProgramId   = searchParams.get("programId") ?? "";
+  const { regId }      = useParams<{ regId: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate       = useNavigate();
 
-  const [reg,     setReg]     = useState<Registration | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState("");
-  const [search,  setSearch]  = useState("");
-  const [progFilter, setProgFilter] = useState(filterProgramId);
+  // Mode B params (program aggregate)
+  const qEventId   = searchParams.get("eventId")   ?? "";
+  const qProgramId = searchParams.get("programId") ?? "";
 
+  // Mode A = regId in URL path; Mode B = eventId+programId in query string
+  const isProgramMode = !regId && !!qEventId && !!qProgramId;
+
+  // --- Shared state ---
+  const [groups,   setGroups]   = useState<ParticipantGroup[]>([]);
+  const [heading,  setHeading]  = useState("");
+  const [subtext,  setSubtext]  = useState("");
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState("");
+  const [search,   setSearch]   = useState("");
+  const [progFilter, setProgFilter] = useState("");
+
+  // ── Mode A: single registration ──────────────────────────────────────────
   useEffect(() => {
     if (!regId) return;
     setLoading(true);
     apiGetRegistration(regId).then(r => {
-      if (r.data) setReg(r.data);
-      else setError(r.error?.message ?? "Failed to load registration.");
+      if (r.data) {
+        const reg = r.data;
+        setGroups(reg.groups.map(g => ({ ...g, registrationId: reg.id })));
+        setHeading("Participant Details");
+        setSubtext(`${reg.id} · ${reg.eventName} · ${reg.contactName} · ${reg.contactEmail}`);
+      } else {
+        setError(r.error?.message ?? "Failed to load registration.");
+      }
     }).finally(() => setLoading(false));
   }, [regId]);
 
-  // Derive unique programs for filter dropdown
+  // ── Mode B: program aggregate ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!isProgramMode) return;
+    setLoading(true);
+    // Fetch up to 500 registrations for this program — sufficient for any real tournament
+    apiGetRegistrations(
+      { eventId: qEventId, programId: qProgramId },
+      { page: 1, pageSize: 500 },
+    ).then(r => {
+      if (r.data) {
+        // Flatten all groups from all registrations, tagging each with its registrationId
+        const allGroups = r.data.items.flatMap(reg =>
+          reg.groups
+            .filter(g => !qProgramId || g.programId === qProgramId)
+            .map(g => ({ ...g, registrationId: reg.id }))
+        );
+        setGroups(allGroups);
+        const programName = allGroups[0]?.programName ?? "Program";
+        const total = allGroups.reduce((s, g) => s + g.participants.length, 0);
+        setHeading(programName);
+        setSubtext(`${allGroups.length} entr${allGroups.length !== 1 ? "ies" : "y"} · ${total} participant${total !== 1 ? "s" : ""}`);
+      } else {
+        setError(r.error?.message ?? "Failed to load participants.");
+      }
+    }).finally(() => setLoading(false));
+  }, [isProgramMode, qEventId, qProgramId]);
+
+  // Unique programs for filter dropdown (only meaningful in single-reg mode with multiple programs)
   const programs = useMemo(() =>
-    reg ? Array.from(new Map(reg.groups.map(g => [g.programId, g.programName])).entries()) : [],
-    [reg]
+    Array.from(new Map(groups.map(g => [g.programId, g.programName])).entries()),
+    [groups]
   );
 
-  // Filter groups
-  const visibleGroups = useMemo(() => {
-    if (!reg) return [];
-    return reg.groups.filter(g => !progFilter || g.programId === progFilter);
-  }, [reg, progFilter]);
+  const visibleGroups = useMemo(() =>
+    groups.filter(g => !progFilter || g.programId === progFilter),
+    [groups, progFilter]
+  );
 
   const totalParticipants = useMemo(() =>
     visibleGroups.reduce((s, g) => s + g.participants.length, 0),
@@ -311,19 +345,23 @@ export default function ParticipantDetails() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24 opacity-40 text-sm">
-      Loading registration…
+    <div className="flex items-center justify-center py-24 gap-2 opacity-40 text-sm">
+      <Loader2 className="h-4 w-4 animate-spin" /> Loading participants…
     </div>
   );
 
-  if (error || !reg) return (
+  if (error) return (
     <div className="p-10 text-center">
-      <p className="text-sm opacity-60">{error || "Registration not found."}</p>
+      <p className="text-sm opacity-60">{error}</p>
       <button onClick={() => navigate(-1)} className="btn-outline mt-4 px-4 py-2 text-sm">
         Go Back
       </button>
     </div>
   );
+
+  const exportFilename = isProgramMode
+    ? `program-${qProgramId}-participants.csv`
+    : `registration-${regId}-participants.csv`;
 
   return (
     <div className="p-6 md:p-10 max-w-screen-xl mx-auto">
@@ -335,18 +373,16 @@ export default function ParticipantDetails() {
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
         <div className="flex-1">
-          <h1 className="font-heading font-bold text-2xl">Participant Details</h1>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs opacity-60">
-            <span className="font-mono">{reg.id}</span>
-            <span>·</span>
-            <span>{reg.eventName}</span>
-            <span>·</span>
-            <span>{reg.contactName} · {reg.contactEmail}</span>
-            <span>·</span>
-            <span>{reg.groups.length} program{reg.groups.length !== 1 ? "s" : ""} · {totalParticipants} participant{totalParticipants !== 1 ? "s" : ""}</span>
-          </div>
+          <h1 className="font-heading font-bold text-2xl">{heading}</h1>
+          <p className="mt-1 text-xs opacity-60">{subtext}</p>
+          {!isProgramMode && (
+            <p className="text-xs opacity-50 mt-0.5">
+              {groups.length} program{groups.length !== 1 ? "s" : ""} · {totalParticipants} participant{totalParticipants !== 1 ? "s" : ""}
+            </p>
+          )}
         </div>
-        <button onClick={() => exportAllCsv(reg)}
+        <button
+          onClick={() => exportAllCsv(visibleGroups, exportFilename)}
           className="btn-outline inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium">
           <Download className="h-4 w-4" /> Export All CSV
         </button>
@@ -354,8 +390,8 @@ export default function ParticipantDetails() {
 
       {/* ── Filters ── */}
       <div className="flex flex-wrap gap-3 mb-6">
-        {/* Program filter */}
-        {programs.length > 1 && (
+        {/* Program filter — only shown in single-reg mode when there are multiple programs */}
+        {!isProgramMode && programs.length > 1 && (
           <div className="flex items-center gap-2">
             <Filter className="h-3.5 w-3.5 opacity-40" />
             <select className="field-input min-w-[200px]"
@@ -386,10 +422,15 @@ export default function ParticipantDetails() {
 
       {/* ── Groups ── */}
       {visibleGroups.length === 0 ? (
-        <p className="text-sm opacity-40 text-center py-16">No groups found.</p>
+        <p className="text-sm opacity-40 text-center py-16">No participants found.</p>
       ) : (
         visibleGroups.map(group => (
-          <GroupSection key={group.id} group={group} search={search} />
+          <GroupSection
+            key={`${group.registrationId}-${group.id}`}
+            group={group}
+            search={search}
+            showRegId={isProgramMode}
+          />
         ))
       )}
     </div>
