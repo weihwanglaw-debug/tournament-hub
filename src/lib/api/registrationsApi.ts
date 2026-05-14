@@ -349,6 +349,99 @@ export async function apiInitiateRefund(
   return ok(await res.json());
 }
 
+export async function apiCancelRegistrationWithRefunds(
+  registrationId: string,
+  reason: string,
+): Promise<ApiResult<{ registration: Registration; errors: string[] }>> {
+  await delay();
+
+  const res = await apiFetch(`${API_BASE}/api/registrations/${registrationId}/cancel-with-refunds`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const e = await parseError(res);
+    return err(e.code, e.message);
+  }
+  return ok(await res.json());
+}
+
+
+
+/**
+ * PATCH /api/registrations/:id/participants/:pid
+ * Admin: update individual participant details.
+ * Returns the full registration (with updated participant data).
+ */
+export async function apiUpdateParticipant(
+  registrationId: string,
+  participantId:  string,
+  patch: {
+    fullName?:          string;
+    dob?:               string;   // "YYYY-MM-DD"
+    gender?:            string;
+    nationality?:       string;
+    clubSchoolCompany?: string;
+    email?:             string;
+    contactNumber?:     string;
+    tshirtSize?:        string;
+    sbaId?:             string;
+    guardianName?:      string;
+    guardianContact?:   string;
+    remark?:            string;
+    customFieldValues?: Record<string, string>;
+  },
+): Promise<ApiResult<Registration>> {
+  await delay();
+
+  const res = await apiFetch(
+    `${API_BASE}/api/registrations/${registrationId}/participants/${participantId}`,
+    {
+      method: "PATCH",
+      headers: adminHeaders(),
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!res.ok) return err("UPDATE_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
+
+/**
+ * POST /api/registrations/:id/confirm
+ * Admin: confirm a registration directly, bypassing online payment.
+ *
+ * paymentStatus:
+ *   "S"  = Paid — admin has collected payment manually
+ *   "W"  = Waived — fee waived (VIP, staff, error correction)
+ *   "PC" = Pending Collection — registered now, pays later
+ *
+ * method: "Cash" | "BankTransfer" | "PayNow" | "Others" (ignored for Waived)
+ * paymentReference: optional manual receipt/txn ref number
+ * adminNote: required remark explaining the confirmation
+ */
+export async function apiConfirmRegistration(
+  registrationId: string,
+  payload: {
+    paymentStatus:     "S" | "W" | "PC";
+    method?:           string;
+    paymentReference?: string;
+    adminNote:         string;
+  },
+): Promise<ApiResult<Registration>> {
+  await delay();
+
+  const res = await apiFetch(
+    `${API_BASE}/api/registrations/${registrationId}/confirm`,
+    {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) return err("CONFIRM_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
 
 /**
  * GET /api/registrations/export

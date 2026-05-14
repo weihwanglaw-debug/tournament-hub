@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   LayoutDashboard, CalendarDays, Users, GitBranch, ListOrdered,
   LogOut, Trophy, Shield, Settings, ChevronLeft, Menu, Sun, Moon,
+  Home, UserSquare,
 } from "lucide-react";
 
 export default function AdminLayout() {
@@ -29,10 +30,12 @@ export default function AdminLayout() {
     { to: "/admin/registrations",  label: "Registrations",      icon: Users,           end: false },
     { to: "/admin/fixtures",       label: "Fixtures",           icon: GitBranch,       end: false },
     { to: "/admin/sba-rankings",   label: "SBA Rankings",       icon: ListOrdered,     end: false },
+    { to: "/admin/participants",   label: "Participant Details", icon: UserSquare,      end: false },
     ...(isSuperAdmin ? [
       { to: "/admin/users",  label: "User Management",    icon: Shield,    end: false },
       { to: "/admin/config", label: "Master Config",      icon: Settings,  end: false },
     ] : []),
+    { to: "/",              label: "Landing Page",        icon: Home,       end: true },
   ];
 
   const expanded = !collapsed || hovered;

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
-import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout, apiUploadFile, assetUrl } from "@/lib/api";
+import { apiGetEvent, apiGetSbaMember, apiCreateRegistration, apiInitiateCheckout, apiConfirmRegistration, apiUploadFile, assetUrl } from "@/lib/api";
 import { useLiveConfig } from "@/contexts/LiveConfigContext";
 import StatusBadge, { getProgramCapacityStatus } from "@/components/events/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
@@ -318,6 +318,11 @@ export default function EventDetail() {
   const [sbaStatus, setSbaStatus] = useState<Record<number, "idle" | "loading" | "found" | "not_found">>({});
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [adminConfirmOpen, setAdminConfirmOpen] = useState(false);
+  const [adminConfirmStatus, setAdminConfirmStatus] = useState<"S" | "W" | "PC">("S");
+  const [adminConfirmMethod, setAdminConfirmMethod] = useState("Cash");
+  const [adminConfirmNote, setAdminConfirmNote] = useState("");
+  const [adminConfirmRef, setAdminConfirmRef] = useState("");
 
   const status = event ? getEventStatus(event) : "closed";
   const currency = cfg.currency || "SGD";
@@ -676,6 +681,12 @@ export default function EventDetail() {
         if (regResult.error) { setSubmitError(regResult.error.message); return; }
         clearSession();
         navigate(`/payment/result?status=success&reg=${regResult.data!.id}`);
+        return;
+      }
+
+      // Admin registration — skip Stripe, open confirmation modal
+      if (isAuthenticated) {
+        setAdminConfirmOpen(true);
         return;
       }
 
@@ -1233,13 +1244,15 @@ export default function EventDetail() {
                             className="btn-primary px-8 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
                             {submitting
                               ? "Processing…"
+                              : isAuthenticated
+                              ? "Confirm Registration"
                               : cart.some(e => {
                                   const prog = event?.programs.find(p => p.id === e.programId);
                                   return prog?.paymentRequired && e.fee > 0;
                                 }) ? "Proceed to Payment" : "Confirm Registration"}
                           </button>
                         </div>
-                        {isAuthenticated && <p className="text-xs mt-3 opacity-60">Payment can be collected or waived by admin later.</p>}
+                        {isAuthenticated && <p className="text-xs mt-3 opacity-60">As admin, registration will be confirmed directly. You can set payment status in the next step.</p>}
                       </>
                     )}
                   </motion.div>
@@ -1249,6 +1262,111 @@ export default function EventDetail() {
           )}
         </div>
       </main>
+
+      {/* ── Admin Registration Confirmation Modal ── */}
+      <Dialog open={adminConfirmOpen} onOpenChange={v => { if (!v) { setAdminConfirmOpen(false); setAdminConfirmNote(""); setAdminConfirmRef(""); } }}>
+        <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+          <DialogHeader className="p-8 pb-0">
+            <DialogTitle className="font-bold text-xl">Confirm Registration</DialogTitle>
+          </DialogHeader>
+          <div className="p-8 pt-4 space-y-4">
+            <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
+              Admin registration — Stripe will be bypassed. Select the payment outcome below.
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-2 opacity-70">Payment Status *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "S",  label: "Paid",              sub: "Collected now" },
+                  { value: "W",  label: "Waived",            sub: "Fee waived" },
+                  { value: "PC", label: "Pending Collection",sub: "Will pay later" },
+                ] as const).map(opt => (
+                  <button key={opt.value} type="button"
+                    onClick={() => setAdminConfirmStatus(opt.value)}
+                    className="p-3 text-left text-xs transition-all"
+                    style={{
+                      border: `2px solid ${adminConfirmStatus === opt.value ? "var(--color-primary)" : "var(--color-table-border)"}`,
+                      backgroundColor: adminConfirmStatus === opt.value ? "var(--color-row-hover)" : "transparent",
+                    }}>
+                    <p className="font-semibold">{opt.label}</p>
+                    <p className="opacity-50 mt-0.5">{opt.sub}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {adminConfirmStatus !== "W" && (
+              <div>
+                <label className="block text-xs font-semibold mb-2 opacity-70">Payment Method</label>
+                <select className="field-input" value={adminConfirmMethod}
+                  onChange={e => setAdminConfirmMethod(e.target.value)}>
+                  <option value="Cash">Cash</option>
+                  <option value="BankTransfer">Bank Transfer</option>
+                  <option value="PayNow">PayNow</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold mb-2 opacity-70">Payment Reference <span className="opacity-40">(optional)</span></label>
+              <input className="field-input" value={adminConfirmRef}
+                onChange={e => setAdminConfirmRef(e.target.value)}
+                placeholder="e.g. PayNow ref, receipt number" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-2 opacity-70">Admin Remark *</label>
+              <textarea className="field-input" rows={2} value={adminConfirmNote}
+                onChange={e => setAdminConfirmNote(e.target.value)}
+                placeholder="e.g. Walk-in at counter, cash collected by John" />
+            </div>
+          </div>
+          <div className="p-8 pt-0 flex gap-3 justify-end">
+            <button onClick={() => { setAdminConfirmOpen(false); setAdminConfirmNote(""); setAdminConfirmRef(""); }}
+              className="btn-outline px-5 py-2.5 text-sm font-medium">Cancel</button>
+            <button
+              disabled={!adminConfirmNote.trim() || submitting}
+              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40"
+              onClick={async () => {
+                if (!event || !adminConfirmNote.trim()) return;
+                setSubmitting(true);
+                try {
+                  // 1. Write registration to DB
+                  const docUploads2: Promise<void>[] = [];
+                  const docMap2: Record<string, string> = {};
+                  cart.forEach((entry, ei) => {
+                    entry.participants.forEach((p, pi) => {
+                      if (p.documentFile) {
+                        docUploads2.push(
+                          apiUploadFile(p.documentFile, "registrations/documents").then(r => {
+                            if (r.data) docMap2[`${ei}-${pi}`] = r.data;
+                          })
+                        );
+                      }
+                    });
+                  });
+                  if (docUploads2.length) await Promise.all(docUploads2);
+                  const payload2 = buildRegistrationPayload(docMap2);
+                  const regResult = await apiCreateRegistration(payload2);
+                  if (regResult.error) { setSubmitError(regResult.error.message); setAdminConfirmOpen(false); return; }
+                  // 2. Confirm with chosen payment status
+                  const confirmResult = await apiConfirmRegistration(regResult.data!.id, {
+                    paymentStatus: adminConfirmStatus,
+                    method: adminConfirmStatus !== "W" ? adminConfirmMethod : undefined,
+                    paymentReference: adminConfirmRef || undefined,
+                    adminNote: adminConfirmNote,
+                  });
+                  if (confirmResult.error) { setSubmitError(confirmResult.error.message); setAdminConfirmOpen(false); return; }
+                  clearSession();
+                  setAdminConfirmOpen(false);
+                  navigate(`/payment/result?status=success&reg=${regResult.data!.id}`);
+                } finally {
+                  setSubmitting(false);
+                }
+              }}>
+              {submitting ? "Processing…" : "Confirm Registration"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Admin Override Modal */}
       <Dialog open={overrideOpen} onOpenChange={(v) => { if (!v) { setOverrideOpen(false); setOverrideReason(""); } }}>

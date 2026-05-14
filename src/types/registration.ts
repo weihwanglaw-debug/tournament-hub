@@ -48,13 +48,21 @@
  *     SOME items Refunded → Payment.paymentStatus = PartiallyRefunded
  */
 
-export type RegStatus = "Pending" | "Confirmed" | "Cancelled";
+export type RegStatus = "Pending" | "Confirmed" | "CancelPending" | "RefundFailed" | "Cancelled";
 
 // ── Payment / refund status codes ─────────────────────────────────────────────
 // These match the DB schema exactly. UI badge components translate to
 // human-readable labels (e.g. "Success" → "Paid", "FullyRefunded" → "Refunded").
 
-export type PaymentStatus = "P" | "S" | "PR" | "FR" | "F" | "X";
+export type PaymentStatus =
+  | "P"    // Pending
+  | "S"    // Paid (Success)
+  | "PR"   // Partially Refunded
+  | "FR"   // Fully Refunded
+  | "F"    // Failed
+  | "X"    // Cancelled
+  | "W"    // Waived (admin waived fee)
+  | "PC";  // Pending Collection (will pay later)
 
 export type ItemStatus =
   | "P"
@@ -87,6 +95,8 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   FR: "Refunded",
   F:  "Failed",
   X:  "Cancelled",
+  W:  "Waived",
+  PC: "Pending Collection",
 };
 
 export const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
@@ -202,6 +212,7 @@ export interface Payment {
   paymentStatus:         PaymentStatus;   // DB: Payments.PaymentStatus
   // Receipt
   receiptNo?:            string;          // "TRS-YYYYMMDD-XXXXX" — generated on Success
+  adminNote?:            string;          // admin remark stored on manual confirm/waive
   // Timestamps
   createdAt:             string;
   paidAt?:               string;          // Populated when Success

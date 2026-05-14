@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Trophy, Eye, EyeOff } from "lucide-react";
 import {
@@ -7,18 +7,26 @@ import {
 } from "@/components/ui/dialog";
 
 interface LoginModalProps {
-  open: boolean;
+  open:    boolean;
   onClose: () => void;
 }
 
 export default function LoginModal({ open, onClose }: LoginModalProps) {
   const { login, mustChangePassword } = useAuth();
   const navigate    = useNavigate();
+  const location    = useLocation();
   const [email,     setEmail]     = useState("");
   const [password,  setPassword]  = useState("");
   const [showPw,    setShowPw]    = useState(false);
   const [error,     setError]     = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // When opened from a public page (landing, event detail) stay on that page.
+  // Only redirect to /admin when the user navigated directly to /login.
+  const isPublicPage =
+    location.pathname === "/" ||
+    location.pathname.startsWith("/event/") ||
+    location.pathname.startsWith("/payment/");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,20 +34,22 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
     if (!email || !password) { setError("Please fill in all fields."); return; }
 
     setSubmitting(true);
-    const err = await login(email, password);
+    const loginErr = await login(email, password);
     setSubmitting(false);
 
-    if (err) { setError(err); return; }
+    if (loginErr) { setError(loginErr); return; }
 
     setEmail(""); setPassword(""); setError("");
     onClose();
 
-    // mustChangePassword is now live in context after login resolves
     if (mustChangePassword) {
       navigate("/admin/change-password");
-    } else {
+    } else if (!isPublicPage) {
+      // Only redirect to admin panel when on a non-public page (/login)
       navigate("/admin");
     }
+    // If isPublicPage: stay — page re-renders with isAuthenticated=true,
+    // enabling admin tools (override buttons, admin registration flow, etc.)
   };
 
   const handleCancel = () => {
@@ -56,7 +66,6 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
             <DialogTitle className="font-heading font-bold text-xl">Admin Login</DialogTitle>
           </div>
         </DialogHeader>
-
         <div className="p-8 pt-4">
           {error && (
             <div className="p-3 mb-4 text-sm"
