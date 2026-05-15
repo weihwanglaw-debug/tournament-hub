@@ -12,9 +12,15 @@
  *   1. Read gatewaySessionId + full payload from sessionStorage
  *   2. Call POST /api/registrations/confirm-session
  *      Backend: verifies payment with Stripe, writes Registration + Payment to DB,
- *      generates receipt, sends confirmation email, returns registrationId
+ *      generates receipt, sends confirmation email, returns registrationId.
+ *      If 409 (webhook already processed) → go directly to "processing" done state.
  *   3. Poll GET /api/registrations/:id until paymentStatus = "S"
  *   4. Clear sessionStorage, show receipt
+ *
+ * ── TIMING MODEL (per architecture spec) ─────────────────────────────────────
+ * Stage A (0–15 s):  "Processing payment…"
+ * Stage B (>15 s):   "Payment is processing. Confirmation will be sent via email."
+ * Timeout is ONLY a UI concern — backend never marks a payment failed due to timeout.
  *
  * ── FREE REGISTRATION FLOW ───────────────────────────────────────────────────
  * Free registrations are written directly to the DB (no Stripe session).
@@ -35,7 +41,7 @@
  *
  * Edge case — sessionStorage missing (different browser/device after payment):
  *   - confirm-session cannot be called without the payload
- *   - User is advised to check their email; organiser can verify manually
+ *   - Show "processing" state — webhook may have already handled it
  *
  * Public page — no login required.
  */
@@ -45,12 +51,15 @@ import { CheckCircle, XCircle, Loader2, AlertCircle } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiConfirmSession, apiGetRegistration } from "@/lib/api";
 import { API_BASE } from "@/lib/api/_base";
 import type { Registration } from "@/lib/api";
 
 type Phase = "confirming" | "polling" | "done" | "cancelled" | "error";
+
+// Stage A → Stage B threshold in milliseconds (spec: 15 s)
+const PROCESSING_STAGE_B_MS = 15_000;
 
 export default function PaymentResult() {
   const [params]  = useSearchParams();
@@ -72,8 +81,20 @@ export default function PaymentResult() {
   const [regId,        setRegId]        = useState<string | null>(null);
   const [errorMsg,     setErrorMsg]     = useState("");
   const [pollCount,    setPollCount]    = useState(0);
+  // Stage A/B: tracks whether we've passed the 15-second processing threshold
+  const [stageBActive, setStageBActive] = useState(false);
+  const startTimeRef = useRef<number>(Date.now());
 
-  // ── On success: handle paid flow (confirm-session) OR free flow (skip straight to polling) ──
+  // ── Stage B timer — fires after PROCESSING_STAGE_B_MS ───────────────────
+  useEffect(() => {
+    if (phase !== "confirming" && phase !== "polling") return;
+    const elapsed = Date.now() - startTimeRef.current;
+    const remaining = Math.max(0, PROCESSING_STAGE_B_MS - elapsed);
+    const timer = setTimeout(() => setStageBActive(true), remaining);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  // ── On success: handle paid flow (confirm-session) OR free flow ──────────
   useEffect(() => {
     if (!isSuccess) return;
 
@@ -88,7 +109,6 @@ export default function PaymentResult() {
     // ── PAID REGISTRATION: event param drives session key ────────────────────
     const SESSION_KEY = eventId ? `trs_cart_${eventId}` : null;
 
-    // No session key means no eventId in URL — shouldn't happen in normal paid flow
     if (!SESSION_KEY) {
       setPhase("error");
       setErrorMsg("Missing event context. If your payment was successful you will receive a confirmation email. Otherwise please contact the organiser.");
@@ -99,10 +119,9 @@ export default function PaymentResult() {
     try { raw = sessionStorage.getItem(SESSION_KEY); } catch { /* private mode */ }
 
     if (!raw) {
-      // This happens if the user paid on a different browser/device or cleared storage.
-      // We cannot confirm without the payload — advise them to check email.
-      setPhase("error");
-      setErrorMsg("Your registration details could not be retrieved from this browser. If your payment was successful you will receive a confirmation email shortly. Otherwise please contact the organiser.");
+      // Different browser/device or cleared storage — cannot confirm but payment
+      // may have been processed by the webhook. Show processing state, not error.
+      setPhase("done");
       return;
     }
 
@@ -119,15 +138,29 @@ export default function PaymentResult() {
       return;
     }
 
+    const gatewaySessionId = session.gatewaySessionId;
+
     // Call backend to verify with Stripe and write to DB
-    apiConfirmSession(session.gatewaySessionId, session.payload).then(r => {
+    apiConfirmSession(gatewaySessionId, session.payload).then(r => {
+      // Clear session storage regardless of outcome — data is either in DB already
+      // (webhook processed it) or being written now.
+      try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+
       if (r.error) {
+        // Only surface a hard error for genuinely non-recoverable failures.
+        // DO NOT show "failed" for any timeout or processing ambiguity.
         setPhase("error");
         setErrorMsg(r.error.message);
         return;
       }
-      // Clear session immediately — data is now safely in the DB
-      try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+
+      // 409 / alreadyProcessed = webhook already finalised this session before
+      // the browser returned. Registration is in DB — show processing state.
+      if (r.data!.alreadyProcessed) {
+        setPhase("done");
+        return;
+      }
+
       setRegId(r.data!.registrationId);
       setPhase("polling");
     });
@@ -137,6 +170,8 @@ export default function PaymentResult() {
   // Resolves when:
   //   - Paid:  paymentStatus === "S"
   //   - Free:  regStatus === "Confirmed" (paymentStatus stays "P")
+  // After MAX_ATTEMPTS we stop polling and show the "still processing" state —
+  // this is NOT a failure; the webhook will complete the registration shortly.
   useEffect(() => {
     if (phase !== "polling" || !regId) return;
 
@@ -169,6 +204,7 @@ export default function PaymentResult() {
         setPollCount(attempts);
         setTimeout(poll, 1500);
       } else {
+        // Polling exhausted — not a failure. Webhook will complete shortly.
         setPhase("done");
       }
     };
@@ -183,12 +219,17 @@ export default function PaymentResult() {
     (registration?.regStatus === "Confirmed" &&
       registration?.payment.paymentStatus === "P");
 
-  const receiptNo   = registration?.payment.receiptNo ?? (regId ? `TRS-${regId}` : "—");
+  const receiptNo = registration?.payment.receiptNo ?? (regId ? `TRS-${regId}` : "—");
 
   const handleTryAgain = () => {
     if (eventId) navigate(`/event/${eventId}`);
     else navigate("/");
   };
+
+  // ── Stage A / Stage B processing message ─────────────────────────────────
+  const processingMessage = stageBActive
+    ? "Payment is processing. You will receive a confirmation email shortly. Do not retry payment."
+    : (phase === "confirming" ? "Verifying your payment…" : "Finalising your registration…");
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -198,14 +239,14 @@ export default function PaymentResult() {
         <motion.div className="max-w-md w-full text-center py-20"
           initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
 
-          {/* Confirming / polling */}
+          {/* Stage A / Stage B processing spinner */}
           {(phase === "confirming" || phase === "polling") && (
             <>
               <Loader2 className="h-12 w-12 mx-auto mb-5 animate-spin opacity-40" />
-              <p className="text-sm opacity-50 mb-1">
-                {phase === "confirming" ? "Verifying your payment…" : "Finalising your registration…"}
-              </p>
-              {pollCount > 2 && <p className="text-xs opacity-30">This may take a moment</p>}
+              <p className="text-sm opacity-50 mb-1">{processingMessage}</p>
+              {stageBActive && (
+                <p className="text-xs opacity-30 mt-2">You can safely close this page.</p>
+              )}
             </>
           )}
 
@@ -238,13 +279,13 @@ export default function PaymentResult() {
             </>
           )}
 
-          {/* Done but still pending (webhook slow) */}
+          {/* Done but still pending (webhook slow / alreadyProcessed / no session storage) */}
           {phase === "done" && !isConfirmed && !errorMsg && (
             <>
               <Loader2 className="h-12 w-12 mx-auto mb-5 opacity-40" />
               <h1 className="font-heading font-bold text-2xl mb-3">Payment Processing</h1>
               <p className="text-sm opacity-60 mb-8">
-                Your payment is still being processed. If successful, you will receive
+                Your payment is being processed. If successful, you will receive
                 a confirmation email shortly. You can safely close this page.
               </p>
               <button onClick={() => navigate("/")} className="btn-outline px-6 py-2.5 text-sm font-medium">
@@ -253,7 +294,7 @@ export default function PaymentResult() {
             </>
           )}
 
-          {/* Error during confirm */}
+          {/* Hard error during confirm (non-recoverable, not a timeout) */}
           {phase === "error" && (
             <>
               <AlertCircle className="h-16 w-16 mx-auto mb-5 opacity-70" style={{ color: "var(--badge-soon-text)" }} />

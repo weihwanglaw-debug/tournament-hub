@@ -154,11 +154,16 @@ export async function apiInitiateCheckout(
  *
  * Idempotent: if a Registration already exists for this gatewaySessionId,
  * return the existing registrationId without re-inserting.
+ *
+ * 409 Conflict = CHECKOUT_CONTEXT_MISSING: the webhook already processed this
+ * session and purged the PendingCheckout row before the browser returned.
+ * This is NOT a failure — the registration exists or is being finalised.
+ * Returned as alreadyProcessed: true so the UI shows "processing" not "error".
  */
 export async function apiConfirmSession(
   gatewaySessionId: string,
   registrationPayload: object,
-): Promise<ApiResult<{ registrationId: string }>> {
+): Promise<ApiResult<{ registrationId: string; alreadyProcessed?: boolean }>> {
   await delay();
 
   const res = await apiFetch(`${API_BASE}/api/Payment/confirm-session`, {
@@ -166,6 +171,14 @@ export async function apiConfirmSession(
     headers: publicHeaders(),
     body: JSON.stringify({ gatewaySessionId, registrationPayload }),
   });
+
+  // 409 Conflict = backend returned CHECKOUT_CONTEXT_MISSING.
+  // The webhook beat the browser back and already finalised this session.
+  // The registration is in DB (or being written) — treat as PROCESSING, not failure.
+  if (res.status === 409) {
+    return ok({ registrationId: "", alreadyProcessed: true });
+  }
+
   if (!res.ok) return err("CONFIRM_FAILED", (await parseError(res)).message);
   const data = await res.json();
   return ok({ registrationId: String(data.registrationId) });
