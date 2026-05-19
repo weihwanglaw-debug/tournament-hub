@@ -5,16 +5,22 @@
  * Each registration can cover multiple programs (multiple ParticipantGroups).
  * One payment receipt per registration covers all programs in that submission.
  *
- * Tabs:
- *   Registration List  — expandable rows showing groups + participants
- *   Payment Log        — per-payment-record view with receipt/refund actions
+ * Payment Log modal — redesigned:
+ *   - Full-width panel (max-w-4xl) with two-column layout
+ *   - Programs grouped as cards (Registration → Program → Participant count)
+ *   - Per-entry vs per-player clearly labelled with fee badge
+ *   - Always shows participant count (never a long name list)
+ *   - Refund timeline shows ALL statuses (P/S/F) in chronological order
+ *   - Receipt download grayed out (with tooltip) when no receipt yet
+ *   - Single source: both admin and user hit GET /api/registrations/:id/receipt
  */
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   CreditCard, CheckCircle, XCircle, RefreshCw,
-  Receipt, MoreVertical, Users, ExternalLink
+  Receipt, MoreVertical, Users, ExternalLink,
+  Clock, AlertCircle, Download,
 } from "lucide-react";
 import type { TournamentEvent } from "@/types/config";
 import type { Registration, ParticipantGroup, Payment, PaymentItem, Refund, PaymentMethod, PaymentStatus } from "@/types/registration";
@@ -34,8 +40,6 @@ import ActionDropdownPortal from "@/components/ui/ActionDropdownPortal";
 
 type RegStatus = "Pending" | "Confirmed" | "Cancelled";
 
-// Refunds use the shared Refund type from @/types/registration.
-
 type SortState<T> = { key: keyof T | null; dir: "asc" | "desc" };
 function useSort<T>(data: T[]) {
   const [sort, setSort] = useState<SortState<T>>({ key: null, dir: "asc" });
@@ -53,8 +57,6 @@ function useSort<T>(data: T[]) {
 
 // ── Badges ────────────────────────────────────────────────────────────────────
 
-// PayBadge accepts the DB-aligned PaymentStatus codes and translates them
-// to human labels using PAYMENT_STATUS_LABEL from registration.ts.
 function PayBadge({ status }: { status: PaymentStatus }) {
   const label = PAYMENT_STATUS_LABEL[status] ?? status;
   const m: Record<string, [string, string]> = {
@@ -79,6 +81,25 @@ function RegBadge({ status }: { status: string }) {
   };
   const [bg, text] = m[status] ?? m["Pending"];
   return <span className="inline-flex px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: bg, color: text }}>{status}</span>;
+}
+
+/** Badge for refund status: P=Pending, S=Success, F=Failed */
+function RefundStatusBadge({ status }: { status: string }) {
+  const cfg: Record<string, { label: string; bg: string; text: string }> = {
+    S: { label: "Refunded",  bg: "var(--badge-open-bg)",   text: "var(--badge-open-text)" },
+    P: { label: "Pending",   bg: "var(--badge-soon-bg)",   text: "var(--badge-soon-text)" },
+    F: { label: "Failed",    bg: "var(--badge-closed-bg)", text: "var(--badge-closed-text)" },
+  };
+  const c = cfg[status] ?? cfg.P;
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold"
+      style={{ backgroundColor: c.bg, color: c.text }}>
+      {status === "S" && <CheckCircle className="h-3 w-3" />}
+      {status === "P" && <Clock className="h-3 w-3" />}
+      {status === "F" && <AlertCircle className="h-3 w-3" />}
+      {c.label}
+    </span>
+  );
 }
 
 function MethodIcon({ method }: { method: PaymentMethod }) {
@@ -108,11 +129,8 @@ function formatDateTime(value?: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-SG", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
@@ -126,6 +144,529 @@ function calcRefunded(refunds: Refund[], items: PaymentItem[]): number {
   }, 0);
 }
 
+// ── Payment Log helpers ───────────────────────────────────────────────────────
+
+/**
+ * Groups PaymentItems by programName, mirrors what ReceiptService.cs does.
+ * Returns one entry per program with aggregated amounts and participant count.
+ */
+interface ProgramGroup {
+  programName:      string;
+  isPerPlayer:      boolean;   // true when any item has participantId set
+  items:            PaymentItem[];
+  participantCount: number;    // total participants across all groups for this program
+  subtotal:         number;
+  refundedAmount:   number;    // sum of successful refunds for this program's items
+  hasRefunds:       boolean;
+}
+
+function buildProgramGroups(
+  payment:  Payment,
+  groups:   ParticipantGroup[],
+  refunds:  Refund[],
+): ProgramGroup[] {
+  const byProgram = new Map<string, PaymentItem[]>();
+  for (const item of payment.items) {
+    const key = item.programName;
+    if (!byProgram.has(key)) byProgram.set(key, []);
+    byProgram.get(key)!.push(item);
+  }
+
+  return Array.from(byProgram.entries()).map(([programName, items]) => {
+    const isPerPlayer = items.some(i => !!i.participantId);
+
+    // Participant count:
+    // per_player → each item = 1 participant
+    // per_entry  → sum participants across the groups that belong to this program
+    let participantCount: number;
+    if (isPerPlayer) {
+      participantCount = items.length;
+    } else {
+      const groupIds = new Set(items.map(i => i.participantGroupId));
+      participantCount = groups
+        .filter(g => groupIds.has(g.id))
+        .reduce((sum, g) => sum + g.participants.length, 0);
+    }
+
+    const subtotal = items.reduce((s, i) => s + i.amount, 0);
+
+    const refundedAmount = items.reduce((s, item) => {
+      return s + refunds
+        .filter(r => r.paymentItemId === item.id && r.refundStatus === "S")
+        .reduce((rs, r) => rs + r.refundAmount, 0);
+    }, 0);
+
+    return {
+      programName,
+      isPerPlayer,
+      items,
+      participantCount,
+      subtotal,
+      refundedAmount,
+      hasRefunds: refundedAmount > 0,
+    };
+  });
+}
+
+/**
+ * Builds a flat chronological transaction timeline:
+ * 1. The original payment event
+ * 2. All refunds (all statuses: P/S/F) sorted by createdAt
+ */
+interface TimelineEntry {
+  type:          "payment" | "refund";
+  date:          string;
+  label:         string;          // program name or "Payment confirmed"
+  description?:  string;          // refund reason, admin note
+  amount:        number;          // positive for payment, positive for refund amount
+  status:        string;          // PaymentStatus or RefundStatus code
+  gatewayRef?:   string;          // gateway refund ID or charge ID
+}
+
+function buildTimeline(
+  payment: Payment,
+  refunds: Refund[],
+): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+
+  // Payment entry
+  entries.push({
+    type:        "payment",
+    date:        payment.paidAt ?? payment.createdAt,
+    label:       "Payment confirmed",
+    description: payment.adminNote ?? undefined,
+    amount:      payment.amount,
+    status:      payment.paymentStatus,
+    gatewayRef:  payment.gatewayChargeId ?? payment.gatewayPaymentId ?? undefined,
+  });
+
+  // Refund entries — all statuses
+  for (const r of refunds) {
+    const item = payment.items.find(i => i.id === r.paymentItemId);
+    entries.push({
+      type:        "refund",
+      date:        r.processedAt ?? r.createdAt,
+      label:       item?.programName ?? "Refund",
+      description: r.refundReason ?? undefined,
+      amount:      r.refundAmount,
+      status:      r.refundStatus,
+      gatewayRef:  r.gatewayRefundId ?? undefined,
+    });
+  }
+
+  // Sort chronologically
+  return entries.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ── Payment Log Modal ─────────────────────────────────────────────────────────
+
+interface PaymentLogModalProps {
+  reg:      Registration;
+  refunds:  Refund[];
+  onClose:  () => void;
+}
+
+function PaymentLogModal({ reg, refunds, onClose }: PaymentLogModalProps) {
+  const payment = getPayment(reg);
+  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+  const receiptUrl = `${API_BASE}/api/registrations/${reg.id}/receipt`;
+  const hasReceipt = !!payment?.receiptNo;
+
+  const programGroups = payment
+    ? buildProgramGroups(payment, reg.groups, refunds)
+    : [];
+  const timeline = payment ? buildTimeline(payment, refunds) : [];
+  const totalPaid = payment?.amount ?? 0;
+  const totalRefunded = refunds
+    .filter(r => r.refundStatus === "S")
+    .reduce((s, r) => s + r.refundAmount, 0);
+  const netAmount = totalPaid - totalRefunded;
+
+  return (
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent
+        className="p-0"
+        style={{
+          maxWidth: "1100px",
+          width: "96vw",
+          maxHeight: "92vh",
+          backgroundColor: "var(--color-page-bg)",
+          border: "1px solid var(--color-table-border)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* ── Header ── */}
+        <DialogHeader
+          className="px-7 py-5 flex-shrink-0"
+          style={{ borderBottom: "1px solid var(--color-table-border)" }}
+        >
+          <div>
+            <DialogTitle className="font-bold text-lg">
+              Payment Log — Registration {reg.id}
+            </DialogTitle>
+            <p className="text-xs opacity-50 mt-1">
+              {reg.contactName} · {reg.eventName}
+            </p>
+          </div>
+        </DialogHeader>
+
+        {/* ── Scrollable body ── */}
+        <div className="overflow-y-auto flex-1">
+          <div className="p-7 space-y-7">
+
+            {/* ── SECTION 1: Payment summary (3-col meta grid) ── */}
+            <div
+              className="grid gap-4 text-sm"
+              style={{
+                gridTemplateColumns: "repeat(3, 1fr)",
+                padding: "16px",
+                border: "1px solid var(--color-table-border)",
+                backgroundColor: "var(--color-row-hover)",
+              }}
+            >
+              {/* Col 1: Contact */}
+              <div className="space-y-3">
+                <MetaField label="Contact" value={reg.contactName} />
+                <MetaField label="Email" value={reg.contactEmail} mono />
+                <MetaField label="Phone" value={reg.contactPhone || "—"} />
+              </div>
+              {/* Col 2: Payment */}
+              <div className="space-y-3">
+                <MetaField label="Receipt No." value={payment?.receiptNo || "—"} mono bold />
+                <MetaField label="Method" value={payment ? (PAYMENT_METHOD_LABEL[payment.method] ?? payment.method) : "—"} />
+                <MetaField label="Date Paid" value={formatDate(payment?.paidAt)} />
+                <div>
+                  <p className="text-xs opacity-50 mb-1">Status</p>
+                  {payment ? <PayBadge status={payment.paymentStatus} /> : <span className="opacity-40 text-xs">No payment</span>}
+                </div>
+              </div>
+              {/* Col 3: Amounts */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs opacity-50 mb-1">Amount Paid</p>
+                  <p className="font-bold text-base" style={{ color: "var(--color-primary)" }}>
+                    SGD {totalPaid.toFixed(2)}
+                  </p>
+                </div>
+                {totalRefunded > 0 && (
+                  <div>
+                    <p className="text-xs opacity-50 mb-1">Total Refunded</p>
+                    <p className="font-semibold text-sm" style={{ color: "var(--badge-open-text)" }}>
+                      − SGD {totalRefunded.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+                {totalRefunded > 0 && (
+                  <div>
+                    <p className="text-xs opacity-50 mb-1">Net Amount</p>
+                    <p className="font-bold text-sm" style={{ color: "var(--color-primary)" }}>
+                      SGD {netAmount.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Gateway IDs — collapsed row, mono small */}
+            {payment && (payment.gatewaySessionId || payment.gatewayPaymentId || payment.gatewayChargeId) && (
+              <div
+                className="grid gap-x-6 gap-y-2 text-xs"
+                style={{
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  padding: "10px 14px",
+                  border: "1px solid var(--color-table-border)",
+                  backgroundColor: "var(--color-row-hover)",
+                }}
+              >
+                {payment.gatewaySessionId && (
+                  <GatewayRef label="Session ID" value={payment.gatewaySessionId} />
+                )}
+                {payment.gatewayPaymentId && (
+                  <GatewayRef label="Payment ID" value={payment.gatewayPaymentId} />
+                )}
+                {payment.gatewayChargeId && (
+                  <GatewayRef label="Charge ID" value={payment.gatewayChargeId} />
+                )}
+              </div>
+            )}
+
+            {/* ── SECTION 2: Programs breakdown ── */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">
+                Programs &amp; Line Items
+              </p>
+
+              {programGroups.length === 0 && (
+                <p className="text-sm opacity-40">No payment items found.</p>
+              )}
+
+              <div className="space-y-3">
+                {programGroups.map((pg, idx) => {
+                  // Unit price calculation: mirrors ReceiptService.cs logic
+                  const unitPrice = pg.isPerPlayer
+                    ? (pg.items[0]?.amount ?? 0)
+                    : (pg.participantCount > 0
+                        ? pg.subtotal / pg.participantCount
+                        : pg.subtotal / Math.max(pg.items.length, 1));
+
+                  return (
+                    <div
+                      key={`${pg.programName}-${idx}`}
+                      style={{
+                        border: "1px solid var(--color-table-border)",
+                        backgroundColor: "var(--color-row-hover)",
+                      }}
+                    >
+                      {/* Program header row */}
+                      <div
+                        className="flex items-center justify-between gap-3 px-4 py-3"
+                        style={{ borderBottom: "1px solid var(--color-table-border)" }}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <p className="font-semibold text-sm truncate">{pg.programName}</p>
+                          {/* Fee type badge */}
+                          <span
+                            className="flex-shrink-0 text-xs px-2 py-0.5 font-medium"
+                            style={{
+                              backgroundColor: pg.isPerPlayer ? "var(--badge-open-bg)" : "var(--badge-soon-bg)",
+                              color: pg.isPerPlayer ? "var(--badge-open-text)" : "var(--badge-soon-text)",
+                            }}
+                          >
+                            {pg.isPerPlayer ? "Per head" : "Per entry"}
+                          </span>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          <p
+                            className="font-bold text-sm"
+                            style={{ color: "var(--color-primary)" }}
+                          >
+                            SGD {pg.subtotal.toFixed(2)}
+                          </p>
+                          {pg.hasRefunds && (
+                            <p className="text-xs" style={{ color: "var(--badge-open-text)" }}>
+                              − SGD {pg.refundedAmount.toFixed(2)} refunded
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Program detail rows */}
+                      <div className="px-4 py-3 grid gap-2 text-xs" style={{ gridTemplateColumns: "1fr auto auto" }}>
+                        {/* Participant count */}
+                        <div className="flex items-center gap-1.5 opacity-60">
+                          <Users className="h-3.5 w-3.5" />
+                          <span>
+                            {pg.participantCount} participant{pg.participantCount !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        {/* Qty × unit */}
+                        <span className="opacity-50">
+                          {pg.participantCount} × SGD {unitPrice.toFixed(2)}
+                        </span>
+                        {/* Item count (entries) */}
+                        {!pg.isPerPlayer && pg.items.length > 1 && (
+                          <span className="opacity-40">{pg.items.length} entries</span>
+                        )}
+                        {pg.isPerPlayer && (
+                          <span className="opacity-40">{pg.items.length} items</span>
+                        )}
+                      </div>
+
+                      {/* Per-item status breakdown — only when some items are refunded */}
+                      {pg.items.some(i => i.itemStatus === "R") && (
+                        <div
+                          className="px-4 pb-3 space-y-1"
+                          style={{ borderTop: "1px solid var(--color-table-border)", paddingTop: 10 }}
+                        >
+                          <p className="text-xs opacity-40 font-semibold uppercase tracking-wide mb-2">
+                            Item status
+                          </p>
+                          {pg.items.map(item => {
+                            const itemRefunds = refunds.filter(r => r.paymentItemId === item.id);
+                            const successRefund = itemRefunds.find(r => r.refundStatus === "S");
+                            return (
+                              <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
+                                <span className="opacity-70 truncate">
+                                  {item.playerName ?? item.description ?? item.programName}
+                                </span>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {item.itemStatus === "R" && successRefund && (
+                                    <span className="opacity-50">
+                                      SGD {successRefund.refundAmount.toFixed(2)}
+                                    </span>
+                                  )}
+                                  <span
+                                    className="px-1.5 py-0.5 font-semibold"
+                                    style={{
+                                      backgroundColor: item.itemStatus === "R"
+                                        ? "var(--badge-open-bg)" : item.itemStatus === "S"
+                                        ? "transparent" : "var(--badge-soon-bg)",
+                                      color: item.itemStatus === "R"
+                                        ? "var(--badge-open-text)" : item.itemStatus === "S"
+                                        ? "var(--color-primary)" : "var(--badge-soon-text)",
+                                      border: item.itemStatus === "S"
+                                        ? "1px solid var(--color-table-border)" : "none",
+                                    }}
+                                  >
+                                    {item.itemStatus === "R" ? "Refunded"
+                                      : item.itemStatus === "S" ? "Paid"
+                                      : "Pending"}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Programs total row */}
+              {payment && (
+                <div
+                  className="flex items-center justify-between px-4 py-3 mt-1 font-semibold text-sm"
+                  style={{ borderTop: "2px solid var(--color-table-border)" }}
+                >
+                  <span>Total</span>
+                  <span style={{ color: "var(--color-primary)" }}>SGD {totalFee(reg).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Admin note */}
+            {payment?.adminNote && (
+              <div
+                className="px-4 py-3 text-xs"
+                style={{
+                  backgroundColor: "var(--color-row-hover)",
+                  border: "1px solid var(--color-table-border)",
+                }}
+              >
+                <span className="opacity-50 font-semibold uppercase tracking-wide mr-2">Admin Note</span>
+                {payment.adminNote}
+              </div>
+            )}
+
+            {/* ── SECTION 3: Transaction Timeline ── */}
+            {timeline.length > 0 && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">
+                  Transaction Timeline
+                </p>
+                <table className="trs-table w-full" style={{ border: "1px solid var(--color-table-border)" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 160 }}>Date / Time</th>
+                      <th>Description</th>
+                      <th style={{ width: 220 }}>Reference</th>
+                      <th style={{ width: 90, textAlign: "right" }}>Amount</th>
+                      <th style={{ width: 110 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timeline.map((entry, i) => (
+                      <tr key={i}>
+                        <td className="font-mono text-xs opacity-60 whitespace-nowrap">
+                          {formatDateTime(entry.date)}
+                        </td>
+                        <td>
+                          <p className="text-sm font-medium">{entry.label}</p>
+                          {entry.description && (
+                            <p className="text-xs opacity-50 mt-0.5">{entry.description}</p>
+                          )}
+                        </td>
+                        <td className="font-mono text-xs opacity-50" style={{ wordBreak: "break-all" }}>
+                          {entry.gatewayRef ?? "—"}
+                        </td>
+                        <td className="text-right font-semibold text-sm whitespace-nowrap">
+                          {entry.type === "refund" && (
+                            <span style={{ color: "var(--badge-open-text)" }}>
+                              − SGD {entry.amount.toFixed(2)}
+                            </span>
+                          )}
+                          {entry.type === "payment" && (
+                            <span style={{ color: "var(--color-primary)" }}>
+                              SGD {entry.amount.toFixed(2)}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {entry.type === "payment"
+                            ? <PayBadge status={entry.status as PaymentStatus} />
+                            : <RefundStatusBadge status={entry.status} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <DialogFooter
+          className="px-7 py-4 flex-shrink-0"
+          style={{ borderTop: "1px solid var(--color-table-border)" }}
+        >
+          {/* Receipt button anchored left; Close anchored right via flex justify-between */}
+          <div className="flex items-center justify-between w-full gap-4">
+            <div title={!hasReceipt ? "Receipt not yet generated — payment must be confirmed first" : undefined}>
+              <a
+                href={hasReceipt ? receiptUrl : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!hasReceipt}
+                onClick={e => { if (!hasReceipt) e.preventDefault(); }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
+                style={{
+                  border: "1px solid var(--color-table-border)",
+                  backgroundColor: hasReceipt ? "var(--color-primary)" : "var(--color-row-hover)",
+                  color: hasReceipt ? "white" : "var(--color-disabled-text)",
+                  cursor: hasReceipt ? "pointer" : "not-allowed",
+                  opacity: hasReceipt ? 1 : 0.6,
+                  textDecoration: "none",
+                }}
+              >
+                <Download className="h-4 w-4" />
+                Download Receipt PDF
+              </a>
+            </div>
+            <button onClick={onClose} className="btn-outline px-5 py-2.5 text-sm">
+              Close
+            </button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Small helper sub-components used inside PaymentLogModal ───────────────────
+
+function MetaField({
+  label, value, mono = false, bold = false,
+}: { label: string; value: string; mono?: boolean; bold?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs opacity-50 mb-0.5">{label}</p>
+      <p className={`text-sm ${mono ? "font-mono" : ""} ${bold ? "font-bold" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function GatewayRef({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <span className="opacity-40 font-semibold uppercase tracking-wide mr-1">{label}</span>
+      <span className="font-mono opacity-60 truncate block" title={value}>{value}</span>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Main page
@@ -134,8 +675,8 @@ function calcRefunded(refunds: Refund[], items: PaymentItem[]): number {
 export default function AdminRegistrations() {
   const [urlParams] = useSearchParams();
   const navigate    = useNavigate();
-  // Payment Log tab removed — now in 3-dot menu
-  // ── Filters — declared before useEffects so effects can close over them ──
+
+  // ── Filters ──────────────────────────────────────────────────────────────
   const [filterEvent,   setFilterEvent]   = useState(urlParams.get("event") || "");
   const [filterProgram, setFilterProgram] = useState(urlParams.get("program") || "");
   const [filterReg,     setFilterReg]     = useState("");
@@ -152,7 +693,6 @@ export default function AdminRegistrations() {
   const [regTotalPgs, setRegTotalPgs] = useState(1);
   const [refundsByReg, setRefundsByReg] = useState<Record<string, Refund[]>>({});
   const [loadingRegs, setLoadingRegs] = useState(true);
-  const [loadingTxns, setLoadingTxns] = useState(false);
   const [apiError,    setApiError]    = useState("");
 
   useEffect(() => {
@@ -182,14 +722,11 @@ export default function AdminRegistrations() {
 
   useEffect(() => {
     let active = true;
-
     const uniqueRegs = Array.from(new Map(regs.map(reg => [reg.id, reg])).values());
-
     if (uniqueRegs.length === 0) {
       setRefundsByReg({});
       return () => { active = false; };
     }
-
     Promise.all(
       uniqueRegs.map(async (reg) => {
         const result = await apiGetRefunds(reg.id);
@@ -199,16 +736,14 @@ export default function AdminRegistrations() {
       if (!active) return;
       setRefundsByReg(Object.fromEntries(entries));
     });
-
     return () => { active = false; };
   }, [regs]);
 
   const programsForEvent = useMemo(() =>
     events.find(e => e.id === filterEvent)?.programs ?? [], [events, filterEvent]);
 
-  // Filtering is server-side; regs already contains the current page
-  const sorted   = useMemo(() => [...regs].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [regs]);
-  const paged    = sorted;
+  const sorted = useMemo(() => [...regs].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [regs]);
+  const paged  = sorted;
 
   // ── Action dropdown ───────────────────────────────────────────────────────
   const [openAction, setOpenAction] = useState<{ reg: Registration; anchorEl: HTMLElement } | null>(null);
@@ -222,18 +757,17 @@ export default function AdminRegistrations() {
   }, [filterSearchInput]);
 
   // ── Modals ────────────────────────────────────────────────────────────────
-  const [markPaidModal,  setMarkPaidModal]  = useState<Registration | null>(null);
+  const [markPaidModal,   setMarkPaidModal]   = useState<Registration | null>(null);
   const [paymentLogModal, setPaymentLogModal] = useState<Registration | null>(null);
-  const [cancelModal,    setCancelModal]    = useState<Registration | null>(null);
-  const [refundModal,    setRefundModal]    = useState<Registration | null>(null);
-  // PaymentMethod codes now match DB: "CreditCard" | "PayNow" | "Cash" | "BankTransfer" | "Others"
-  const [markPaidMethod, setMarkPaidMethod] = useState<PaymentMethod>("PayNow");
-  const [markPaidRemark, setMarkPaidRemark] = useState("");
-  const [cancelReason,   setCancelReason]   = useState("");
-  const [refundSel,      setRefundSel]      = useState<Record<string, { checked: boolean; reason: string }>>({});
-  const [savingMarkPaid, setSavingMarkPaid] = useState(false);
-  const [savingCancel,   setSavingCancel]   = useState(false);
-  const [savingRefund,   setSavingRefund]   = useState(false);
+  const [cancelModal,     setCancelModal]     = useState<Registration | null>(null);
+  const [refundModal,     setRefundModal]     = useState<Registration | null>(null);
+  const [markPaidMethod,  setMarkPaidMethod]  = useState<PaymentMethod>("PayNow");
+  const [markPaidRemark,  setMarkPaidRemark]  = useState("");
+  const [cancelReason,    setCancelReason]    = useState("");
+  const [refundSel,       setRefundSel]       = useState<Record<string, { checked: boolean; reason: string }>>({});
+  const [savingMarkPaid,  setSavingMarkPaid]  = useState(false);
+  const [savingCancel,    setSavingCancel]    = useState(false);
+  const [savingRefund,    setSavingRefund]    = useState(false);
 
   // ── Mutation helpers ──────────────────────────────────────────────────────
   const handleMarkPaid = async () => {
@@ -245,11 +779,7 @@ export default function AdminRegistrations() {
         method: markPaidMethod,
         adminNote: markPaidRemark,
       });
-      if (payR.error) {
-        setApiError(payR.error.message);
-        return;
-      }
-
+      if (payR.error) { setApiError(payR.error.message); return; }
       if (payR.data) {
         setRegs(prev => prev.map(reg => reg.id === payR.data!.id ? payR.data! : reg));
       }
@@ -269,38 +799,27 @@ export default function AdminRegistrations() {
     try {
       if (payment && hasRefundableItems) {
         const cancelR = await apiCancelRegistrationWithRefunds(cancelModal.id, cancelReason);
-        if (cancelR.error) {
-          setApiError(cancelR.error.message);
-          return;
-        }
+        if (cancelR.error) { setApiError(cancelR.error.message); return; }
         if (cancelR.data?.registration) {
           setRegs(prev => prev.map(reg => reg.id === cancelR.data!.registration.id ? cancelR.data!.registration : reg));
         }
-
         const refR = await apiGetRefunds(cancelModal.id);
         if (refR.data) {
           setRefundsByReg(prev => ({ ...prev, [cancelModal.id]: refR.data! }));
         }
-
         if ((cancelR.data?.errors ?? []).length > 0) {
           setApiError(`Cancellation is pending; some refunds failed: ${cancelR.data!.errors.join(" | ")}`);
           return;
         }
-
         setCancelModal(null);
         setCancelReason("");
         return;
       }
-
       const r = await apiUpdateRegistrationStatus(cancelModal.id, "Cancelled");
-      if (r.error) {
-        setApiError(r.error.message);
-        return;
-      }
+      if (r.error) { setApiError(r.error.message); return; }
       if (r.data) {
         setRegs(prev => prev.map(reg => reg.id === r.data!.id ? r.data! : reg));
       }
-
       setCancelModal(null);
       setCancelReason("");
     } finally {
@@ -308,27 +827,21 @@ export default function AdminRegistrations() {
     }
   };
 
-  // ── Refund: check if removing a per-player item would drop group below minPlayers ──
+  // Refund: check if removing a per-player item would drop group below minPlayers
   const getGroupMinPlayersWarning = (reg: Registration, itemId: string): string | null => {
     const payment = getPayment(reg);
     const item = payment?.items.find(i => i.id === itemId);
-    if (!item?.participantId) return null;  // per_entry item — no player count check
+    if (!item?.participantId) return null;
     const group = reg.groups.find(g => g.id === item.participantGroupId);
     if (!group) return null;
-    const eventProgram = events
-      .flatMap(e => e.programs)
-      .find(p => p.id === group.programId);
+    const eventProgram = events.flatMap(e => e.programs).find(p => p.id === group.programId);
     if (!eventProgram) return null;
-    // Count remaining per-player items for this group that are not already refunded
     const activeItems = (payment?.items ?? []).filter(
-      i => i.participantGroupId === group.id
-        && i.participantId
-          && i.itemStatus !== "R"
-        && i.id !== itemId
+      i => i.participantGroupId === group.id && i.participantId && i.itemStatus !== "R" && i.id !== itemId
     );
     const remainingPlayers = activeItems.length;
     if (remainingPlayers < eventProgram.minPlayers) {
-      return `Removing this player leaves ${remainingPlayers} player${remainingPlayers !== 1 ? "s" : ""} — below the minimum of ${eventProgram.minPlayers}. Cancel the entire entry instead.`;
+      return `Removing this participant leaves ${remainingPlayers} — below the minimum of ${eventProgram.minPlayers}. Cancel the entire entry instead.`;
     }
     return null;
   };
@@ -336,10 +849,7 @@ export default function AdminRegistrations() {
   const handleRefund = async () => {
     if (!refundModal) return;
     const payment = getPayment(refundModal);
-    if (!payment) {
-      setApiError("This registration has no payment record to refund.");
-      return;
-    }
+    if (!payment) { setApiError("This registration has no payment record to refund."); return; }
     setSavingRefund(true);
     try {
       const refundErrors: string[] = [];
@@ -357,7 +867,7 @@ export default function AdminRegistrations() {
       ]);
       if (regR.data) {
         setRegs(prev => prev.map(r => r.id === refundModal.id ? regR.data! : r));
-        }
+      }
       if (refR.data) {
         setRefundsByReg(prev => ({ ...prev, [refundModal.id]: refR.data! }));
       }
@@ -371,7 +881,6 @@ export default function AdminRegistrations() {
       setSavingRefund(false);
     }
   };
-
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -387,147 +896,141 @@ export default function AdminRegistrations() {
             <button onClick={() => setApiError("")} className="ml-4 opacity-60 hover:opacity-100 text-xs font-bold">✕</button>
           </div>
         )}
-
       </div>
 
       {/* ══════════ REGISTRATIONS ══════════ */}
       <>
-          {/* Filters */}
-          <div className="p-4 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-            <div className="flex flex-wrap items-end gap-3">
-              <FG label="Search">
-                <input className="field-input w-52" placeholder="Name, ID, club…"
-                  value={filterSearchInput} onChange={e => setFilterSearchInput(e.target.value)} />
-              </FG>
-              <FG label="Event">
-                <select className="field-input w-56" value={filterEvent}
-                  onChange={e => { setFilterEvent(e.target.value); setFilterProgram(""); setPage(1); }}>
-                  <option value="">All Events</option>
-                  {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-                </select>
-              </FG>
-              <FG label="Program">
-                <select className="field-input w-44" value={filterProgram} disabled={!filterEvent}
-                  onChange={e => { setFilterProgram(e.target.value); setPage(1); }}>
-                  <option value="">All Programs</option>
-                  {programsForEvent.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </FG>
-              <FG label="Reg. Status">
-                <select className="field-input w-36" value={filterReg}
-                  onChange={e => { setFilterReg(e.target.value); setPage(1); }}>
-                  <option value="">All</option>
-                  <option value="Confirmed">Confirmed</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </FG>
-              <FG label="Payment">
-                {/* Values are DB-aligned PaymentStatus codes */}
-                <select className="field-input w-40" value={filterPay}
-                  onChange={e => { setFilterPay(e.target.value); setPage(1); }}>
-                  <option value="">All</option>
-              <option value="S">Paid</option>
-              <option value="P">Pending</option>
-              <option value="FR">Refunded</option>
-              <option value="PR">Partially Refunded</option>
-              <option value="F">Failed</option>
-              <option value="X">Cancelled</option>
-                </select>
-              </FG>
-            </div>
+        {/* Filters */}
+        <div className="p-4 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
+          <div className="flex flex-wrap items-end gap-3">
+            <FG label="Search">
+              <input className="field-input w-52" placeholder="Name, ID, club…"
+                value={filterSearchInput} onChange={e => setFilterSearchInput(e.target.value)} />
+            </FG>
+            <FG label="Event">
+              <select className="field-input w-56" value={filterEvent}
+                onChange={e => { setFilterEvent(e.target.value); setFilterProgram(""); setPage(1); }}>
+                <option value="">All Events</option>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+              </select>
+            </FG>
+            <FG label="Program">
+              <select className="field-input w-44" value={filterProgram} disabled={!filterEvent}
+                onChange={e => { setFilterProgram(e.target.value); setPage(1); }}>
+                <option value="">All Programs</option>
+                {programsForEvent.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </FG>
+            <FG label="Reg. Status">
+              <select className="field-input w-36" value={filterReg}
+                onChange={e => { setFilterReg(e.target.value); setPage(1); }}>
+                <option value="">All</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Pending">Pending</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </FG>
+            <FG label="Payment">
+              <select className="field-input w-40" value={filterPay}
+                onChange={e => { setFilterPay(e.target.value); setPage(1); }}>
+                <option value="">All</option>
+                <option value="S">Paid</option>
+                <option value="P">Pending</option>
+                <option value="FR">Refunded</option>
+                <option value="PR">Partially Refunded</option>
+                <option value="F">Failed</option>
+                <option value="X">Cancelled</option>
+              </select>
+            </FG>
           </div>
+        </div>
 
-          {/* Table */}
-          <div style={{ border: "1px solid var(--color-table-border)" }}>
-            <table className="trs-table">
-              <thead>
-                <tr>
-                  <th>Reg ID</th>
-                  <th>Contact</th>
-                  <th>Event</th>
-                  <th>Programs</th>
-                  <th>Reg. Status</th>
-                  <th>Payment</th>
-                  <th>Total</th>
-                  <th>Submitted</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingRegs && (
-                  <tr><td colSpan={10} className="text-center py-6"><LoadingSpinner size="sm" label="Loading registrations…" /></td></tr>
-                )}
-                {!loadingRegs && paged.length === 0 && (
-                  <tr><td colSpan={10} className="text-center py-10 opacity-40">No registrations found.</td></tr>
-                )}
-                {paged.map(reg => {
-                  const payment = getPayment(reg);
-                  const programCount = reg.groups.length;
-                  const regRefunds  = refundsByReg[reg.id] ?? [];
-                  const refunded    = calcRefunded(regRefunds, payment?.items ?? []);
+        {/* Table */}
+        <div style={{ border: "1px solid var(--color-table-border)" }}>
+          <table className="trs-table">
+            <thead>
+              <tr>
+                <th>Reg ID</th>
+                <th>Contact</th>
+                <th>Event</th>
+                <th>Programs</th>
+                <th>Reg. Status</th>
+                <th>Payment</th>
+                <th>Total</th>
+                <th>Submitted</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingRegs && (
+                <tr><td colSpan={10} className="text-center py-6"><LoadingSpinner size="sm" label="Loading registrations…" /></td></tr>
+              )}
+              {!loadingRegs && paged.length === 0 && (
+                <tr><td colSpan={10} className="text-center py-10 opacity-40">No registrations found.</td></tr>
+              )}
+              {paged.map(reg => {
+                const payment      = getPayment(reg);
+                const programCount = reg.groups.length;
+                const regRefunds   = refundsByReg[reg.id] ?? [];
+                const refunded     = calcRefunded(regRefunds, payment?.items ?? []);
 
-                  return (
-                    <React.Fragment key={reg.id}>
-            <tr style={reg.regStatus === "Pending" || payment?.paymentStatus === "P"
-                        ? { borderLeft: "3px solid var(--badge-soon-text)" } : undefined}>
-                        <td className="font-mono text-xs">{reg.id}</td>
-                        <td>
-                          <p className="font-semibold text-sm">{reg.contactName}</p>
-                          <p className="text-xs opacity-50">{reg.contactEmail}</p>
-                        </td>
-                        <td className="text-sm max-w-40">
-                          <p className="truncate">{reg.eventName}</p>
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-3.5 w-3.5 opacity-30" />
-                            <span className="text-sm">{programCount} program{programCount !== 1 ? "s" : ""}</span>
-                          </div>
-                          <p className="text-xs opacity-50 mt-0.5">
-                            {reg.groups.map(g => g.programName).join(", ")}
-                          </p>
-                        </td>
-                        <td><RegBadge status={reg.regStatus} /></td>
-                        <td>{payment ? <PayBadge status={payment.paymentStatus} /> : <span className="opacity-40">No payment</span>}</td>
-                        <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
-                          ${payment ? totalFee(reg).toFixed(2) : "0.00"}
-                          {refunded > 0 && (
-                            <span className="block text-xs font-normal" style={{ color: "var(--badge-open-text)" }}>
-                              −${refunded.toFixed(2)} refunded
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-xs opacity-60">
-                          {new Date(reg.submittedAt).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
-                        </td>
-                        <td>
-                          <div className="relative">
-                            <button
-                              onClick={(e) =>
-                                setOpenAction(openAction?.reg.id === reg.id ? null : { reg, anchorEl: e.currentTarget })
-                              }
-                              className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
-                              <MoreVertical className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                return (
+                  <React.Fragment key={reg.id}>
+                    <tr style={reg.regStatus === "Pending" || payment?.paymentStatus === "P"
+                      ? { borderLeft: "3px solid var(--badge-soon-text)" } : undefined}>
+                      <td className="font-mono text-xs">{reg.id}</td>
+                      <td>
+                        <p className="font-semibold text-sm">{reg.contactName}</p>
+                        <p className="text-xs opacity-50">{reg.contactEmail}</p>
+                      </td>
+                      <td className="text-sm max-w-40">
+                        <p className="truncate">{reg.eventName}</p>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 opacity-30" />
+                          <span className="text-sm">{programCount} program{programCount !== 1 ? "s" : ""}</span>
+                        </div>
+                        <p className="text-xs opacity-50 mt-0.5">
+                          {reg.groups.map(g => g.programName).join(", ")}
+                        </p>
+                      </td>
+                      <td><RegBadge status={reg.regStatus} /></td>
+                      <td>{payment ? <PayBadge status={payment.paymentStatus} /> : <span className="opacity-40">No payment</span>}</td>
+                      <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
+                        ${payment ? totalFee(reg).toFixed(2) : "0.00"}
+                        {refunded > 0 && (
+                          <span className="block text-xs font-normal" style={{ color: "var(--badge-open-text)" }}>
+                            −${refunded.toFixed(2)} refunded
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-xs opacity-60">
+                        {new Date(reg.submittedAt).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                      <td>
+                        <div className="relative">
+                          <button
+                            onClick={(e) =>
+                              setOpenAction(openAction?.reg.id === reg.id ? null : { reg, anchorEl: e.currentTarget })
+                            }
+                            className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <Pagination page={page} totalPages={regTotalPgs} perPage={perPage} total={regTotal}
+            setPage={setPage} setPerPage={n => { setPerPage(n); setPage(1); }} />
+        </div>
+      </>
 
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-            <Pagination page={page} totalPages={regTotalPgs} perPage={perPage} total={regTotal}
-              setPage={setPage} setPerPage={n => { setPerPage(n); setPage(1); }} />
-          </div>
-        </>
-
-      {/* Payment Log tab removed — accessible via 3-dot menu */}
-
-      {/* ══════════ MODALS ══════════ */}
-
+      {/* ══════════ ACTION DROPDOWN ══════════ */}
       <ActionDropdownPortal
         open={!!openAction}
         anchorEl={openAction?.anchorEl ?? null}
@@ -567,6 +1070,8 @@ export default function AdminRegistrations() {
         )}
       </ActionDropdownPortal>
 
+      {/* ══════════ MODALS ══════════ */}
+
       {/* Mark as Paid */}
       <Dialog open={!!markPaidModal} onOpenChange={v => { if (!v) { setMarkPaidModal(null); setMarkPaidRemark(""); } }}>
         <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
@@ -580,7 +1085,6 @@ export default function AdminRegistrations() {
           </DialogHeader>
           <div className="p-7 space-y-4">
             <FG label="Payment Method *">
-              {/* <select> shows human labels; value is DB-aligned code */}
               <select className="field-input" value={markPaidMethod}
                 onChange={e => setMarkPaidMethod(e.target.value as PaymentMethod)}>
                 <option value="CreditCard">Credit Card</option>
@@ -613,7 +1117,6 @@ export default function AdminRegistrations() {
             <DialogTitle className="font-bold text-lg">Cancel Registration</DialogTitle>
           </DialogHeader>
           <div className="p-7 space-y-4">
-            {/* Check "Success" (paid) not old "Paid" string */}
             {getPayment(cancelModal as Registration)?.paymentStatus === "S" && (
               <div className="p-3 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
                 ⚠ This registration has been paid. A full refund will be triggered for all items.
@@ -644,15 +1147,12 @@ export default function AdminRegistrations() {
             {refundModal && <p className="text-xs opacity-50 mt-1">{refundModal.id} · {refundModal.contactName}</p>}
           </DialogHeader>
           <div className="p-7 space-y-4">
-            {/* Iterate payment items (was lineItems) */}
             {(getPayment(refundModal as Registration)?.items ?? []).map(item => {
-              // Already refunded = item has been confirmed refunded
               const alreadyRefunded = item.itemStatus === "R";
               const existingRefund  = (refundModal ? (refundsByReg[refundModal.id] ?? []) : [])
                 .find(r => r.paymentItemId === item.id && r.refundStatus === "S");
               const warning = refundModal && refundSel[item.id]?.checked
-                ? getGroupMinPlayersWarning(refundModal, item.id)
-                : null;
+                ? getGroupMinPlayersWarning(refundModal, item.id) : null;
               const isPerPlayer = !!item.participantId;
               return (
                 <div key={item.id} className="p-4 space-y-3"
@@ -713,99 +1213,14 @@ export default function AdminRegistrations() {
         </DialogContent>
       </Dialog>
 
-      {/* Receipt */}
-      <Dialog open={!!paymentLogModal} onOpenChange={v => { if (!v) setPaymentLogModal(null); }}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
-          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
-            <DialogTitle className="font-bold text-lg">
-              {getPayment(paymentLogModal)?.receiptNo ? `Receipt ${getPayment(paymentLogModal)?.receiptNo}` : "Payment Log"}
-            </DialogTitle>
-          </DialogHeader>
-          {paymentLogModal && (() => {
-            const receiptPayment = getPayment(paymentLogModal);
-            const receiptRefunds = refundsByReg[paymentLogModal!.id] ?? [];
-            const receiptRefunded = calcRefunded(receiptRefunds, receiptPayment?.items ?? []);
-            return (
-              <div className="p-7 space-y-5">
-                {/* Info grid */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><p className="text-xs opacity-50 mb-0.5">Registration ID</p><p className="font-mono text-xs">{paymentLogModal!.id}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Contact</p><p>{paymentLogModal!.contactName}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Gateway Session ID</p><p className="font-mono text-xs opacity-70">{receiptPayment?.gatewaySessionId || "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Gateway Payment ID</p><p className="font-mono text-xs opacity-70">{receiptPayment?.gatewayPaymentId || "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Charge ID</p><p className="font-mono text-xs opacity-70">{receiptPayment?.gatewayChargeId || "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Receipt No.</p><p className="font-mono text-xs font-bold">{receiptPayment?.receiptNo || "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Method</p><p>{receiptPayment ? (PAYMENT_METHOD_LABEL[receiptPayment.method] ?? receiptPayment.method) : "—"}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Paid Date</p><p>{formatDate(receiptPayment?.paidAt)}</p></div>
-                  <div><p className="text-xs opacity-50 mb-0.5">Status</p>{receiptPayment ? <PayBadge status={receiptPayment.paymentStatus} /> : <p className="opacity-50">No payment</p>}</div>
-                </div>
-
-                {/* Line items (payment.items) */}
-                <div style={{ borderTop: "1px solid var(--color-table-border)", paddingTop: 16 }}>
-                  <p className="text-xs font-bold uppercase tracking-wide opacity-50 mb-3">Programs / Line Items</p>
-                    {(receiptPayment?.items ?? []).map(item => {
-                      const group        = paymentLogModal!.groups.find(g => g.id === item.participantGroupId);
-                const itemRefund   = receiptRefunds.find(r => r.paymentItemId === item.id && r.refundStatus === "S");
-                    return (
-                      <div key={item.id} className="mb-3 p-3"
-                        style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-medium">{item.programName}</p>
-                            {item.description && <p className="text-xs opacity-50">{item.description}</p>}
-                            {group && !item.description && <p className="text-xs opacity-60">{group.namesDisplay}</p>}
-                          </div>
-                          <span className="font-bold text-sm flex-shrink-0" style={{ color: "var(--color-primary)" }}>
-                            ${item.amount.toFixed(2)}
-                          </span>
-                        </div>
-                        {/* Show refund info from the separate Refunds store */}
-                        {itemRefund && (
-                          <div className="mt-2 text-xs space-y-0.5" style={{ color: "var(--badge-open-text)" }}>
-                            <p>Refunded ${itemRefund.refundAmount.toFixed(2)} on {formatDateTime(itemRefund.createdAt)}</p>
-                            <p className="opacity-70">Reason: {itemRefund.refundReason}</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  <div className="flex items-center justify-between pt-3 font-bold"
-                    style={{ borderTop: "1px solid var(--color-table-border)" }}>
-                    <span className="text-sm">Total</span>
-                    <span style={{ color: "var(--color-primary)" }}>${receiptPayment ? totalFee(paymentLogModal!).toFixed(2) : "0.00"}</span>
-                  </div>
-                  {receiptRefunded > 0 && (
-                    <div className="flex items-center justify-between pt-1 text-sm"
-                      style={{ color: "var(--badge-open-text)" }}>
-                      <span>Total Refunded</span>
-                      <span>${receiptRefunded.toFixed(2)}</span>
-                    </div>
-                  )}
-                </div>
-
-                {receiptPayment?.adminNote && (
-                  <div className="p-3 text-xs" style={{ backgroundColor: "var(--color-row-hover)", border: "1px solid var(--color-table-border)" }}>
-                    <span className="opacity-50 font-semibold uppercase tracking-wide mr-2">Admin Note</span>
-                    {receiptPayment.adminNote}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          <DialogFooter className="p-7 pt-0">
-            <button onClick={() => setPaymentLogModal(null)} className="btn-outline px-5 py-2.5 text-sm">Close</button>
-            {paymentLogModal && getPayment(paymentLogModal)?.receiptNo && (
-              <a
-                href={`${import.meta.env.VITE_API_BASE_URL ?? ""}/api/registrations/${paymentLogModal.id}/receipt`}
-                target="_blank" rel="noopener noreferrer"
-                className="btn-primary px-5 py-2.5 text-sm font-semibold inline-flex items-center gap-2">
-                <Receipt className="h-4 w-4" /> Download Receipt PDF
-              </a>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Payment Log — full-width redesigned panel */}
+      {paymentLogModal && (
+        <PaymentLogModal
+          reg={paymentLogModal}
+          refunds={refundsByReg[paymentLogModal.id] ?? []}
+          onClose={() => setPaymentLogModal(null)}
+        />
+      )}
     </div>
   );
 }
