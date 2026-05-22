@@ -1,10 +1,10 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar, MapPin, Users, Download, ArrowLeft,
   ShoppingCart, Plus, Trash2, AlertCircle, Edit2,
-  Search, CheckCircle, XCircle, ChevronLeft, ChevronRight, X, Trophy,
+  Search, ChevronLeft, ChevronRight, X, Trophy,
 } from "lucide-react";
 import type { TournamentEvent, Program, Participant, CartEntry } from "@/types/config";
 import { getEventStatus, formatDate } from "@/lib/eventUtils";
@@ -16,6 +16,11 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
 import { Switch } from "@/components/ui/switch";
+import ParticipantFieldsForm, {
+  blankParticipantFormValues,
+  validateParticipant,
+  MONTHS, DAYS, YEARS,
+} from "@/components/registration/ParticipantFieldsForm";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -26,14 +31,7 @@ import eventBanner3 from "@/assets/event-banner-3.jpg";
 
 const FALLBACK_BANNERS = [eventBanner1, eventBanner2, eventBanner3];
 
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
-const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 80 }, (_, i) => String(currentYear - i));
-const TSHIRT_SIZES = ["XS", "S", "M", "L", "XL", "XXL"];
+// MONTHS, DAYS, YEARS imported from ParticipantFieldsForm
 const PRIORITY_COUNTRY_CODES = ["SG", "MY"];
 const FALLBACK_COUNTRY_CODES = [
   "AF", "AX", "AL", "DZ", "AS", "AD", "AO", "AI", "AQ", "AG", "AR", "AM", "AW", "AU", "AT", "AZ",
@@ -85,13 +83,7 @@ function toCountryCode(value: string) {
 }
 
 function blankParticipant(): Participant {
-  return {
-    id: generateId(), fullName: "", dobDay: "", dobMonth: "", dobYear: "",
-    gender: "", email: "", contactNumber: "", nationality: "",
-    clubSchoolCompany: "", tshirtSize: "", sbaId: "",
-    guardianName: "", guardianContact: "", documentFile: null, remark: "",
-    customFieldValues: {},
-  };
+  return { id: generateId(), ...blankParticipantFormValues() };
 }
 
 // ── Gallery Component with swipe support ──
@@ -372,26 +364,9 @@ export default function EventDetail() {
   };
 
   // ── Participant field updates ──
-  const updateParticipant = (idx: number, field: string, value: string) => {
-    setParticipants((prev) =>
-      prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
-    );
-    if (field === "fullName" && value.length >= 3) {
-      const matches = existingParticipants.filter((ep) =>
-        ep.fullName.toLowerCase().startsWith(value.toLowerCase())
-      );
-      if (matches.length > 0) setSuggestions({ idx, matches });
-      else setSuggestions(null);
-    } else if (field === "fullName") { setSuggestions(null); }
-  };
 
-  const updateCustomField = (idx: number, label: string, value: string) => {
-    setParticipants((prev) =>
-      prev.map((p, i) =>
-        i === idx ? { ...p, customFieldValues: { ...p.customFieldValues, [label]: value } } : p
-      )
-    );
-  };
+
+
 
   const applyAutoFill = (participantIdx: number, existing: Participant) => {
     setParticipants((prev) =>
@@ -408,6 +383,17 @@ export default function EventDetail() {
   const removeParticipant = (idx: number) => {
     if (!selectedProgram || participants.length <= selectedProgram.minPlayers) return;
     setParticipants((prev) => prev.filter((_, i) => i !== idx));
+    // Rebuild sbaStatus: participants above the removed index shift down by one
+    setSbaStatus((prev) => {
+      const next: Record<number, "idle" | "loading" | "found" | "not_found"> = {};
+      Object.entries(prev).forEach(([key, val]) => {
+        const i = Number(key);
+        if (i < idx) next[i] = val;
+        else if (i > idx) next[i - 1] = val; // shift down
+        // i === idx is dropped
+      });
+      return next;
+    });
   };
 
   // ── SBA ID retrieve — calls apiGetSbaMember() (sbaApi.ts) ──
@@ -435,79 +421,70 @@ export default function EventDetail() {
     }
   };
 
-  // ── Validation ──
+  // ── Validation — delegates field rules to shared validateParticipant() ──
   const validate = (): boolean => {
     if (!selectedProgram) return false;
-    const errs: Record<string, string> = {};
-    let formErr = "";
+
+    // Program-level checks first
     if (selectedProgram.currentParticipants >= selectedProgram.maxParticipants) {
-      formErr = "This program is full.";
-      setErrors(errs); setFormError(formErr); return false;
+      setErrors({}); setFormError("This program is full."); return false;
     }
+
+    const allErrs: Record<string, string> = {};
+    let formErr = "";
+
     participants.forEach((p, i) => {
       const px = `p${i}`;
-      if (!p.fullName.trim()) errs[`${px}.fullName`] = "Required";
-      if (!p.dobDay || !p.dobMonth || !p.dobYear) errs[`${px}.dob`] = "Complete date required";
-      if (!p.gender) errs[`${px}.gender`] = "Required";
-      if (!p.email.trim()) errs[`${px}.email`] = "Required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email)) errs[`${px}.email`] = "Invalid email";
-      if (!p.contactNumber.trim()) errs[`${px}.contactNumber`] = "Required";
-      if (!p.nationality.trim()) errs[`${px}.nationality`] = "Required";
-      if (!p.clubSchoolCompany.trim()) errs[`${px}.clubSchoolCompany`] = "Required";
-      if (selectedProgram.fields.enableTshirt && !p.tshirtSize) errs[`${px}.tshirtSize`] = "Required";
-      if (selectedProgram.fields.enableSbaId && selectedProgram.sbaRequired && !p.sbaId?.trim())
-        errs[`${px}.sbaId`] = "SBA ID is required for this program";
-      if (p.dobDay && p.dobMonth && p.dobYear) {
-        const monthIdx = MONTHS.indexOf(p.dobMonth);
-        const dob = new Date(+p.dobYear, monthIdx, +p.dobDay);
-        const today = new Date();
-        let age = today.getFullYear() - dob.getFullYear();
-        const mDiff = today.getMonth() - dob.getMonth();
-        if (mDiff < 0 || (mDiff === 0 && today.getDate() < dob.getDate())) age--;
-        if (age < selectedProgram.minAge || age > selectedProgram.maxAge)
-          errs[`${px}.dob`] = `Age must be ${selectedProgram.minAge}–${selectedProgram.maxAge}`;
-      }
-      // Gender per-participant check:
-      //   Male   → each player must be Male
-      //   Female → each player must be Female
-      //   Mixed  → composition checked after the loop (needs all participants)
-      //   Open   → no restriction
-      if (p.gender) {
-        if (selectedProgram.gender === "Male"   && p.gender !== "Male")
-          errs[`${px}.gender`] = "This program is for Male players only.";
-        if (selectedProgram.gender === "Female" && p.gender !== "Female")
-          errs[`${px}.gender`] = "This program is for Female players only.";
-      }
-      if (selectedProgram.fields.enableGuardianInfo) {
-        if (!p.guardianName?.trim()) errs[`${px}.guardianName`] = "Required";
-        if (!p.guardianContact?.trim()) errs[`${px}.guardianContact`] = "Required";
-      }
-      selectedProgram.fields.customFields.forEach((cf) => {
-        if (cf.required && !p.customFieldValues[cf.label]?.trim())
-          errs[`${px}.custom.${cf.label}`] = "Required";
+      // Per-participant field validation via shared function
+      const perParticipantErrs = validateParticipant(p, {
+        program: selectedProgram,
+        allValues: participants,
+        selfIndex: i,
       });
-      const dupe = cart.some((entry, ci) => {
+      // Namespace errors by participant index so they map to the right Field
+      for (const [k, v] of Object.entries(perParticipantErrs)) {
+        allErrs[`${px}.${k}`] = v;
+      }
+      // In-cart duplicate check (different from in-submission duplicate above)
+      const cartDupe = cart.some((entry, ci) => {
         if (editingCartIndex !== null && ci === editingCartIndex) return false;
         return entry.programId === selectedProgram.id &&
-          entry.participants.some((ep) => ep.fullName === p.fullName && ep.dobDay === p.dobDay && ep.dobMonth === p.dobMonth && ep.dobYear === p.dobYear);
+          entry.participants.some(ep =>
+            ep.fullName === p.fullName &&
+            ep.dobDay === p.dobDay &&
+            ep.dobMonth === p.dobMonth &&
+            ep.dobYear === p.dobYear
+          );
       });
-      if (dupe) errs[`${px}.fullName`] = "Already registered in this program";
+      if (cartDupe && !allErrs[`${px}.fullName`])
+        allErrs[`${px}.fullName`] = "Already registered in this program";
     });
+
+    // Mixed gender composition — checked across all participants together
     if (selectedProgram.gender === "Mixed") {
-      // All participants must have gender filled before we can check composition
       const allFilled = participants.every(p => p.gender);
       if (!allFilled) {
         formErr = "Please select the gender for all participants.";
       } else {
         const males   = participants.filter(p => p.gender === "Male").length;
         const females = participants.filter(p => p.gender === "Female").length;
-        // Mixed doubles = exactly 1 Male + 1 Female (minPlayers=maxPlayers=2 enforced at setup)
         if (males !== 1 || females !== 1)
           formErr = "Mixed program requires exactly 1 Male and 1 Female player.";
       }
     }
-    setErrors(errs); setFormError(formErr);
-    return Object.keys(errs).length === 0 && !formErr;
+
+    setErrors(allErrs);
+    setFormError(formErr);
+
+    // Scroll to first error so user can see it
+    const hasErrors = Object.keys(allErrs).length > 0 || !!formErr;
+    if (hasErrors) {
+      setTimeout(() => {
+        registrationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
+
+    return !hasErrors;
   };
 
   // ── Add to cart ──
@@ -531,7 +508,12 @@ export default function EventDetail() {
       setEditingCartIndex(null);
     } else { setCart((prev) => [...prev, entry]); }
     participants.forEach((p) => {
-      const exists = existingParticipants.some((ep) => ep.fullName === p.fullName && ep.dobDay === p.dobDay && ep.dobYear === p.dobYear);
+      const exists = existingParticipants.some((ep) =>
+        ep.fullName  === p.fullName  &&
+        ep.dobDay    === p.dobDay    &&
+        ep.dobMonth  === p.dobMonth  &&
+        ep.dobYear   === p.dobYear
+      );
       if (!exists) setExistingParticipants((prev) => [...prev, { ...p }]);
     });
     setSelectedProgram(null); setParticipants([]); setErrors({}); setFormError(""); setSbaStatus({}); setStep(3);
@@ -717,6 +699,9 @@ export default function EventDetail() {
     const entry = cart[idx];
     const prog = event?.programs.find((p) => p.id === entry.programId);
     if (!prog) return;
+    // documentFile is null after session restore (File objects can't be serialized).
+    // documentUrl is preserved in the participant record — ParticipantFieldsForm will
+    // show the existing file link so the user knows it is still attached.
     setSelectedProgram(prog); setParticipants([...entry.participants]); setEditingCartIndex(idx);
     setErrors({}); setFormError(""); setSbaStatus({}); setSuggestions(null); setStep(2);
     setTimeout(() => registrationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
@@ -906,7 +891,7 @@ export default function EventDetail() {
                         className="text-sm font-medium" style={{ color: "var(--color-primary)" }}>Cancel</button>
                     </div>
                     {formError && (
-                      <div className="flex items-center gap-2 p-4 mb-5 text-sm" style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                      <div className="flex items-center gap-2 p-4 mb-5 text-sm" style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>
                         <AlertCircle className="h-4 w-4 flex-shrink-0" /> {formError}
                       </div>
                     )}
@@ -922,7 +907,7 @@ export default function EventDetail() {
 
                     {participants.map((p, idx) => (
                       <div key={p.id} className="p-6 mb-5" style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-row-hover)" }}>
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between mb-5">
                           <h4 className="font-semibold text-sm">Player {idx + 1}</h4>
                           {participants.length > selectedProgram.minPlayers && (
                             <button onClick={() => removeParticipant(idx)} className="text-xs flex items-center gap-1 opacity-60 hover:opacity-100">
@@ -930,153 +915,51 @@ export default function EventDetail() {
                             </button>
                           )}
                         </div>
-                        <div className="grid sm:grid-cols-2 gap-5">
-                          <Field label="Full Name (as per NRIC/Passport)" error={errors[`p${idx}.fullName`]}>
-                            <div className="relative">
-                              <input className="field-input" value={p.fullName}
-                                readOnly={sbaStatus[idx] === "found"}
-                                style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1, cursor: sbaStatus[idx] === "found" ? "not-allowed" : undefined }}
-                                onChange={(e) => { if (sbaStatus[idx] !== "found") updateParticipant(idx, "fullName", e.target.value); }} autoComplete="off" />
-                              {suggestions?.idx === idx && suggestions.matches.length > 0 && (
-                                <div className="absolute z-20 w-full shadow-lg"
-                                  style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)", top: "100%" }}>
-                                  {suggestions.matches.map((m) => (
-                                    <button key={m.id} type="button" onClick={() => applyAutoFill(idx, m)}
-                                      className="w-full text-left px-3 py-2.5 text-xs hover:opacity-70 transition-opacity"
-                                      style={{ borderBottom: "1px solid var(--color-table-border)" }}>
-                                      <span className="font-semibold">{m.fullName}</span>
-                                      <span className="opacity-60 ml-2">{m.dobDay} {m.dobMonth} {m.dobYear}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </Field>
-                          <Field label="Date of Birth" error={errors[`p${idx}.dob`]}>
-                            <div className="flex gap-2">
-                              <select className="field-input flex-1" value={p.dobDay} onChange={(e) => updateParticipant(idx, "dobDay", e.target.value)}>
-                                <option value="">Day</option>{DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-                              </select>
-                              <select className="field-input flex-1" value={p.dobMonth}
-                              disabled={sbaStatus[idx] === "found"}
-                              style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1 }}
-                              onChange={(e) => updateParticipant(idx, "dobMonth", e.target.value)}>
-                                <option value="">Month</option>{MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                              <select className="field-input flex-1" value={p.dobYear}
-                              disabled={sbaStatus[idx] === "found"}
-                              style={{ opacity: sbaStatus[idx] === "found" ? 0.6 : 1 }}
-                              onChange={(e) => updateParticipant(idx, "dobYear", e.target.value)}>
-                                <option value="">Year</option>{YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                              </select>
-                            </div>
-                          </Field>
-                          <Field label="Gender" error={errors[`p${idx}.gender`]}>
-                            <select className="field-input" value={p.gender}
-                              disabled={sbaStatus[idx] === "found"}
-                              style={sbaStatus[idx] === "found" ? { opacity: 0.6 } : {}}
-                              onChange={(e) => updateParticipant(idx, "gender", e.target.value)}>
-                              <option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option>
-                            </select>
-                          </Field>
-                          <Field label="Email" error={errors[`p${idx}.email`]}>
-                            <input type="email" className="field-input" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} />
-                          </Field>
-                          <Field label="Contact Number" error={errors[`p${idx}.contactNumber`]}>
-                            <input className="field-input" value={p.contactNumber} onChange={(e) => updateParticipant(idx, "contactNumber", e.target.value)} />
-                          </Field>
-                          <Field label="Nationality" error={errors[`p${idx}.nationality`]}>
-                            <select className="field-input" value={toCountryCode(p.nationality)} onChange={(e) => updateParticipant(idx, "nationality", e.target.value)}>
-                              <option value="">Select nationality</option>
-                              {NATIONALITY_OPTIONS.map((country) => (
-                                <option key={country.code} value={country.code}>
-                                  {country.label} ({country.code})
-                                </option>
-                              ))}
-                            </select>
-                          </Field>
-                          <Field label="Club / School / Company" error={errors[`p${idx}.clubSchoolCompany`]}>
-                            <input className="field-input" value={p.clubSchoolCompany} onChange={(e) => updateParticipant(idx, "clubSchoolCompany", e.target.value)} />
-                          </Field>
-                          {selectedProgram.fields.enableTshirt && (
-                          <Field label="T-Shirt Size" error={errors[`p${idx}.tshirtSize`]}>
-                            <select className="field-input" value={p.tshirtSize} onChange={(e) => updateParticipant(idx, "tshirtSize", e.target.value)}>
-                              <option value="">Select</option>{TSHIRT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </Field>
+                        <ParticipantFieldsForm
+                          values={p}
+                          onChange={(patch) => {
+                            setParticipants((prev) =>
+                              prev.map((pp, i) => i === idx ? { ...pp, ...patch } : pp)
+                            );
+                            // Restore suggestion trigger: fire when fullName changes
+                            if (typeof patch.fullName === "string") {
+                              const q = patch.fullName;
+                              if (q.length >= 3) {
+                                const matches = existingParticipants.filter((ep) =>
+                                  ep.fullName.toLowerCase().startsWith(q.toLowerCase())
+                                );
+                                setSuggestions(matches.length > 0 ? { idx, matches } : null);
+                              } else {
+                                setSuggestions(null);
+                              }
+                            }
+                          }}
+                          programFields={selectedProgram.fields}
+                          errors={Object.fromEntries(
+                            Object.entries(errors)
+                              .filter(([k]) => k.startsWith(`p${idx}.`))
+                              .map(([k, v]) => [k.replace(`p${idx}.`, ""), v])
                           )}
-                          {selectedProgram.fields.enableSbaId && (
-                            <div className="sm:col-span-2">
-                              <Field label="SBA ID">
-                                <div className="flex gap-2">
-                                  <input className="field-input flex-1" value={p.sbaId || ""}
-                                    onChange={(e) => {
-                                      updateParticipant(idx, "sbaId", e.target.value);
-                                      // Clear lock when user empties the SBA ID field
-                                      setSbaStatus((prev) => ({ ...prev, [idx]: e.target.value.trim() ? prev[idx] : "idle" }));
-                                    }}
-                                    placeholder="e.g. SBA-001" />
-                                  <button type="button" onClick={() => retrieveBySbaId(idx, p.sbaId || "")}
-                                    disabled={sbaStatus[idx] === "loading"}
-                                    className="btn-primary px-4 py-2 text-xs font-semibold whitespace-nowrap disabled:opacity-60">
-                                    {sbaStatus[idx] === "loading" ? "Loading…" : "Retrieve →"}
-                                  </button>
-                                </div>
-                                {sbaStatus[idx] === "found" && (
-                                  <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--badge-open-text)" }}>
-                                    <CheckCircle className="h-3 w-3" /> Details auto-filled. Clear the SBA ID to edit manually.
-                                  </p>
-                                )}
-                                {sbaStatus[idx] === "not_found" && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "var(--badge-open-text)" }}><XCircle className="h-3 w-3" /> SBA ID not found.</p>}
-                              </Field>
-                            </div>
-                          )}
-                          {selectedProgram.fields.enableGuardianInfo && (
-                            <>
-                              <Field label="Guardian Name" error={errors[`p${idx}.guardianName`]}>
-                                <input className="field-input" value={p.guardianName || ""} onChange={(e) => updateParticipant(idx, "guardianName", e.target.value)} />
-                              </Field>
-                              <Field label="Guardian Contact Number" error={errors[`p${idx}.guardianContact`]}>
-                                <input className="field-input" value={p.guardianContact || ""} onChange={(e) => updateParticipant(idx, "guardianContact", e.target.value)} />
-                              </Field>
-                            </>
-                          )}
-                          {selectedProgram.fields.enableDocumentUpload && (
-                            <Field label="Document Upload (PDF/JPG/PNG)">
-                              <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="field-input"
-                                onChange={(e) => { const file = e.target.files?.[0] || null; setParticipants((prev) => prev.map((pp, i) => i === idx ? { ...pp, documentFile: file } : pp)); }} />
-                            </Field>
-                          )}
-                          {selectedProgram.fields.customFields.map((cf) => (
-                            <Field key={cf.label} label={`${cf.label}${cf.required ? " *" : ""}`} error={errors[`p${idx}.custom.${cf.label}`]}>
-                              {cf.type === "select" && cf.options ? (
-                                <select className="field-input" value={p.customFieldValues[cf.label] || ""}
-                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)}>
-                                  <option value="">Select…</option>
-                                  {cf.options.split(",").map((o: string) => o.trim()).filter(Boolean).map((o: string) => (
-                                    <option key={o} value={o}>{o}</option>
-                                  ))}
-                                </select>
-                              ) : cf.type === "date" ? (
-                                <input type="date" className="field-input" value={p.customFieldValues[cf.label] || ""}
-                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
-                              ) : cf.type === "number" ? (
-                                <input type="number" className="field-input" value={p.customFieldValues[cf.label] || ""}
-                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
-                              ) : (
-                                <input className="field-input" value={p.customFieldValues[cf.label] || ""}
-                                  onChange={(e) => updateCustomField(idx, cf.label, e.target.value)} />
-                              )}
-                            </Field>
-                          ))}
-                          {selectedProgram.fields.enableRemark && (
-                            <div className="sm:col-span-2">
-                              <Field label="Remark">
-                                <textarea className="field-input" rows={2} value={p.remark || ""} onChange={(e) => updateParticipant(idx, "remark", e.target.value)} />
-                              </Field>
-                            </div>
-                          )}
-                        </div>
+                          onFileChange={(file) =>
+                            setParticipants((prev) =>
+                              prev.map((pp, i) => i === idx ? { ...pp, documentFile: file } : pp)
+                            )
+                          }
+                          newFile={p.documentFile ?? null}
+                          sbaEnabled={true}
+                          sbaStatus={sbaStatus[idx] ?? "idle"}
+                          onSbaRetrieve={() => retrieveBySbaId(idx, p.sbaId || "")}
+                          onSbaIdChange={(v) =>
+                            setSbaStatus((prev) => ({ ...prev, [idx]: v.trim() ? prev[idx] : "idle" }))
+                          }
+                          suggestions={
+                            suggestions?.idx === idx
+                              ? suggestions.matches
+                              : []
+                          }
+                          onApplySuggestion={(s) => applyAutoFill(idx, s as unknown as Participant)}
+                          nationalityOptions={NATIONALITY_OPTIONS}
+                        />
                       </div>
                     ))}
 
@@ -1154,7 +1037,7 @@ export default function EventDetail() {
                                 value={contact.name}
                                 onChange={e => { setContact(c => ({ ...c, name: e.target.value })); setContactErrors(ce => ({ ...ce, name: undefined })); }}
                               />
-                              {contactErrors.name && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.name}</p>}
+                              {contactErrors.name && <p className="text-xs mt-1" style={{ color: "var(--badge-closed-text)" }}>{contactErrors.name}</p>}
                             </div>
                             <div>
                               <label className="block text-xs font-medium mb-1">
@@ -1167,7 +1050,7 @@ export default function EventDetail() {
                                 value={contact.email}
                                 onChange={e => { setContact(c => ({ ...c, email: e.target.value })); setContactErrors(ce => ({ ...ce, email: undefined })); }}
                               />
-                              {contactErrors.email && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.email}</p>}
+                              {contactErrors.email && <p className="text-xs mt-1" style={{ color: "var(--badge-closed-text)" }}>{contactErrors.email}</p>}
                             </div>
                             <div>
                               <label className="block text-xs font-medium mb-1">
@@ -1179,7 +1062,7 @@ export default function EventDetail() {
                                 value={contact.phone}
                                 onChange={e => { setContact(c => ({ ...c, phone: e.target.value })); setContactErrors(ce => ({ ...ce, phone: undefined })); }}
                               />
-                              {contactErrors.phone && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{contactErrors.phone}</p>}
+                              {contactErrors.phone && <p className="text-xs mt-1" style={{ color: "var(--badge-closed-text)" }}>{contactErrors.phone}</p>}
                             </div>
                           </div>
                         </div>
@@ -1226,7 +1109,7 @@ export default function EventDetail() {
                         </div>
                         {submitError && (
                           <div className="flex items-center gap-2 p-3 mb-3 text-sm"
-                            style={{ backgroundColor: "var(--badge-open-bg)", color: "var(--badge-open-text)" }}>
+                            style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)" }}>
                             <AlertCircle className="h-4 w-4 flex-shrink-0" /> {submitError}
                           </div>
                         )}
@@ -1405,12 +1288,4 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold mb-2 opacity-70">{label}</label>
-      {children}
-      {error && <p className="text-xs mt-1" style={{ color: "var(--badge-open-text)" }}>{error}</p>}
-    </div>
-  );
-}
+// Field component replaced by FieldWrapper from ParticipantFieldsForm

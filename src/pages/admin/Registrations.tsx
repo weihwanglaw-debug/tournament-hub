@@ -934,12 +934,9 @@ export default function AdminRegistrations() {
               <select className="field-input w-40" value={filterPay}
                 onChange={e => { setFilterPay(e.target.value); setPage(1); }}>
                 <option value="">All</option>
-                <option value="S">Paid</option>
-                <option value="P">Pending</option>
-                <option value="FR">Refunded</option>
-                <option value="PR">Partially Refunded</option>
-                <option value="F">Failed</option>
-                <option value="X">Cancelled</option>
+                {(Object.entries(PAYMENT_STATUS_LABEL) as [PaymentStatus, string][]).map(([code, label]) => (
+                  <option key={code} value={code}>{label}</option>
+                ))}
               </select>
             </FG>
           </div>
@@ -1039,7 +1036,7 @@ export default function AdminRegistrations() {
         {openAction && (
           <>
             <button
-              disabled={!(getPayment(openAction.reg)?.paymentStatus === "P" && openAction.reg.regStatus !== "Cancelled")}
+              disabled={!(["P", "PC"].includes(getPayment(openAction.reg)?.paymentStatus ?? "") && openAction.reg.regStatus !== "Cancelled")}
               onClick={() => { setMarkPaidModal(openAction.reg); setOpenAction(null); }}
             >
               <CheckCircle className="h-4 w-4" /> Mark as Paid
@@ -1050,9 +1047,21 @@ export default function AdminRegistrations() {
             >
               <RefreshCw className="h-4 w-4" /> Refund
             </button>
-            <button onClick={() => { setPaymentLogModal(openAction.reg); setOpenAction(null); }}>
-              <Receipt className="h-4 w-4" /> Payment Log
-            </button>
+{/* Payment Log disabled when there is no payment record at all */}
+            {(() => {
+              const pay = getPayment(openAction.reg);
+              const hasLog = !!pay;
+              return (
+                <button
+                  disabled={!hasLog}
+                  onClick={() => { setPaymentLogModal(openAction.reg); setOpenAction(null); }}
+                  style={{ opacity: hasLog ? 1 : 0.35, cursor: hasLog ? "pointer" : "not-allowed" }}
+                  title={!hasLog ? "No payment record for this registration" : undefined}
+                >
+                  <Receipt className="h-4 w-4" /> Payment Log
+                </button>
+              );
+            })()}
             <button onClick={() => {
               navigate(`/admin/registrations/${openAction.reg.id}/participants`);
               setOpenAction(null);

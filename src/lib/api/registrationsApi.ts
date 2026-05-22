@@ -404,6 +404,7 @@ export async function apiUpdateParticipant(
     guardianContact?:   string;
     remark?:            string;
     customFieldValues?: Record<string, string>;
+    documentUrl?:       string;
   },
 ): Promise<ApiResult<Registration>> {
   await delay();

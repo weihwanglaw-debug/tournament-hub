@@ -147,10 +147,20 @@ export default function PaymentResult() {
       try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
 
       if (r.error) {
-        // Only surface a hard error for genuinely non-recoverable failures.
-        // DO NOT show "failed" for any timeout or processing ambiguity.
-        setPhase("error");
-        setErrorMsg(r.error.message);
+        // Network timeouts and Stripe slow responses are NOT failures —
+        // the webhook will complete the registration.
+        // Only show hard error for CONFIRM_FAILED where we are certain
+        // the payment itself did not go through.
+        const isDefiniteFailure = r.error.code === "CONFIRM_FAILED"
+          && r.error.message.toLowerCase().includes("not been confirmed");
+        if (isDefiniteFailure) {
+          setPhase("error");
+          setErrorMsg(r.error.message);
+        } else {
+          // Treat all other errors (network timeout, Stripe slow, etc.)
+          // as "still processing" — webhook will complete shortly.
+          setPhase("done");
+        }
         return;
       }
 
