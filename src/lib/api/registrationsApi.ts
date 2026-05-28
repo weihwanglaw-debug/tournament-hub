@@ -36,6 +36,7 @@ import type { ApiResult, PageParams, PagedResult } from "./_base";
 import type {
   Registration, ParticipantGroup, Payment, PaymentItem,
   Refund, CheckoutSession, PaymentStatus, RegistrationStats,
+  WebhookFailure,
 } from "@/types/registration";
 
 // ── Filter params ─────────────────────────────────────────────────────────────
@@ -487,5 +488,47 @@ export async function apiGetRegistrationStats(
   const p = eventId ? `?eventId=${eventId}` : "";
   const res = await apiFetch(`${API_BASE}/api/registrations/stats${p}`, { headers: adminHeaders() });
   if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
+
+
+export async function apiGetReconciliationStats(): Promise<
+  ApiResult<{ caseA: number; caseB: number; caseC: number; total: number }>
+> {
+  const res = await apiFetch(
+    `${API_BASE}/api/admin/payment-reconciliation/stats`,
+    { headers: adminHeaders() },
+  );
+  if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
+ 
+// ── GET /api/admin/payment-reconciliation/webhook-failures ────────────────────
+// Returns Case-C rows for the "Unmatched Stripe Payments" tab.
+export async function apiGetWebhookFailures(): Promise<ApiResult<WebhookFailure[]>> {
+  const res = await apiFetch(
+    `${API_BASE}/api/admin/payment-reconciliation/webhook-failures`,
+    { headers: adminHeaders() },
+  );
+  if (!res.ok) return err("FETCH_FAILED", (await parseError(res)).message);
+  return ok(await res.json());
+}
+ 
+// ── POST /api/admin/payment-reconciliation/webhook-failures/{id}/refund ────────
+// Issues a Stripe refund for an unmatched payment (Case C).
+export async function apiRefundOrphanedPayment(
+  webhookLogId: number,
+  reason: string,
+  adminNote: string,
+): Promise<ApiResult<{ refundId: number; refundStatus: string; gatewayRefundId: string }>> {
+  const res = await apiFetch(
+    `${API_BASE}/api/admin/payment-reconciliation/webhook-failures/${webhookLogId}/refund`,
+    {
+      method:  "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body:    JSON.stringify({ reason, adminNote }),
+    },
+  );
+  if (!res.ok) return err("REFUND_FAILED", (await parseError(res)).message);
   return ok(await res.json());
 }

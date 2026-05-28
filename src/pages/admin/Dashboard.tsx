@@ -1,18 +1,29 @@
 /**
- * Dashboard.tsx
- * Reads events + registration stats from the real backend API.
- * Fixture stats use apiGetFixtureStatus() bulk check instead of localStorage.
+ * Dashboard.tsx — updated
+ *
+ * Changes from original:
+ *   1. Imports apiGetReconciliationStats (new)
+ *   2. Fetches reconciliation stats alongside existing stats call
+ *   3. "Pending Payments" card renamed to "Payment Reconciliation"
+ *      — count is reconciliationTotal (caseA + caseB + caseC)
+ *      — navigates to /admin/payments (new page) instead of /admin/registrations
+ *   4. Everything else unchanged
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TournamentEvent } from "@/types/config";
 import type { RegistrationStats } from "@/lib/api";
-import { apiGetEvents, apiGetRegistrationStats, apiExportRegistrations } from "@/lib/api";
+import {
+  apiGetEvents,
+  apiGetRegistrationStats,
+  apiGetReconciliationStats,
+  apiExportRegistrations,
+} from "@/lib/api";
 import { exportRegistrationsCsv } from "@/lib/exportCsv";
 import { apiGetFixtureStatus } from "@/lib/fixtureApi";
 import { computeFixtureDashboardStats, FixtureDashboardStats } from "@/lib/fixtureStatus";
-import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown, Loader2 } from "lucide-react";
+import { CalendarCheck, CalendarDays, CreditCard, Zap, ClipboardList, FileDown } from "lucide-react";
 import { PageLoader } from "@/components/ui/LoadingSpinner";
 
 export default function Dashboard() {
@@ -20,17 +31,24 @@ export default function Dashboard() {
 
   const [events,  setEvents]  = useState<TournamentEvent[]>([]);
   const [stats,   setStats]   = useState<RegistrationStats | null>(null);
-  const [fx,      setFx]      = useState<FixtureDashboardStats>({ pendingPayments: 0, pendingFixture: 0, pendingResults: 0 });
+  const [reconcTotal, setReconcTotal] = useState(0);
+  const [fx,      setFx]      = useState<FixtureDashboardStats>({
+    pendingPayments: 0, pendingFixture: 0, pendingResults: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([apiGetEvents({ includeInactive: false }), apiGetRegistrationStats()])
-      .then(async ([evR, stR]) => {
+    Promise.all([
+      apiGetEvents({ includeInactive: false }),
+      apiGetRegistrationStats(),
+      apiGetReconciliationStats(),   // NEW
+    ])
+      .then(async ([evR, stR, rcR]) => {
         const evs = evR.data ?? [];
         setEvents(evs);
         if (stR.data) setStats(stR.data);
+        if (rcR.data) setReconcTotal(rcR.data.total);
 
-        // Fetch fixture existence for all sports programs in one call
         const sportProgIds = evs
           .filter(e => e.isSports && e.fixtureMode === "internal")
           .flatMap(e => e.programs.map(p => p.id));
@@ -43,11 +61,9 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const openCount     = events.filter(e => e.openDate <= today && today <= e.closeDate).length;
+  const today        = new Date().toISOString().slice(0, 10);
+  const openCount    = events.filter(e => e.openDate <= today && today <= e.closeDate).length;
   const upcomingCount = events.filter(e => e.openDate > today).length;
-
-  const pendingPayments = stats?.pendingPayments ?? 0;
 
   const metrics = [
     {
@@ -71,14 +87,17 @@ export default function Dashboard() {
       action: null,
     },
     {
-      label:  "Pending Payments",
-      value:  pendingPayments,
+      // CHANGED: was "Pending Payments" → "Payment Reconciliation"
+      // CHANGED: count is reconcTotal (caseA+B+C) not just pendingPayments
+      // CHANGED: navigates to /admin/payments instead of /admin/registrations
+      label:  "Payment Reconciliation",
+      value:  reconcTotal,
       icon:   CreditCard,
       color:  "var(--badge-closed-text)",
-      bg:     pendingPayments > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
-      border: pendingPayments > 0 ? "var(--badge-closed-text)" : "var(--color-table-border)",
-      sub:    "Awaiting payment confirmation",
-      action: "/admin/registrations",
+      bg:     reconcTotal > 0 ? "var(--badge-closed-bg)" : "var(--color-row-hover)",
+      border: reconcTotal > 0 ? "var(--badge-closed-text)" : "var(--color-table-border)",
+      sub:    "Payments needing attention",
+      action: "/admin/payments",   // NEW route
     },
     {
       label:  "Pending Fixture Setup",
@@ -102,13 +121,11 @@ export default function Dashboard() {
     },
   ];
 
-  // Export all registrations as CSV
   const handleExport = async () => {
     const r = await apiExportRegistrations("all");
     if (!r.data) return;
     exportRegistrationsCsv("All Events", "", r.data);
   };
-
 
   const reports = [
     "Event Summary",
@@ -123,7 +140,6 @@ export default function Dashboard() {
     <div>
       <div className="admin-page-title"><h1>Dashboard</h1></div>
 
-      {/* Metrics */}
       <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
         {metrics.map(m => {
           const inner = (
@@ -156,7 +172,6 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Reports */}
       <h2 className="font-heading font-bold text-lg mb-4">Reports</h2>
       <div className="grid sm:grid-cols-2 gap-4">
         {reports.map(report => (

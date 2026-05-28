@@ -677,10 +677,11 @@ export default function AdminRegistrations() {
   const navigate    = useNavigate();
 
   // ── Filters ──────────────────────────────────────────────────────────────
-  const [filterEvent,   setFilterEvent]   = useState(urlParams.get("event") || "");
-  const [filterProgram, setFilterProgram] = useState(urlParams.get("program") || "");
-  const [filterReg,     setFilterReg]     = useState("");
-  const [filterPay,     setFilterPay]     = useState("");
+
+  const [filterEvent,   setFilterEvent]   = useState(urlParams.get("event")     || "");
+  const [filterProgram, setFilterProgram] = useState(urlParams.get("program")   || "");
+  const [filterReg,     setFilterReg]     = useState(urlParams.get("regStatus") || "");  
+  const [filterPay,     setFilterPay]     = useState(urlParams.get("payStatus") || "");  
   const [filterSearchInput, setFilterSearchInput] = useState("");
   const [filterSearch,  setFilterSearch]  = useState("");
   const [page, setPage] = useState(1);
@@ -694,6 +695,9 @@ export default function AdminRegistrations() {
   const [refundsByReg, setRefundsByReg] = useState<Record<string, Refund[]>>({});
   const [loadingRegs, setLoadingRegs] = useState(true);
   const [apiError,    setApiError]    = useState("");
+  const [confirmRegModal,  setConfirmRegModal]  = useState<Registration | null>(null);
+  const [confirmRegNote,   setConfirmRegNote]   = useState("");
+  const [savingConfirmReg, setSavingConfirmReg] = useState(false);
 
   useEffect(() => {
     apiGetEvents().then(r => { if (r.data) setEvents(r.data); });
@@ -882,6 +886,25 @@ export default function AdminRegistrations() {
     }
   };
 
+  const handleConfirmReg = async () => {
+    if (!confirmRegModal) return;
+    setSavingConfirmReg(true);
+    try {
+      const r = await apiConfirmRegistration(confirmRegModal.id, {
+        paymentStatus: "S",   // payment already succeeded via Stripe
+        adminNote: confirmRegNote.trim() || "Admin confirmed — Stripe payment verified",
+      });
+      if (r.error) { setApiError(r.error.message); return; }
+      if (r.data) {
+        setRegs(prev => prev.map(reg => reg.id === r.data!.id ? r.data! : reg));
+      }
+      setConfirmRegModal(null);
+      setConfirmRegNote("");
+    } finally {
+      setSavingConfirmReg(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -1042,6 +1065,15 @@ export default function AdminRegistrations() {
               <CheckCircle className="h-4 w-4" /> Mark as Paid
             </button>
             <button
+              disabled={!(
+                openAction.reg.regStatus === "Pending" &&
+                getPayment(openAction.reg)?.paymentStatus === "S"
+              )}
+              onClick={() => { setConfirmRegModal(openAction.reg); setOpenAction(null); }}
+            >
+              <CheckCircle className="h-4 w-4" /> Confirm Registration
+            </button>
+            <button
               disabled={!((getPayment(openAction.reg)?.items ?? []).some(item => item.itemStatus === "S") && openAction.reg.regStatus !== "Cancelled")}
               onClick={() => { setRefundSel({}); setRefundModal(openAction.reg); setOpenAction(null); }}
             >
@@ -1114,6 +1146,45 @@ export default function AdminRegistrations() {
             <button onClick={handleMarkPaid} disabled={!markPaidRemark.trim() || savingMarkPaid}
               className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40">
               {savingMarkPaid ? "Saving..." : "Confirm Payment"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Registration — Case B: Pending reg + Stripe payment succeeded */}
+      <Dialog open={!!confirmRegModal} onOpenChange={v => { if (!v) { setConfirmRegModal(null); setConfirmRegNote(""); } }}>
+        <DialogContent className="max-w-md p-0" style={{ backgroundColor: "var(--color-page-bg)", border: "1px solid var(--color-table-border)" }}>
+          <DialogHeader className="p-7 pb-4" style={{ borderBottom: "1px solid var(--color-table-border)" }}>
+            <DialogTitle className="font-bold text-lg">Confirm Registration</DialogTitle>
+            {confirmRegModal && (
+              <p className="text-xs opacity-50 mt-1">
+                {confirmRegModal.id} · {confirmRegModal.contactName} · ${getPayment(confirmRegModal) ? totalFee(confirmRegModal).toFixed(2) : "0.00"}
+              </p>
+            )}
+          </DialogHeader>
+          <div className="p-7 space-y-4">
+            <div className="px-3 py-2 text-xs"
+              style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
+              Stripe payment is confirmed (status S). Confirming this registration will set
+              RegStatus to Confirmed and send the confirmation email.
+            </div>
+            <FG label="Admin note (optional)">
+              <input
+                className="field-input"
+                value={confirmRegNote}
+                onChange={e => setConfirmRegNote(e.target.value)}
+                placeholder="e.g. Stripe payment verified — registration confirmed manually"
+              />
+            </FG>
+          </div>
+          <DialogFooter className="p-7 pt-0">
+            <button onClick={() => setConfirmRegModal(null)} className="btn-outline px-5 py-2.5 text-sm">Cancel</button>
+            <button
+              onClick={handleConfirmReg}
+              disabled={savingConfirmReg}
+              className="btn-primary px-5 py-2.5 text-sm font-semibold disabled:opacity-40"
+            >
+              {savingConfirmReg ? "Confirming..." : "Confirm Registration"}
             </button>
           </DialogFooter>
         </DialogContent>

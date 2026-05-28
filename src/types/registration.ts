@@ -260,9 +260,30 @@ export interface RegistrationStats {
   confirmed:          number;
   pending:            number;
   cancelled:          number;
-  totalRevenue:       number;   // SUM of payments with paymentStatus = "Success"
-  pendingPayments:    number;   // COUNT of payments with paymentStatus = "Pending"
+  totalRevenue:       number;
+  pendingPayments:    number;   // kept for backward compat — same as caseA
+  // Payment reconciliation counts (new)
+  caseA:  number;   // Confirmed reg, pending payment
+  caseB:  number;   // Pending reg, payment succeeded
+  caseC:  number;   // Stripe paid, no registration at all
+  reconciliationTotal: number;  // caseA + caseB + caseC
 }
+
+
+// Case-C row returned by GET /api/admin/payment-reconciliation/webhook-failures
+export interface WebhookFailure {
+  webhookLogId:     number;
+  gatewaySessionId: string;
+  errorMessage:     string | null;
+  receivedAt:       string;
+  retryCount:       number;
+  amount:           number | null;
+  currency:         string;
+  contactName:      string | null;
+  contactEmail:     string | null;
+  contactPhone:     string | null;
+}
+
 // ── Derived helpers ───────────────────────────────────────────────────────────
 
 /** Flatten a registration into SeedEntry-compatible objects for the fixture wizard */

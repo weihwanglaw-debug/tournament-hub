@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   LayoutDashboard, CalendarDays, Users, GitBranch, ListOrdered,
   LogOut, Trophy, Shield, Settings, ChevronLeft, Menu, Sun, Moon,
-  Home, UserSquare,
+  Home, UserSquare, CreditCard,
 } from "lucide-react";
 
 export default function AdminLayout() {
@@ -13,29 +13,29 @@ export default function AdminLayout() {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "superadmin";
-  const [collapsed, setCollapsed] = useState(true); // default collapsed
-  const [hovered, setHovered] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [hovered,   setHovered]   = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) { navigate("/login", { replace: true }); return; }
-    // Enforce password change before accessing any admin page
     if (mustChangePassword) navigate("/admin/change-password", { replace: true });
   }, [isAuthenticated, mustChangePassword, navigate]);
 
   if (!isAuthenticated) return null;
 
   const links = [
-    { to: "/admin",                label: "Dashboard",          icon: LayoutDashboard, end: true },
-    { to: "/admin/events",         label: "Events & Programs",  icon: CalendarDays,    end: false },
-    { to: "/admin/registrations",  label: "Registrations",      icon: Users,           end: false },
-    { to: "/admin/fixtures",       label: "Fixtures",           icon: GitBranch,       end: false },
-    { to: "/admin/sba-rankings",   label: "SBA Rankings",       icon: ListOrdered,     end: false },
-    { to: "/admin/participants",   label: "Participant Details", icon: UserSquare,      end: false },
+    { to: "/admin",                label: "Dashboard",           icon: LayoutDashboard, end: true  },
+    { to: "/admin/events",         label: "Events & Programs",   icon: CalendarDays,    end: false },
+    { to: "/admin/registrations",  label: "Registrations",       icon: Users,           end: false },
+    { to: "/admin/payments",       label: "Payments",            icon: CreditCard,      end: false },
+    { to: "/admin/fixtures",       label: "Fixtures",            icon: GitBranch,       end: false },
+    { to: "/admin/sba-rankings",   label: "SBA Rankings",        icon: ListOrdered,     end: false },
+    { to: "/admin/participants",   label: "Participant Details",  icon: UserSquare,      end: false },
     ...(isSuperAdmin ? [
-      { to: "/admin/users",  label: "User Management",    icon: Shield,    end: false },
-      { to: "/admin/config", label: "Master Config",      icon: Settings,  end: false },
+      { to: "/admin/users",  label: "User Management", icon: Shield,    end: false },
+      { to: "/admin/config", label: "Master Config",   icon: Settings,  end: false },
     ] : []),
-    { to: "/",              label: "Landing Page",        icon: Home,       end: true },
+    { to: "/",             label: "Landing Page",      icon: Home,      end: true  },
   ];
 
   const expanded = !collapsed || hovered;
@@ -49,7 +49,6 @@ export default function AdminLayout() {
         onMouseEnter={() => collapsed && setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* Toggle button - top area with proper spacing */}
         <div className="flex items-center justify-between px-3 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
           {expanded && (
             <div className="flex items-center gap-2 px-1">
@@ -116,7 +115,6 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Content - always uses icon-width margin, sidebar overlays when expanded */}
       <main
         className="flex-1 p-6 md:p-10 transition-all duration-300 ml-16"
         style={{ backgroundColor: "var(--color-page-bg)" }}
