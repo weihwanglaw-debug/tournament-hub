@@ -782,11 +782,23 @@ export default function EventDetail() {
               )}
             </div>
             <div className="flex flex-col gap-4">
-              {event.prospectusUrl && (
-                <a href={assetUrl(event.prospectusUrl)} target="_blank" rel="noopener noreferrer"
-                  className="btn-primary inline-flex items-center gap-2 px-6 py-3 font-semibold text-sm w-fit">
-                  <Download className="h-4 w-4" /> Download Prospectus
-                </a>
+             {event.documents && event.documents.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {event.documents
+                    .slice()
+                    .sort((a, b) => a.displayOrder - b.displayOrder)
+                    .map(doc => (
+                      <a
+                        key={doc.id}
+                        href={assetUrl(doc.fileUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary inline-flex items-center gap-2 px-6 py-3 font-semibold text-sm w-fit"
+                      >
+                        <Download className="h-4 w-4" /> {doc.label}
+                      </a>
+                    ))}
+                </div>
               )}
               {status === "upcoming" && (
                 <div className="p-4 text-sm" style={{ backgroundColor: "var(--badge-soon-bg)", color: "var(--badge-soon-text)" }}>
@@ -809,7 +821,19 @@ export default function EventDetail() {
           )}
 
           {/* ── Gallery Section ── */}
+   
           <EventGallery images={galleryImages} />
+
+          {/* ── Additional Information ── */}
+          {event.additionalInfo && event.additionalInfo.trim() !== "" && event.additionalInfo !== "<p></p>" && (
+            <div className="mb-12">
+              <div
+                className="prose prose-sm max-w-none"
+                style={{ color: "var(--color-body-text)" }}
+                dangerouslySetInnerHTML={{ __html: event.additionalInfo }}
+              />
+            </div>
+          )}
 
           {/* ── Section 2: Program Cards ── */}
           <h2 className="font-bold text-xl mb-6">Programs</h2>

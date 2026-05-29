@@ -114,26 +114,35 @@ export interface Program {
 
 // ── Event ─────────────────────────────────────────────────────────────────────
 
+export interface EventDocument {
+  id:           number;
+  label:        string;
+  fileUrl:      string;
+  displayOrder: number;
+}
+ 
+
 export interface TournamentEvent {
-  id: string;
-  name: string;
-  description: string;
-  venue: string;
-  venueAddress: string;
-  bannerUrl: string;
-  galleryUrls: string[];
-  prospectusUrl: string;
-  eventStartDate: string;
-  eventEndDate: string;
-  openDate: string;
-  closeDate: string;
-  maxParticipants: number;
-  sponsorInfo: string;
+  id:               string;
+  name:             string;
+  description:      string;
+  venue:            string;
+  venueAddress:     string;
+  bannerUrl:        string;
+  galleryUrls:      string[];
+  additionalInfo:   string;    // sanitised HTML — replaces prospectusUrl
+  documents:        EventDocument[];   // downloadable attachments
+  eventStartDate:   string;
+  eventEndDate:     string;
+  openDate:         string;
+  closeDate:        string;
+  maxParticipants:  number;
+  sponsorInfo:      string;
   consentStatement: string;
-  isSports: boolean;
-  sportType: string;
-  fixtureMode: FixtureMode;
-  programs: Program[];
+  isSports:         boolean;
+  sportType:        string;
+  fixtureMode:      FixtureMode;
+  programs:         Program[];
 }
 
 // ── Users / config ────────────────────────────────────────────────────────────

@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2, Scissors, MoreVertical, ExternalLink, Lock, Unlock } from "lucide-react";
-import type { TournamentEvent, Program } from "@/types/config";
+import {
+  ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2,
+  Scissors, MoreVertical, ExternalLink, Lock, Unlock, FileText, GripVertical,
+} from "lucide-react";
+import type { TournamentEvent, Program, EventDocument } from "@/types/config";
 import { formatDate, getEventStatus } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import ProgramModal from "@/components/admin/ProgramModal";
@@ -13,27 +16,200 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   apiGetEvent, apiCreateEvent, apiUpdateEvent, apiDeleteEvent,
   apiAddProgram, apiUpdateProgram, apiDeleteProgram, apiUpdateProgramStatus,
+  apiAddEventDocument, apiUpdateEventDocument, apiDeleteEventDocument,
   apiUploadFile, assetUrl,
 } from "@/lib/api";
+
+// ── Tiptap rich-text editor ───────────────────────────────────────────────────
+// Install: npm install @tiptap/react @tiptap/pm @tiptap/starter-kit @tiptap/extension-link
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
 
 const MAX_IMAGE_MB = 2;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_PDF_MB = 8;
 
-function isBlobUrl(url: string) {
-  return url.startsWith("blob:");
+function isBlobUrl(url: string) { return url.startsWith("blob:"); }
+
+// ── Tiptap toolbar ────────────────────────────────────────────────────────────
+function RichTextEditor({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (html: string) => void;
+  disabled: boolean;
+}) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Link.configure({ openOnClick: false, autolink: true }),
+    ],
+    content: value,
+    editable: !disabled,
+    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+  });
+
+  // Sync external value changes (e.g. when event loads)
+  useEffect(() => {
+    if (!editor) return;
+    if (editor.getHTML() !== value) {
+      editor.commands.setContent(value || "", { emitUpdate: false });
+    }
+  }, [value, editor]);
+
+  // Sync editable state
+  useEffect(() => {
+    editor?.setEditable(!disabled);
+  }, [disabled, editor]);
+
+  if (!editor) return null;
+
+  const btn = (active: boolean) =>
+    `px-2 py-1 text-xs font-semibold transition-colors ${
+      active
+        ? "text-white"
+        : "opacity-60 hover:opacity-100"
+    }`;
+  const activeStyle = (active: boolean): React.CSSProperties =>
+    active ? { backgroundColor: "var(--color-primary)", color: "#fff" } : {};
+
+  return (
+    <div style={{ border: "1px solid var(--color-table-border)" }}>
+      {!disabled && (
+        <div
+          className="flex flex-wrap gap-0.5 p-2"
+          style={{ borderBottom: "1px solid var(--color-table-border)", backgroundColor: "var(--color-background-secondary)" }}
+        >
+          {/* Headings */}
+          <button type="button"
+            className={btn(editor.isActive("heading", { level: 2 }))}
+            style={activeStyle(editor.isActive("heading", { level: 2 }))}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button>
+          <button type="button"
+            className={btn(editor.isActive("heading", { level: 3 }))}
+            style={activeStyle(editor.isActive("heading", { level: 3 }))}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>H3</button>
+          <span className="w-px mx-1 self-stretch" style={{ backgroundColor: "var(--color-table-border)" }} />
+          {/* Inline */}
+          <button type="button"
+            className={btn(editor.isActive("bold"))}
+            style={activeStyle(editor.isActive("bold"))}
+            onClick={() => editor.chain().focus().toggleBold().run()}>B</button>
+          <button type="button"
+            className={btn(editor.isActive("italic"))}
+            style={{ ...activeStyle(editor.isActive("italic")), fontStyle: "italic" }}
+            onClick={() => editor.chain().focus().toggleItalic().run()}>I</button>
+          <span className="w-px mx-1 self-stretch" style={{ backgroundColor: "var(--color-table-border)" }} />
+          {/* Lists */}
+          <button type="button"
+            className={btn(editor.isActive("bulletList"))}
+            style={activeStyle(editor.isActive("bulletList"))}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}>• List</button>
+          <button type="button"
+            className={btn(editor.isActive("orderedList"))}
+            style={activeStyle(editor.isActive("orderedList"))}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}>1. List</button>
+          <span className="w-px mx-1 self-stretch" style={{ backgroundColor: "var(--color-table-border)" }} />
+          {/* Link */}
+          <button type="button"
+            className={btn(editor.isActive("link"))}
+            style={activeStyle(editor.isActive("link"))}
+            onClick={() => {
+              if (editor.isActive("link")) {
+                editor.chain().focus().unsetLink().run();
+              } else {
+                const url = window.prompt("Enter URL");
+                if (url) editor.chain().focus().setLink({ href: url }).run();
+              }
+            }}>Link</button>
+          <span className="w-px mx-1 self-stretch" style={{ backgroundColor: "var(--color-table-border)" }} />
+          <button type="button"
+            className="px-2 py-1 text-xs opacity-60 hover:opacity-100"
+            onClick={() => editor.chain().focus().undo().run()}>Undo</button>
+          <button type="button"
+            className="px-2 py-1 text-xs opacity-60 hover:opacity-100"
+            onClick={() => editor.chain().focus().redo().run()}>Redo</button>
+        </div>
+      )}
+      <EditorContent
+        editor={editor}
+        className="prose prose-sm max-w-none p-4 min-h-[180px] focus-within:outline-none"
+        style={{
+          fontSize: 13,
+          color: "var(--color-body-text)",
+          backgroundColor: disabled ? "var(--color-background-secondary)" : "var(--color-page-bg)",
+        }}
+      />
+    </div>
+  );
 }
 
+// ── Document manager row ──────────────────────────────────────────────────────
+interface DocRow {
+  id?: number;       // undefined = not yet saved to backend
+  label: string;
+  fileUrl: string;
+  displayOrder: number;
+  uploading?: boolean;
+  labelError?: string;
+}
 
 export default function EventEdit() {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const isNew = eventId === "new";
+
   const [event,    setEvent]   = useState<TournamentEvent | null>(null);
   const [loading,  setLoading] = useState(!isNew);
   const [saving,   setSaving]  = useState(false);
   const [apiError, setApiError] = useState("");
 
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [form, setForm] = useState({
+    name: "", description: "", venue: "", venueAddress: "",
+    eventStartDate: "", eventEndDate: "", openDate: "", closeDate: "",
+    maxParticipants: 100, sponsorInfo: "", bannerUrl: "",
+    additionalInfo: "",          // replaces prospectusUrl
+    consentStatement: "",
+    isSports: true, sportType: "Badminton",
+    fixtureMode: "internal" as "internal" | "external" | "not_required",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
+    setForm(p => ({ ...p, [k]: v }));
+
+  // ── Document rows ───────────────────────────────────────────────────────────
+  const [docs, setDocs] = useState<DocRow[]>([]);
+
+  // ── Gallery / banner ────────────────────────────────────────────────────────
+  const [gallery,          setGallery]          = useState<string[]>([]);
+  const [galleryError,     setGalleryError]     = useState("");
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [bannerError,      setBannerError]      = useState("");
+  const [uploadingBanner,  setUploadingBanner]  = useState(false);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const bannerRef  = useRef<HTMLInputElement>(null);
+
+  // ── Program / editing state ─────────────────────────────────────────────────
+  const [editing,          setEditing]          = useState(isNew);
+  const [programs,         setPrograms]         = useState<Program[]>([]);
+  const [programModalOpen, setProgramModalOpen] = useState(false);
+  const [editingProgram,   setEditingProgram]   = useState<Program | null>(null);
+  const [seedingOpen,      setSeedingOpen]      = useState(false);
+  const [seedingProgramId, setSeedingProgramId] = useState("");
+  const [openAction,       setOpenAction]       = useState<{ prog: Program; anchorEl: HTMLElement } | null>(null);
+  const [deleteConfirmOpen,setDeleteConfirmOpen]= useState(false);
+
+  const RACKET_SPORTS = ["Badminton", "Tennis", "Squash", "Table Tennis", "Pickleball"];
+  const TEAM_SPORTS   = ["Basketball", "Football", "Volleyball", "Rugby", "Hockey", "Netball"];
+  const isRacketSport = form.isSports && RACKET_SPORTS.includes(form.sportType);
+  const isTeamSport   = form.isSports && TEAM_SPORTS.includes(form.sportType);
+  const isBadminton   = form.isSports && form.sportType === "Badminton";
+
+  // ── Load existing event ─────────────────────────────────────────────────────
   useEffect(() => {
     if (isNew) return;
     apiGetEvent(eventId!).then(r => {
@@ -41,67 +217,36 @@ export default function EventEdit() {
       const ev = r.data!;
       setEvent(ev);
       setPrograms(ev.programs);
-      const safeGallery = (ev.galleryUrls || []).filter((u) => !isBlobUrl(u));
-      if (safeGallery.length !== (ev.galleryUrls || []).length) {
+      const safeGallery = (ev.galleryUrls || []).filter(u => !isBlobUrl(u));
+      if (safeGallery.length !== (ev.galleryUrls || []).length)
         setGalleryError("Some previously selected images were temporary previews and can't be loaded after refresh. Please re-upload them.");
-      }
       setGallery(safeGallery);
+      // Populate document rows from loaded event
+      setDocs((ev.documents || []).map(d => ({
+        id: d.id, label: d.label, fileUrl: d.fileUrl, displayOrder: d.displayOrder,
+      })));
       setForm({
-        name:           ev.name,
-        description:    ev.description || "",
-        venue:          ev.venue,
-        venueAddress:   ev.venueAddress || "",
-        eventStartDate: ev.eventStartDate,
-        eventEndDate:   ev.eventEndDate || "",
-        openDate:       ev.openDate,
-        closeDate:      ev.closeDate,
-        maxParticipants: ev.maxParticipants || 100,
-        sponsorInfo:    ev.sponsorInfo || "",
-        bannerUrl:      ev.bannerUrl || "",
-        prospectusUrl:  ev.prospectusUrl || "",
+        name:             ev.name,
+        description:      ev.description || "",
+        venue:            ev.venue,
+        venueAddress:     ev.venueAddress || "",
+        eventStartDate:   ev.eventStartDate,
+        eventEndDate:     ev.eventEndDate || "",
+        openDate:         ev.openDate,
+        closeDate:        ev.closeDate,
+        maxParticipants:  ev.maxParticipants || 100,
+        sponsorInfo:      ev.sponsorInfo || "",
+        bannerUrl:        ev.bannerUrl || "",
+        additionalInfo:   ev.additionalInfo || "",
         consentStatement: ev.consentStatement || "",
-        isSports:       ev.isSports ?? true,
-        sportType:      ev.sportType || "Badminton",
-        fixtureMode:    (ev.fixtureMode || "internal") as "internal" | "external" | "not_required",
+        isSports:         ev.isSports ?? true,
+        sportType:        ev.sportType || "Badminton",
+        fixtureMode:      (ev.fixtureMode || "internal") as "internal" | "external" | "not_required",
       });
     }).finally(() => setLoading(false));
   }, [eventId, isNew]);
 
-  const [editing, setEditing] = useState(isNew);
-  const [programModalOpen, setProgramModalOpen] = useState(false);
-  const [editingProgram, setEditingProgram] = useState<Program | null>(null);
-  const [seedingOpen, setSeedingOpen] = useState(false);
-  const [seedingProgramId, setSeedingProgramId] = useState("");
-  const [openAction, setOpenAction] = useState<{ prog: Program; anchorEl: HTMLElement } | null>(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [gallery, setGallery] = useState<string[]>([]);
-  const [galleryError, setGalleryError] = useState("");
-  const galleryRef = useRef<HTMLInputElement>(null);
-  const [prospectusName, setProspectusName] = useState("");
-  const [uploadingGallery, setUploadingGallery] = useState(false);
-  const [bannerError,    setBannerError]    = useState("");
-  const [uploadingBanner, setUploadingBanner] = useState(false);
-  const bannerRef = useRef<HTMLInputElement>(null);
-  const [uploadingProspectus, setUploadingProspectus] = useState(false);
-
-  const [form, setForm] = useState({
-    name: "", description: "", venue: "", venueAddress: "",
-    eventStartDate: "", eventEndDate: "", openDate: "", closeDate: "",
-    maxParticipants: 100, sponsorInfo: "", bannerUrl: "", prospectusUrl: "",
-    consentStatement: "",
-    isSports: true, sportType: "Badminton",
-    fixtureMode: "internal" as "internal" | "external" | "not_required",
-  });
-
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) => setForm(p => ({ ...p, [k]: v }));
-  const RACKET_SPORTS = ["Badminton", "Tennis", "Squash", "Table Tennis", "Pickleball"];
-  const TEAM_SPORTS   = ["Basketball", "Football", "Volleyball", "Rugby", "Hockey", "Netball"];
-  const isRacketSport = form.isSports && RACKET_SPORTS.includes(form.sportType);
-  const isTeamSport   = form.isSports && TEAM_SPORTS.includes(form.sportType);
-  const isBadminton   = form.isSports && form.sportType === "Badminton";
-
+  // ── Gallery upload ──────────────────────────────────────────────────────────
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     setGalleryError("");
     const files = Array.from(e.target.files || []);
@@ -111,7 +256,7 @@ export default function EventEdit() {
       if (!ALLOWED_TYPES.includes(f.type)) { errs.push(`${f.name}: only JPG, PNG, WEBP allowed`); return; }
       if (f.size > MAX_IMAGE_MB * 1024 * 1024) { errs.push(`${f.name}: exceeds ${MAX_IMAGE_MB}MB limit`); return; }
       newUrls.push(
-        apiUploadFile(f, "events/gallery").then((r) => {
+        apiUploadFile(f, "events/gallery").then(r => {
           if (r.error) { errs.push(`${f.name}: ${r.error.message}`); return null; }
           return r.data;
         }),
@@ -119,7 +264,7 @@ export default function EventEdit() {
     });
     if (errs.length) setGalleryError(errs.join(" · "));
     setUploadingGallery(true);
-    void Promise.all(newUrls).then((urls) => {
+    void Promise.all(newUrls).then(urls => {
       const good = urls.filter(Boolean) as string[];
       if (errs.length) setGalleryError(errs.join(" · "));
       if (good.length) setGallery(prev => [...prev, ...good]);
@@ -129,6 +274,7 @@ export default function EventEdit() {
 
   const removeGalleryImage = (idx: number) => setGallery(prev => prev.filter((_, i) => i !== idx));
 
+  // ── Banner upload ───────────────────────────────────────────────────────────
   const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -141,7 +287,65 @@ export default function EventEdit() {
     }).finally(() => { setUploadingBanner(false); if (bannerRef.current) bannerRef.current.value = ""; });
   };
 
+  // ── Document handlers ───────────────────────────────────────────────────────
+  const addDocRow = () => {
+    setDocs(prev => [...prev, { label: "", fileUrl: "", displayOrder: prev.length }]);
+  };
 
+  const updateDocRow = (idx: number, patch: Partial<DocRow>) => {
+    setDocs(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d));
+  };
+
+  const removeDocRow = async (idx: number) => {
+    const doc = docs[idx];
+    // If already saved to backend, delete it
+    if (doc.id && !isNew && eventId) {
+      await apiDeleteEventDocument(eventId, doc.id);
+    }
+    setDocs(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDocFileUpload = async (idx: number, file: File) => {
+    if (file.size > MAX_PDF_MB * 1024 * 1024) {
+      updateDocRow(idx, { labelError: `File exceeds ${MAX_PDF_MB}MB.` });
+      return;
+    }
+    updateDocRow(idx, { uploading: true, labelError: undefined });
+    const r = await apiUploadFile(file, "events/documents");
+    updateDocRow(idx, { uploading: false });
+    if (r.error) { updateDocRow(idx, { labelError: r.error.message }); return; }
+    updateDocRow(idx, { fileUrl: r.data! });
+
+    // If saved event exists, persist immediately
+    if (!isNew && eventId) {
+      const doc = docs[idx];
+      const label = doc.label || file.name.replace(/\.[^.]+$/, "");
+      if (doc.id) {
+        await apiUpdateEventDocument(eventId, doc.id, { label, fileUrl: r.data!, displayOrder: doc.displayOrder });
+      }
+    }
+  };
+
+  // Save all unsaved/updated document rows after event is saved
+  const saveDocuments = async (savedEventId: string) => {
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i];
+      if (!doc.fileUrl) continue; // skip rows without a file
+      const label = doc.label.trim() || `Document ${i + 1}`;
+      if (doc.id) {
+        await apiUpdateEventDocument(savedEventId, doc.id, {
+          label, fileUrl: doc.fileUrl, displayOrder: i,
+        });
+      } else {
+        const r = await apiAddEventDocument(savedEventId, {
+          label, fileUrl: doc.fileUrl, displayOrder: i,
+        });
+        if (r.data) updateDocRow(i, { id: r.data.id, label });
+      }
+    }
+  };
+
+  // ── Validation ──────────────────────────────────────────────────────────────
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "Required";
@@ -159,15 +363,7 @@ export default function EventEdit() {
     return Object.keys(e).length === 0;
   };
 
-  const handleDeleteEvent = async () => {
-    if (!eventId || isNew) return;
-    setSaving(true);
-    const r = await apiDeleteEvent(eventId);
-    setSaving(false);
-    if (r.error) { setApiError(r.error.message); return; }
-    navigate("/admin/events");
-  };
-
+  // ── Save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
@@ -177,27 +373,34 @@ export default function EventEdit() {
       if (isNew) {
         const r = await apiCreateEvent(payload);
         if (r.error) { setApiError(r.error.message); return; }
-        // Persist any programs that were added locally before the event was saved.
-        // Each program is saved individually — stop and surface the error if any fail.
+        const newId = r.data!.id;
         for (const prog of programs) {
           const { id: _id, currentParticipants: _cp, participantSeeds: _ps, ...progPayload } = prog;
           void _id; void _cp; void _ps;
-          const pr = await apiAddProgram(r.data!.id, progPayload);
-          if (pr.error) {
-            setApiError(`Event created but failed to save program "${prog.name}": ${pr.error.message}`);
-            return;
-          }
+          const pr = await apiAddProgram(newId, progPayload);
+          if (pr.error) { setApiError(`Event created but failed to save program "${prog.name}": ${pr.error.message}`); return; }
         }
+        await saveDocuments(newId);
         navigate("/admin/events");
       } else {
         const r = await apiUpdateEvent(eventId!, payload);
         if (r.error) { setApiError(r.error.message); return; }
+        await saveDocuments(eventId!);
         setEvent(r.data!);
         setEditing(false);
       }
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!eventId || isNew) return;
+    setSaving(true);
+    const r = await apiDeleteEvent(eventId);
+    setSaving(false);
+    if (r.error) { setApiError(r.error.message); return; }
+    navigate("/admin/events");
   };
 
   const status = event ? getEventStatus(event) : undefined;
@@ -255,7 +458,6 @@ export default function EventEdit() {
         </div>
       </div>
 
-      {/* ── API Error ── */}
       {apiError && (
         <div className="mb-6 px-4 py-3 text-sm font-medium"
           style={{ backgroundColor: "var(--badge-closed-bg)", color: "var(--badge-closed-text)", border: "1px solid var(--badge-closed-text)" }}>
@@ -278,13 +480,13 @@ export default function EventEdit() {
               <input className="field-input" value={form.venueAddress} onChange={e => set("venueAddress", e.target.value)} disabled={!editing} />
             </FF>
           </div>
-          <FF label="Event Start Date">
+          <FF label="Event Start Date" error={errors.eventStartDate}>
             <input type="date" className="field-input" value={form.eventStartDate} onChange={e => set("eventStartDate", e.target.value)} disabled={!editing} />
           </FF>
           <FF label="Event End Date" error={errors.eventEndDate}>
             <input type="date" className="field-input" value={form.eventEndDate} onChange={e => set("eventEndDate", e.target.value)} disabled={!editing} />
           </FF>
-          <FF label="Registration Open Date">
+          <FF label="Registration Open Date" error={errors.openDate}>
             <input type="date" className="field-input" value={form.openDate} onChange={e => set("openDate", e.target.value)} disabled={!editing} />
           </FF>
           <FF label="Registration Close Date" error={errors.closeDate}>
@@ -297,102 +499,133 @@ export default function EventEdit() {
             <input className="field-input" value={form.sponsorInfo} onChange={e => set("sponsorInfo", e.target.value)} disabled={!editing} />
           </FF>
           <div className="md:col-span-2">
-            <FF label="Description">
-              <textarea className="field-input" rows={3} value={form.description} onChange={e => set("description", e.target.value)} disabled={!editing} />
+            <FF label="Short Description (shown on event header)">
+              <textarea className="field-input" rows={2} value={form.description} onChange={e => set("description", e.target.value)} disabled={!editing} />
             </FF>
           </div>
-          <FF label="Prospectus PDF">
-            {editing ? (
-              <label className={`flex items-center gap-3 cursor-pointer px-4 py-3 text-sm font-medium transition-colors hover:opacity-80 ${uploadingProspectus ? "opacity-60 pointer-events-none" : ""}`}
-                style={{ border: "1px solid var(--color-table-border)", color: "var(--color-body-text)", display: "inline-flex" }}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                {prospectusName || (form.prospectusUrl ? "Prospectus selected" : "Choose PDF file…")}
+        </div>
+      </div>
+
+      {/* ── Documents ── */}
+      <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
+        <div className="flex items-center justify-between mb-1">
+          <SectionTitle>Documents</SectionTitle>
+          {editing && (
+            <button onClick={addDocRow}
+              className="btn-outline flex items-center gap-2 px-4 py-2 text-sm font-medium">
+              <Plus className="h-4 w-4" /> Add Document
+            </button>
+          )}
+        </div>
+        <p className="text-xs opacity-60 mb-5">
+          Upload PDFs for download (prospectus, visa form, hotel form, etc.) · max {MAX_PDF_MB}MB each
+        </p>
+
+        {docs.length === 0 && (
+          <p className="text-sm opacity-40">{editing ? "No documents yet — click Add Document." : "No documents uploaded."}</p>
+        )}
+
+        <div className="space-y-3">
+          {docs.map((doc, idx) => (
+            <div key={idx} className="flex items-start gap-3 p-3"
+              style={{ border: "1px solid var(--color-table-border)", backgroundColor: "var(--color-background-secondary)" }}>
+              {editing && <GripVertical className="h-4 w-4 mt-2.5 opacity-30 flex-shrink-0" />}
+
+              {/* Label */}
+              <div className="flex-1 min-w-0">
                 <input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  disabled={uploadingProspectus}
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.size > MAX_PDF_MB * 1024 * 1024) {
-                      setApiError(`Prospectus PDF exceeds ${MAX_PDF_MB}MB. Please upload a smaller file or host it and paste a URL.`);
-                      return;
-                    }
-                    setUploadingProspectus(true);
-                    const up = await apiUploadFile(file, "events/prospectus");
-                    setUploadingProspectus(false);
-                    if (up.error) { setApiError(up.error.message); return; }
-                    setProspectusName(file.name);
-                    set("prospectusUrl", up.data);
-                  }}
+                  className="field-input mb-1"
+                  placeholder="Label, e.g. Prospectus, Visa Application Form…"
+                  value={doc.label}
+                  disabled={!editing}
+                  onChange={e => updateDocRow(idx, { label: e.target.value })}
                 />
-              </label>
-            ) : (
-              <>
-                {form.prospectusUrl ? (
-                  <a
-                    href={assetUrl(form.prospectusUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm hover:opacity-80 underline"
-                    style={{ color: "var(--color-primary)" }}
-                  >
-                    {prospectusName || "View Prospectus"}
+                {doc.labelError && (
+                  <p className="text-xs" style={{ color: "var(--badge-open-text)" }}>{doc.labelError}</p>
+                )}
+              </div>
+
+              {/* File */}
+              <div className="flex-shrink-0">
+                {editing ? (
+                  <label className={`inline-flex items-center gap-2 btn-outline px-3 py-2 text-xs font-medium cursor-pointer ${doc.uploading ? "opacity-60 pointer-events-none" : ""}`}>
+                    <FileText className="h-3.5 w-3.5" />
+                    {doc.uploading ? "Uploading…" : doc.fileUrl ? "Replace" : "Choose PDF"}
+                    <input
+                      type="file" accept="application/pdf,.pdf" className="hidden"
+                      disabled={doc.uploading}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleDocFileUpload(idx, f); e.target.value = ""; }}
+                    />
+                  </label>
+                ) : doc.fileUrl ? (
+                  <a href={assetUrl(doc.fileUrl)} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs underline"
+                    style={{ color: "var(--color-primary)" }}>
+                    <FileText className="h-3.5 w-3.5" /> View
                   </a>
                 ) : (
-                  <p className="text-sm opacity-60">No prospectus uploaded</p>
+                  <span className="text-xs opacity-40">No file</span>
                 )}
-              </>
-            )}
-          </FF>
+                {doc.fileUrl && !editing && (
+                  <span className="block text-xs opacity-40 mt-0.5 truncate max-w-[160px]">
+                    {doc.fileUrl.split("/").pop()}
+                  </span>
+                )}
+              </div>
+
+              {/* Remove */}
+              {editing && (
+                <button onClick={() => removeDocRow(idx)} className="mt-2 p-1 flex-shrink-0 opacity-50 hover:opacity-100"
+                  style={{ color: "var(--badge-closed-text)" }}>
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
+      </div>
+
+      {/* ── Additional Information (rich text) ── */}
+      <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
+        <SectionTitle>Additional Information</SectionTitle>
+        <p className="text-xs opacity-60 mb-4">
+          Free-form content shown on the event page — key dates, venue details, important notes, etc.
+          Use headings to create sections.
+        </p>
+        <RichTextEditor
+          value={form.additionalInfo}
+          onChange={html => set("additionalInfo", html)}
+          disabled={!editing}
+        />
       </div>
 
       {/* ── Sport / Fixture Settings ── */}
       <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
-        <SectionTitle>Sport & Fixture Settings</SectionTitle>
+        <SectionTitle>Sport &amp; Fixture Settings</SectionTitle>
         <div className="space-y-5">
           <label className="flex items-center gap-3 text-sm cursor-pointer">
             <Switch checked={form.isSports} disabled={!editing}
               onCheckedChange={checked => set("isSports", !!checked)} />
             This is a sports event
           </label>
-
           {form.isSports && (
             <div className="grid sm:grid-cols-2 gap-6">
               <FF label="Sport Type">
-                <select
-                  className="field-input"
-                  value={form.sportType}
-                  disabled={!editing}
-                  onChange={e => set("sportType", e.target.value)}
-                >
+                <select className="field-input" value={form.sportType} disabled={!editing}
+                  onChange={e => set("sportType", e.target.value)}>
                   <optgroup label="Racket Sports">
-                    <option value="Badminton">Badminton</option>
-                    <option value="Tennis">Tennis</option>
-                    <option value="Squash">Squash</option>
-                    <option value="Table Tennis">Table Tennis</option>
-                    <option value="Pickleball">Pickleball</option>
+                    <option>Badminton</option><option>Tennis</option><option>Squash</option>
+                    <option>Table Tennis</option><option>Pickleball</option>
                   </optgroup>
                   <optgroup label="Team Sports">
-                    <option value="Basketball">Basketball</option>
-                    <option value="Football">Football</option>
-                    <option value="Volleyball">Volleyball</option>
-                    <option value="Rugby">Rugby</option>
-                    <option value="Hockey">Hockey</option>
-                    <option value="Netball">Netball</option>
+                    <option>Basketball</option><option>Football</option><option>Volleyball</option>
+                    <option>Rugby</option><option>Hockey</option><option>Netball</option>
                   </optgroup>
                   <optgroup label="Individual Sports">
-                    <option value="Swimming">Swimming</option>
-                    <option value="Athletics">Athletics</option>
-                    <option value="Gymnastics">Gymnastics</option>
-                    <option value="Cycling">Cycling</option>
-                    <option value="Archery">Archery</option>
+                    <option>Swimming</option><option>Athletics</option><option>Gymnastics</option>
+                    <option>Cycling</option><option>Archery</option>
                   </optgroup>
-                  <optgroup label="Other">
-                    <option value="Other">Other</option>
-                  </optgroup>
+                  <optgroup label="Other"><option>Other</option></optgroup>
                 </select>
               </FF>
               <FF label="Fixture Management Mode">
@@ -407,7 +640,7 @@ export default function EventEdit() {
                         className="px-4 py-2.5 text-sm font-semibold transition-colors"
                         style={{
                           backgroundColor: form.fixtureMode === opt.value ? "var(--color-primary)" : "transparent",
-                          color:  form.fixtureMode === opt.value ? "var(--color-hero-text)" : "var(--color-body-text)",
+                          color: form.fixtureMode === opt.value ? "var(--color-hero-text)" : "var(--color-body-text)",
                           border: `1px solid ${form.fixtureMode === opt.value ? "var(--color-primary)" : "var(--color-table-border)"}`,
                         }}>
                         {opt.label}
@@ -415,7 +648,7 @@ export default function EventEdit() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm font-medium capitalize">
+                  <p className="text-sm font-medium">
                     {form.fixtureMode === "internal" ? "Internal (Built-in)" : form.fixtureMode === "external" ? "External System" : "Not Required"}
                   </p>
                 )}
@@ -425,10 +658,10 @@ export default function EventEdit() {
         </div>
       </div>
 
-      {/* ── Banner ── */}
+      {/* ── Event Banner ── */}
       <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
         <SectionTitle>Event Banner</SectionTitle>
-        <p className="text-xs opacity-60 mb-4">This image is shown as the hero background on the event page (JPG, PNG, WEBP · max {MAX_IMAGE_MB}MB)</p>
+        <p className="text-xs opacity-60 mb-4">Hero background on the event page (JPG, PNG, WEBP · max {MAX_IMAGE_MB}MB)</p>
         {editing && (
           <>
             <label className={`inline-flex items-center gap-2 btn-outline px-5 py-2.5 text-sm font-medium cursor-pointer mb-3 ${uploadingBanner ? "opacity-60 pointer-events-none" : ""}`}>
@@ -440,7 +673,8 @@ export default function EventEdit() {
         )}
         {form.bannerUrl ? (
           <div className="relative group" style={{ maxWidth: 640 }}>
-            <img src={assetUrl(form.bannerUrl)} alt="Event banner" className="w-full object-cover" style={{ maxHeight: 220, border: "1px solid var(--color-table-border)" }} />
+            <img src={assetUrl(form.bannerUrl)} alt="Event banner" className="w-full object-cover"
+              style={{ maxHeight: 220, border: "1px solid var(--color-table-border)" }} />
             {editing && (
               <button onClick={() => { set("bannerUrl", ""); setBannerError(""); }}
                 className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -450,7 +684,7 @@ export default function EventEdit() {
             )}
           </div>
         ) : (
-          <p className="text-sm opacity-40">No banner uploaded. A default banner will be used.</p>
+          <p className="text-sm opacity-40">No banner uploaded.</p>
         )}
       </div>
 
@@ -470,7 +704,8 @@ export default function EventEdit() {
         {gallery.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {gallery.map((url, i) => (
-              <div key={i} className="relative group aspect-video overflow-hidden" style={{ border: "1px solid var(--color-table-border)" }}>
+              <div key={i} className="relative group aspect-video overflow-hidden"
+                style={{ border: "1px solid var(--color-table-border)" }}>
                 <img src={assetUrl(url)} alt={`Gallery ${i + 1}`} className="w-full h-full object-cover" />
                 {editing && (
                   <button onClick={() => removeGalleryImage(i)}
@@ -487,6 +722,16 @@ export default function EventEdit() {
         )}
       </div>
 
+      {/* ── Consent Statement ── */}
+      <div className="mb-8 p-8" style={{ border: "1px solid var(--color-table-border)" }}>
+        <SectionTitle>Consent Statement</SectionTitle>
+        <p className="text-xs opacity-60 mb-4">Shown to participants at registration. Leave blank to use the default.</p>
+        <FF label="Consent Statement">
+          <textarea className="field-input" rows={4} value={form.consentStatement}
+            onChange={e => set("consentStatement", e.target.value)} disabled={!editing} />
+        </FF>
+      </div>
+
       {/* ── Programs ── */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-6">
@@ -496,153 +741,94 @@ export default function EventEdit() {
             <Plus className="h-4 w-4" /> Add Program
           </button>
         </div>
-
         {isNew && programs.length === 0 && (
           <div className="p-5 text-sm opacity-60 text-center" style={{ border: "1px dashed var(--color-table-border)" }}>
             Save the event first, then add programs — or add programs now and save everything together.
           </div>
         )}
-
         {programs.length > 0 && (
-          <>
-            {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
-              <table className="trs-table">
-                <thead>
-                  <tr>
-                    <th>Program Name</th><th>Format</th><th>Age</th><th>Gender</th>
-                    <th>Fee</th><th>Min / Max</th><th>Filled</th><th>Actions</th>
+          <div className="overflow-x-auto" style={{ border: "1px solid var(--color-table-border)" }}>
+            <table className="trs-table">
+              <thead>
+                <tr>
+                  <th>Program Name</th><th>Format</th><th>Age</th><th>Gender</th>
+                  <th>Fee</th><th>Status</th><th>Min / Max</th><th>Filled</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {programs.map(prog => (
+                  <tr key={prog.id}>
+                    <td className="font-medium">{prog.name}</td>
+                    <td className="text-sm">{prog.type}</td>
+                    <td className="text-sm">{prog.minAge}–{prog.maxAge}</td>
+                    <td className="text-sm">{prog.gender}</td>
+                    <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
+                      {prog.fee > 0 ? `$${prog.fee.toFixed(2)}` : "Free"}
+                    </td>
+                    <td>
+                      <span className="text-xs font-semibold px-2 py-0.5"
+                        style={{
+                          backgroundColor: prog.status === "closed" ? "var(--badge-closed-bg)" : "var(--badge-open-bg)",
+                          color: prog.status === "closed" ? "var(--badge-closed-text)" : "var(--badge-open-text)",
+                        }}>
+                        {prog.status === "closed" ? "Closed" : "Open"}
+                      </span>
+                    </td>
+                    <td className="text-sm">{prog.minParticipants} / {prog.maxParticipants}</td>
+                    <td className="text-sm">
+                      <span>{prog.currentParticipants} / {prog.maxParticipants}</span>
+                      <div className="h-1 mt-1 w-20" style={{ backgroundColor: "var(--color-table-border)" }}>
+                        <div className="h-1 transition-all" style={{
+                          width: `${Math.min(100, (prog.currentParticipants / prog.maxParticipants) * 100)}%`,
+                          backgroundColor: prog.currentParticipants >= prog.maxParticipants ? "var(--badge-open-text)" : "var(--color-primary)",
+                        }} />
+                      </div>
+                    </td>
+                    <td>
+                      <div className="relative">
+                        <button
+                          onClick={e => setOpenAction(openAction?.prog.id === prog.id ? null : { prog, anchorEl: e.currentTarget })}
+                          className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {programs.map(prog => (
-                    <tr key={prog.id}>
-                      <td className="font-medium">{prog.name}</td>
-                      <td className="text-sm">{prog.type}</td>
-                      <td className="text-sm">{prog.minAge}–{prog.maxAge}</td>
-                      <td className="text-sm">{prog.gender}</td>
-                      <td className="font-semibold text-sm" style={{ color: "var(--color-primary)" }}>
-                        {prog.fee > 0 ? `$${prog.fee.toFixed(2)}` : "Free"}
-                      </td>
-                      <td>
-                        <span className="text-xs font-semibold px-2 py-0.5"
-                          style={{
-                            backgroundColor: prog.status === "closed" ? "var(--badge-closed-bg, #fee2e2)" : "var(--badge-open-bg)",
-                            color:           prog.status === "closed" ? "var(--badge-closed-text, #dc2626)" : "var(--badge-open-text)",
-                          }}>
-                          {prog.status === "closed" ? "Closed" : "Open"}
-                        </span>
-                      </td>
-                      <td className="text-sm">{prog.minParticipants} / {prog.maxParticipants}</td>
-                      <td className="text-sm">
-                        <span>{prog.currentParticipants} / {prog.maxParticipants}</span>
-                        <div className="h-1 mt-1 w-20" style={{ backgroundColor: "var(--color-table-border)" }}>
-                          <div className="h-1 transition-all" style={{
-                            width: `${Math.min(100, (prog.currentParticipants / prog.maxParticipants) * 100)}%`,
-                            backgroundColor: prog.currentParticipants >= prog.maxParticipants ? "var(--badge-open-text)" : "var(--color-primary)",
-                          }} />
-                        </div>
-                      </td>
-                      <td>
-                        <div className="relative">
-                          <button
-                            onClick={(e) =>
-                              setOpenAction(openAction?.prog.id === prog.id ? null : { prog, anchorEl: e.currentTarget })
-                            }
-                            className="p-2 hover:opacity-70" style={{ color: "var(--color-primary)" }}>
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card list */}
-            <div className="md:hidden space-y-3">
-              {programs.map(prog => (
-                <div key={prog.id} className="p-5" style={{ border: "1px solid var(--color-table-border)" }}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-semibold text-sm">{prog.name}</p>
-                      <p className="text-xs opacity-60">{prog.type} · {prog.gender} · {prog.minAge}–{prog.maxAge}yrs</p>
-                    </div>
-                    <div className="relative">
-                      <button
-                        onClick={(e) =>
-                          setOpenAction(openAction?.prog.id === prog.id ? null : { prog, anchorEl: e.currentTarget })
-                        }
-                        className="p-1.5 opacity-50 hover:opacity-100"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-bold" style={{ color: "var(--color-primary)" }}>{prog.fee > 0 ? `$${prog.fee.toFixed(2)}` : "Free"}</span>
-                    <span className="text-xs opacity-60">{prog.currentParticipants}/{prog.maxParticipants} filled</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* ── FIX: wrap children in openAction guard so JSX label expressions
-                  never evaluate openAction.prog when openAction is already null.
-                  The onClose callback sets openAction → null, which triggers a
-                  re-render before the portal unmounts; without this guard the
-                  {openAction.prog.status === "closed" ? ...} expression on the
-                  Close/Reopen button crashes with "Cannot read properties of null". ── */}
-            <ActionDropdownPortal
-              open={!!openAction}
-              anchorEl={openAction?.anchorEl ?? null}
-              onClose={() => setOpenAction(null)}
-            >
-              {openAction && (
-                <>
-                  <button onClick={() => { setEditingProgram(openAction.prog); setProgramModalOpen(true); setOpenAction(null); }}>
-                    <Edit2 className="h-4 w-4" /> Edit Program
-                  </button>
-                  {!isNew && (
-                    <button onClick={() => { setSeedingProgramId(openAction.prog.id); setSeedingOpen(true); setOpenAction(null); }}>
-                      <Scissors className="h-4 w-4" /> Seeding
-                    </button>
-                  )}
-                  <button onClick={() => { navigate(`/admin/registrations?event=${eventId}&program=${openAction.prog.id}`); setOpenAction(null); }}>
-                    <Users className="h-4 w-4" /> Registrations
-                  </button>
-                  {!isNew && eventId && (
-                    <button onClick={async () => {
-                      const prog = openAction.prog;
-                      const newStatus = prog.status === "closed" ? "open" : "closed";
-                      const r = await apiUpdateProgramStatus(eventId, prog.id, newStatus);
-                      if (r.data) {
-                        setPrograms(prev => prev.map(p =>
-                          p.id === prog.id ? { ...p, status: newStatus } : p
-                        ));
-                      }
-                      setOpenAction(null);
-                    }}>
-                      {openAction.prog.status === "closed"
-                        ? <><Unlock className="h-4 w-4" /> Reopen Program</>
-                        : <><Lock   className="h-4 w-4" /> Close Program</>}
-                    </button>
-                  )}
-                  {!isNew && (
-                    <button onClick={() => {
-                      navigate(`/admin/registrations/participants?eventId=${eventId}&programId=${openAction.prog.id}`);
-                      setOpenAction(null);
-                    }}>
-                      <ExternalLink className="h-4 w-4" /> View Participants
-                    </button>
-                  )}
-                </>
-              )}
-            </ActionDropdownPortal>
-          </>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      {openAction && (
+        <ActionDropdownPortal open={!!openAction} anchorEl={openAction.anchorEl} onClose={() => setOpenAction(null)}>
+          <button onClick={() => { setEditingProgram(openAction.prog); setProgramModalOpen(true); setOpenAction(null); }}>
+            <Edit2 className="h-4 w-4" /> Edit Program
+          </button>
+          {!isNew && (
+            <button onClick={async () => {
+              const prog = openAction.prog;
+              const newStatus = prog.status === "closed" ? "open" : "closed";
+              const r = await apiUpdateProgramStatus(eventId!, prog.id, newStatus);
+              if (r.data) setPrograms(prev => prev.map(p => p.id === prog.id ? { ...p, status: newStatus } : p));
+              setOpenAction(null);
+            }}>
+              {openAction.prog.status === "closed"
+                ? <><Unlock className="h-4 w-4" /> Reopen Program</>
+                : <><Lock   className="h-4 w-4" /> Close Program</>}
+            </button>
+          )}
+          {!isNew && (
+            <button onClick={() => {
+              navigate(`/admin/registrations/participants?eventId=${eventId}&programId=${openAction.prog.id}`);
+              setOpenAction(null);
+            }}>
+              <ExternalLink className="h-4 w-4" /> View Participants
+            </button>
+          )}
+        </ActionDropdownPortal>
+      )}
 
       <ProgramModal
         open={programModalOpen}
@@ -659,7 +845,6 @@ export default function EventEdit() {
               if (r.data) setPrograms(prev => [...prev, r.data!]);
             }
           } else {
-            // New event — manage locally until event is saved
             if (editingProgram) {
               setPrograms(prev => prev.map(p => p.id === savedProgram.id ? savedProgram : p));
             } else {
@@ -680,8 +865,10 @@ export default function EventEdit() {
         isTeamSport={isTeamSport}
         sportType={form.sportType}
       />
-      {/* SeedingModal only mounts with a real saved eventId — isNew guard above prevents opening */}
-      <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)} eventId={eventId ?? ""} programId={seedingProgramId} />
+
+      <SeedingModal open={seedingOpen} onClose={() => setSeedingOpen(false)}
+        eventId={eventId ?? ""} programId={seedingProgramId} />
+
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
@@ -704,6 +891,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     </h2>
   );
 }
+
 function FF({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div>
