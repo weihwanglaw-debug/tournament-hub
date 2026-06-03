@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Edit2, Users, Save, X, Image, Trash2,
-  Scissors, MoreVertical, ExternalLink, Lock, Unlock, FileText, GripVertical,
+  MoreVertical, ExternalLink, Lock, Unlock, FileText, GripVertical,
 } from "lucide-react";
 import type { TournamentEvent, Program, EventDocument } from "@/types/config";
-import { formatDate, getEventStatus } from "@/lib/eventUtils";
+import { getEventStatus } from "@/lib/eventUtils";
 import StatusBadge from "@/components/events/StatusBadge";
 import ProgramModal from "@/components/admin/ProgramModal";
 import SeedingModal from "@/components/admin/SeedingModal";
@@ -316,20 +316,28 @@ export default function EventEdit() {
     if (r.error) { updateDocRow(idx, { labelError: r.error.message }); return; }
     updateDocRow(idx, { fileUrl: r.data! });
 
-    // If saved event exists, persist immediately
+    // FIX: read fresh doc state via a no-op setter to avoid stale closure
+    // after the async apiUploadFile call above.
     if (!isNew && eventId) {
-      const doc = docs[idx];
-      const label = doc.label || file.name.replace(/\.[^.]+$/, "");
-      if (doc.id) {
-        await apiUpdateEventDocument(eventId, doc.id, { label, fileUrl: r.data!, displayOrder: doc.displayOrder });
+      let currentDoc: DocRow | undefined;
+      setDocs(prev => {
+        currentDoc = prev[idx];
+        return prev; // no mutation — reading only
+      });
+      if (currentDoc?.id) {
+        const label = currentDoc.label || file.name.replace(/\.[^.]+$/, "");
+        await apiUpdateEventDocument(eventId, currentDoc.id, {
+          label, fileUrl: r.data!, displayOrder: currentDoc.displayOrder,
+        });
       }
     }
   };
 
-  // Save all unsaved/updated document rows after event is saved
-  const saveDocuments = async (savedEventId: string) => {
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i];
+  // FIX: accept a docs snapshot at call time so saveDocuments always operates
+  // on the state that was current when handleSave captured it, not a stale closure.
+  const saveDocuments = async (savedEventId: string, docsSnapshot: DocRow[]) => {
+    for (let i = 0; i < docsSnapshot.length; i++) {
+      const doc = docsSnapshot[i];
       if (!doc.fileUrl) continue; // skip rows without a file
       const label = doc.label.trim() || `Document ${i + 1}`;
       if (doc.id) {
@@ -380,12 +388,12 @@ export default function EventEdit() {
           const pr = await apiAddProgram(newId, progPayload);
           if (pr.error) { setApiError(`Event created but failed to save program "${prog.name}": ${pr.error.message}`); return; }
         }
-        await saveDocuments(newId);
+        await saveDocuments(newId, docs);
         navigate("/admin/events");
       } else {
         const r = await apiUpdateEvent(eventId!, payload);
         if (r.error) { setApiError(r.error.message); return; }
-        await saveDocuments(eventId!);
+        await saveDocuments(eventId!, docs);
         setEvent(r.data!);
         setEditing(false);
       }
